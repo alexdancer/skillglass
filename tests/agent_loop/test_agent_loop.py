@@ -2,7 +2,6 @@ import concurrent.futures
 import copy
 import hashlib
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -10,8 +9,8 @@ import tempfile
 import unittest
 
 
-SCRIPT = Path(os.environ.get("AGENT_LOOP_SCRIPT", Path(__file__).resolve().parents[2] / "tools" / "agent_loop.py"))
-EXAMPLE = Path(os.environ.get("AGENT_LOOP_EXAMPLE", SCRIPT.parent / "agent-loop" / "example-plan.json"))
+SCRIPT = Path(__file__).resolve().parents[2] / "tools" / "agent_loop.py"
+EXAMPLE = SCRIPT.parent / "agent-loop" / "example-plan.json"
 BASE = "a" * 40
 HEAD = "b" * 40
 
