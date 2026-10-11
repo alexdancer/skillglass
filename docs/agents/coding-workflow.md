@@ -2,7 +2,7 @@
 
 Use the installed Matt Pocock skills in the sequence below. Read each linked `SKILL.md` when its stage applies, using the Skill tool if available or reading the file directly. This document supplies project scope and adaptations.
 
-**Default run:** one requested ticket, implemented, tested, and reviewed. The user chose to stop before commits or ticket closure. That overrides automatic commits, merges, PR publication, closure, and further ticket dispatch in individual skills. Continue routine fixes within the authorized ticket; a broader run requires the user's authorization.
+**Default run:** one requested ticket, implemented, tested, and reviewed. Outside the agentic loop, stop before commits or ticket closure. For an explicitly requested parallel or autonomous run, follow [agentic-loop.md](agentic-loop.md). The user authorized local feature-branch commits and delegated ordinary review decisions for that loop. Pushes, PR publication, merges, and ticket closure still require authorization. Continue fixes within the authorized scope.
 
 ## 1. Orchestrate with implement-spec
 
@@ -36,7 +36,7 @@ Use [code-review](/Users/alex/.agents/skills/code-review/SKILL.md) with two inde
 
 **Pre-commit adaptation:** `git diff <fixed-point>...HEAD` excludes uncommitted work. Pin the before-state before editing and freeze a reproducible candidate bundle containing the complete scoped change: staged, unstaged, and untracked files, deletions, and relevant modes/symlinks. Record its path manifest and digest. Preserve unrelated local work separately.
 
-For Git review, obtain the user's supplied or approved fixed point once, validate it, and record its immutable SHA. If absent, propose the starting integration SHA and ask as `code-review` requires. Include the scoped tracked working-tree delta against that base and complete untracked contents. Without Git, compare the preserved before/after trees and label this a snapshot review. An invalid base or empty complete candidate must be resolved before dispatch; do not manufacture commits to enable review.
+For Git review, record and validate the immutable fixed-point SHA. Use a user-supplied point when present. In the agentic loop, delegated decision authority permits selecting the starting base without another question. Outside that loop, propose the starting integration SHA and ask as `code-review` requires. Include the scoped tracked working-tree delta against that base and complete untracked contents for pre-commit reviews. An invalid base or empty complete candidate must be resolved before dispatch.
 
 Present separate **Standards** and **Spec** reports, with counts and the worst finding within each axis. Do not merge or rerank the axes.
 
@@ -46,7 +46,7 @@ Use [finding-verification](/Users/alex/.agents/skills/finding-verification/SKILL
 
 Have one implementer fix confirmed defects, rerun affected checks, and re-review material changes against a newly frozen candidate. Report unavailable review and inconclusive findings explicitly.
 
-Present changed behavior, acceptance coverage, exact verification results, both review outcomes, and a runnable artifact plus diff or snapshot manifest. **Stop with the ticket open and changes uncommitted.** Preserve pending work for the user's approval.
+Present changed behavior, acceptance coverage, exact verification results, both review outcomes, and a runnable artifact plus diff or snapshot manifest. **Stop with the ticket open.** The ordinary workflow leaves changes uncommitted. The agentic loop may retain authorized local feature-branch commits and no-mistakes fix commits. Preserve pending work for the user's approval.
 
 ## 6. Integrate, then use pr when authorized
 

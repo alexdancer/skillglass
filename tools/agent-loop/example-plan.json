@@ -1,0 +1,199 @@
+{
+  "version": 1,
+  "run_id": "scheduling-example",
+  "intent": "Demonstrate independent ticket scheduling and parallel review. This is a fixture, not permission to start application work.",
+  "base_sha": "e1af9474d6ca77e7139928865a16d32b96113954",
+  "capacity": 3,
+  "jobs": [
+    {
+      "id": "a-build",
+      "ticket": "EXAMPLE-A",
+      "role": "work",
+      "depends_on": [],
+      "slots": 1,
+      "resources": {
+        "worktree:/tmp/skillglass-example/a": "write"
+      },
+      "instructions": "Demonstration only. Do not implement live Linear work from this fixture.",
+      "context": [
+        "docs/agents/agentic-loop.md"
+      ]
+    },
+    {
+      "id": "a-standards",
+      "ticket": "EXAMPLE-A",
+      "role": "review",
+      "depends_on": [
+        "a-build"
+      ],
+      "slots": 1,
+      "resources": {
+        "worktree:/tmp/skillglass-example/a": "read"
+      },
+      "instructions": "Demonstration only. Do not implement live Linear work from this fixture.",
+      "context": [
+        "docs/agents/agentic-loop.md"
+      ]
+    },
+    {
+      "id": "a-spec",
+      "ticket": "EXAMPLE-A",
+      "role": "review",
+      "depends_on": [
+        "a-build"
+      ],
+      "slots": 1,
+      "resources": {
+        "worktree:/tmp/skillglass-example/a": "read"
+      },
+      "instructions": "Demonstration only. Do not implement live Linear work from this fixture.",
+      "context": [
+        "docs/agents/agentic-loop.md"
+      ]
+    },
+    {
+      "id": "a-decision",
+      "ticket": "EXAMPLE-A",
+      "role": "decision",
+      "depends_on": [
+        "a-standards",
+        "a-spec"
+      ],
+      "slots": 1,
+      "resources": {
+        "worktree:/tmp/skillglass-example/a": "read"
+      },
+      "instructions": "Demonstration only. Do not implement live Linear work from this fixture.",
+      "context": [
+        "docs/agents/agentic-loop.md"
+      ]
+    },
+    {
+      "id": "a-gate",
+      "ticket": "EXAMPLE-A",
+      "role": "gate",
+      "depends_on": [
+        "a-decision"
+      ],
+      "slots": 3,
+      "resources": {
+        "worktree:/tmp/skillglass-example/a": "write"
+      },
+      "instructions": "Demonstration only. Do not implement live Linear work from this fixture.",
+      "context": [
+        "docs/agents/agentic-loop.md"
+      ]
+    },
+    {
+      "id": "a-accept",
+      "ticket": "EXAMPLE-A",
+      "role": "accept",
+      "depends_on": [
+        "a-gate"
+      ],
+      "slots": 1,
+      "resources": {
+        "worktree:/tmp/skillglass-example/a": "read"
+      },
+      "instructions": "Demonstration only. Do not implement live Linear work from this fixture.",
+      "context": [
+        "docs/agents/agentic-loop.md"
+      ]
+    },
+    {
+      "id": "b-build",
+      "ticket": "EXAMPLE-B",
+      "role": "work",
+      "depends_on": [],
+      "slots": 1,
+      "resources": {
+        "worktree:/tmp/skillglass-example/b": "write"
+      },
+      "instructions": "Demonstration only. Do not implement live Linear work from this fixture.",
+      "context": [
+        "docs/agents/agentic-loop.md"
+      ]
+    },
+    {
+      "id": "b-standards",
+      "ticket": "EXAMPLE-B",
+      "role": "review",
+      "depends_on": [
+        "b-build"
+      ],
+      "slots": 1,
+      "resources": {
+        "worktree:/tmp/skillglass-example/b": "read"
+      },
+      "instructions": "Demonstration only. Do not implement live Linear work from this fixture.",
+      "context": [
+        "docs/agents/agentic-loop.md"
+      ]
+    },
+    {
+      "id": "b-spec",
+      "ticket": "EXAMPLE-B",
+      "role": "review",
+      "depends_on": [
+        "b-build"
+      ],
+      "slots": 1,
+      "resources": {
+        "worktree:/tmp/skillglass-example/b": "read"
+      },
+      "instructions": "Demonstration only. Do not implement live Linear work from this fixture.",
+      "context": [
+        "docs/agents/agentic-loop.md"
+      ]
+    },
+    {
+      "id": "b-decision",
+      "ticket": "EXAMPLE-B",
+      "role": "decision",
+      "depends_on": [
+        "b-standards",
+        "b-spec"
+      ],
+      "slots": 1,
+      "resources": {
+        "worktree:/tmp/skillglass-example/b": "read"
+      },
+      "instructions": "Demonstration only. Do not implement live Linear work from this fixture.",
+      "context": [
+        "docs/agents/agentic-loop.md"
+      ]
+    },
+    {
+      "id": "b-gate",
+      "ticket": "EXAMPLE-B",
+      "role": "gate",
+      "depends_on": [
+        "b-decision"
+      ],
+      "slots": 3,
+      "resources": {
+        "worktree:/tmp/skillglass-example/b": "write"
+      },
+      "instructions": "Demonstration only. Do not implement live Linear work from this fixture.",
+      "context": [
+        "docs/agents/agentic-loop.md"
+      ]
+    },
+    {
+      "id": "b-accept",
+      "ticket": "EXAMPLE-B",
+      "role": "accept",
+      "depends_on": [
+        "b-gate"
+      ],
+      "slots": 1,
+      "resources": {
+        "worktree:/tmp/skillglass-example/b": "read"
+      },
+      "instructions": "Demonstration only. Do not implement live Linear work from this fixture.",
+      "context": [
+        "docs/agents/agentic-loop.md"
+      ]
+    }
+  ]
+}
