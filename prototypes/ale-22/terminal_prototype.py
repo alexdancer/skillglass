@@ -54,8 +54,8 @@ class OperationRefusal(PrototypeError):
 
 class FixtureArgumentParser(argparse.ArgumentParser):
     def error(self, message: str) -> None:
-        self.print_usage(sys.stderr)
         print(BANNER, file=sys.stderr)
+        self.print_usage(sys.stderr)
         print(f"ERROR: {message}", file=sys.stderr)
         raise SystemExit(EXIT_USAGE)
 
@@ -880,7 +880,7 @@ class RawTerminal:
 
     def __enter__(self) -> "RawTerminal":
         self.original = termios.tcgetattr(self.fd)
-        tty.setraw(self.fd)
+        tty.setcbreak(self.fd)
         return self
 
     def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
@@ -916,7 +916,7 @@ class RawTerminal:
             print(prompt, end="", flush=True)
             return sys.stdin.readline().rstrip("\r\n")
         finally:
-            tty.setraw(self.fd)
+            tty.setcbreak(self.fd)
 
 
 class Browser:
@@ -1370,8 +1370,13 @@ def command_walkthrough(state: FixtureState, args: argparse.Namespace) -> int:
 
 
 def stripped_terminal_output(raw: bytes) -> str:
-    text = raw.decode("utf-8", errors="replace").replace("\r", "")
+    text = raw.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "")
     return ANSI_RE.sub("", text)
+
+
+def bare_line_feed_count(raw: bytes) -> int:
+    """Count output newlines that a real terminal would not return to column zero."""
+    return sum(byte == 10 and (index == 0 or raw[index - 1] != 13) for index, byte in enumerate(raw))
 
 
 def visible_terminal_frames(raw: bytes, rows: int = 30) -> list[str]:
@@ -1402,7 +1407,7 @@ def drain_fd(fd: int, duration: float) -> bytes:
     return b"".join(chunks)
 
 
-def run_pty_browser(command: list[str], env: dict[str, str], width: int) -> tuple[int, str, list[str]]:
+def run_pty_browser(command: list[str], env: dict[str, str], width: int) -> tuple[int, str, list[str], int]:
     master, slave = pty.openpty()
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 30, width, 0, 0))
     process = subprocess.Popen(command, stdin=slave, stdout=slave, stderr=slave, env=env, close_fds=True)
@@ -1462,7 +1467,12 @@ def run_pty_browser(command: list[str], env: dict[str, str], width: int) -> tupl
     raw.extend(drain_fd(master, 0.2))
     os.close(master)
     raw_bytes = bytes(raw)
-    return return_code, stripped_terminal_output(raw_bytes), visible_terminal_frames(raw_bytes)
+    return (
+        return_code,
+        stripped_terminal_output(raw_bytes),
+        visible_terminal_frames(raw_bytes),
+        bare_line_feed_count(raw_bytes),
+    )
 
 
 def run_pty_dialog(command: list[str], env: dict[str, str], responses: Sequence[bytes]) -> tuple[int, str]:
@@ -1512,14 +1522,30 @@ def command_verify(_state: FixtureState, args: argparse.Namespace) -> int:
         for directory in [env["HOME"], env["TMPDIR"], env["XDG_CACHE_HOME"], env["XDG_CONFIG_HOME"], env["XDG_DATA_HOME"]]:
             Path(directory).mkdir(parents=True, exist_ok=True)
 
-        def capture(name: str, command_args: list[str], expected: int, tokens: Sequence[str]) -> str:
-            command = [sys.executable, str(script)] + command_args + ["--fixture", str(fixture)]
+        def capture(
+            name: str,
+            command_args: list[str],
+            expected: int,
+            tokens: Sequence[str],
+            *,
+            include_fixture: bool = True,
+            first_line: str | None = None,
+        ) -> str:
+            command = [sys.executable, str(script)] + command_args
+            if include_fixture:
+                command += ["--fixture", str(fixture)]
             result = subprocess.run(command, text=True, capture_output=True, env=env, stdin=subprocess.DEVNULL)
             combined = result.stdout + result.stderr
             (output / f"{name}.txt").write_text(combined, encoding="utf-8")
             current_hash = hashlib.sha256(fixture.read_bytes()).hexdigest()
             missing = [token for token in tokens if token not in combined]
-            passed = result.returncode == expected and not missing and current_hash == fixture_hash
+            actual_first_line = combined.splitlines()[0] if combined.splitlines() else ""
+            passed = (
+                result.returncode == expected
+                and not missing
+                and (first_line is None or actual_first_line == first_line)
+                and current_hash == fixture_hash
+            )
             records.append(
                 {
                     "name": name,
@@ -1527,6 +1553,8 @@ def command_verify(_state: FixtureState, args: argparse.Namespace) -> int:
                     "expected_exit": expected,
                     "actual_exit": result.returncode,
                     "missing_tokens": missing,
+                    "expected_first_line": first_line,
+                    "actual_first_line": actual_first_line,
                     "fixture_unchanged": current_hash == fixture_hash,
                     "passed": passed,
                 }
@@ -1535,6 +1563,14 @@ def command_verify(_state: FixtureState, args: argparse.Namespace) -> int:
                 raise AssertionError(f"{name} failed; inspect {output / f'{name}.txt'}")
             return combined
 
+        capture(
+            "malformed-missing-fixture",
+            ["list"],
+            EXIT_USAGE,
+            [BANNER, "usage: skillglass list", "--fixture"],
+            include_fixture=False,
+            first_line=BANNER,
+        )
         capture("list-research", ["list", "--project", project, "--query", "research"], 0, [BANNER, "shared.research", "references 3"])
         capture("list-review", ["list", "--project", project, "--query", "review"], 0, ["copy.codex", "copy.claude", "DUPLICATE NAME"])
         capture("read-copy", ["read", "copy.codex"], 0, ["Instructions", "references/checklist.md", "native-unverified"])
@@ -1613,7 +1649,7 @@ def command_verify(_state: FixtureState, args: argparse.Namespace) -> int:
                 "--agent",
                 "Codex",
             ]
-            return_code, text, viewports = run_pty_browser(command, env, width)
+            return_code, text, viewports, bare_line_feeds = run_pty_browser(command, env, width)
             capture_path = output / f"browser-{width}x30.txt"
             capture_path.write_text(text, encoding="utf-8")
             viewport_path = output / f"browser-{width}x30-viewports.txt"
@@ -1635,6 +1671,7 @@ def command_verify(_state: FixtureState, args: argparse.Namespace) -> int:
                 and not missing
                 and not overflow
                 and not viewport_missing_context
+                and bare_line_feeds == 0
                 and current_hash == fixture_hash
             )
             records.append(
@@ -1647,6 +1684,7 @@ def command_verify(_state: FixtureState, args: argparse.Namespace) -> int:
                     "overflow_line_count": len(overflow),
                     "visible_frame_count": len(viewports),
                     "visible_frames_missing_context": viewport_missing_context,
+                    "bare_line_feed_count": bare_line_feeds,
                     "fixture_unchanged": current_hash == fixture_hash,
                     "passed": passed,
                 }

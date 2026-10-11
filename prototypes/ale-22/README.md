@@ -64,6 +64,8 @@ Disable prints a preview first. At a TTY it asks `Apply this disable? [y/N]`; re
 
 Delete never accepts a generic yes flag. At a TTY it requires `DELETE <SOURCE_ID>`. Redirected input requires the matching `--confirm-delete SOURCE_ID`. Missing or mismatched confirmation exits `2` without a state change. Unsupported, managed, or stale operations exit `3`. Cancellation exits `0`. Ctrl-C exits `130`.
 
+Malformed invocations print `FIXTURE DATA - agent behavior unverified` before usage or error text and exit `2`.
+
 A display name cannot select a control target. `copy.codex` and `copy.claude` are independent sources named `review`; `shared.research` is one source with Codex, Hermes, and CodeAF references.
 
 ## Fixture model
@@ -88,7 +90,9 @@ python3 prototypes/ale-22/terminal_prototype.py verify \
   --output /tmp/ale-22-evidence
 ```
 
-The verifier copies only the inert fixture into a temporary root, supplies temporary HOME, XDG, and TMPDIR values, checks command text and exit status, hashes the fixture after every case, drives the browser through a PTY, rejects horizontal overflow, and saves text captures. It is a walkthrough harness for this throwaway artifact, not production test architecture.
+The verifier copies only the inert fixture into a temporary root, supplies temporary HOME, XDG, and TMPDIR values, checks command text and exit status, hashes the fixture after every case, drives the browser through a PTY, rejects horizontal overflow, rejects bare line feeds that would produce staircase rendering in a real terminal, and saves text captures. It is a walkthrough harness for this throwaway artifact, not production test architecture.
+
+Earlier transcript captures normalized carriage returns and therefore cannot prove terminal rendering. Actual tmux pane captures supersede that rendering evidence. The semantic and fixture-isolation checks remain valid.
 
 ## Decisions carried forward
 
