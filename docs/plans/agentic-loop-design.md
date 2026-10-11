@@ -22,9 +22,9 @@ The completion predicate is an executable coordination mechanism with behavior t
 
 ## Grounding
 
-The repository contains planning documents and a one-ticket coding workflow. It has no application code or existing scheduler. The installed no-mistakes v1.79.0 supports `axi run --yes`, `--base-branch`, bounded waits, and explicit step skips. It validates committed feature-branch history. Its doctor reports a runnable Pi agent and a stopped daemon. This repository has not been initialized for no-mistakes.
+At framing, the repository contained planning documents and a one-ticket coding workflow, with no application code or scheduler. The initial no-mistakes v1.79.0 inspection found a runnable Pi backend and a stopped daemon before pipeline initialization. These are historical observations, not current runtime state. Use the [operating guide](../agents/agentic-loop.md#drive-no-mistakes-without-routine-questions) for current CLI compatibility and custody checks.
 
-The user authorized local commits for the loop after confirming the no-mistakes prerequisite. The new request also authorizes unattended ordinary review decisions and fixes. Publication, merge, and closure remain separate.
+The [operating guide](../agents/agentic-loop.md) owns the loop's authorization and delegation boundaries.
 
 Codex exposes native collaboration tools. The pstack compatibility mapping forbids copying Cursor runtime commands or model names into Codex. Cursor-only helper tools are not available here.
 
@@ -38,8 +38,8 @@ The [implementation contract](agentic-loop-contract.md) defines the data shape a
 
 ## Verification record
 
-The executable behavior suite passed 20 tests. It covers competing processes, capacity, resource exclusion, idempotent claims and results, stale leases, acceptance dependencies, immutable evidence, and authorization. Run `python3 -m unittest discover -s tests/agent_loop -v` to repeat it. Native Spec review found that the example needed an explicit repair writer between decision and validation. The revised graph gives that job exclusive ownership through fix, test, and renewed review.
+The executable behavior suite passed 20 tests. It covers competing processes, capacity, resource exclusion, idempotent claims and results, stale leases, acceptance dependencies, immutable evidence, and authorization. See the [README](../../README.md#development-workflow) for the repeatable check command. Native Spec review found that the example needed an explicit repair writer between decision and validation. The revised graph gives that job exclusive ownership through fix, test, and renewed review.
 
-The scheduler does not validate the truth of an agent's evidence, Git ancestry, filesystem isolation, or no-mistakes outcomes. The coordinator owns those checks. The operating guide distinguishes them from scheduler guarantees. Review and live pipeline results are recorded in the local `.agent-loop/` decision trail.
+The [implementation contract](agentic-loop-contract.md) owns scheduler guarantees; the [operating guide](../agents/agentic-loop.md#accept-results-and-resume-safely) owns coordinator acceptance checks. Review and live pipeline results are recorded in the local `.agent-loop/` decision trail.
 
 The Cursor-only `control-cli`, `deslop`, and registered Comment Sicko runtime are unavailable under the installed cross-agent mapping. Verification uses the real Python CLI, independent native review, and no-mistakes. Those unavailable skill runs are not claimed as completed.

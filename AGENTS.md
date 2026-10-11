@@ -4,7 +4,7 @@
 
 When implementing a ticket or fixing a bug, follow `docs/agents/coding-workflow.md` for the Matt Pocock skill sequence, project adaptations, and approval boundary.
 
-For an explicitly requested parallel or autonomous run, use `docs/agents/agentic-loop.md` and `tools/agent_loop.py`. Local feature-branch commits and ordinary delegated review decisions are authorized for that loop. Pushes, PR publication, merges, and ticket closure remain separate. A no-mistakes validation-step agent performs only its assigned phase and never becomes the outer loop coordinator.
+For an explicitly requested parallel or autonomous run, follow `docs/agents/agentic-loop.md` for scheduling, delegated decisions, approval boundaries, and no-mistakes pipeline custody.
 
 ### Issue tracker
 

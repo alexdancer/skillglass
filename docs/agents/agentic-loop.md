@@ -28,7 +28,7 @@ The plan is immutable. Repeating initialization with the same plan is safe. A sc
 
 Keep one coordinator as the only scheduler writer. A worker reports into its own artifact directory. Give every code-writing agent its own branch and worktree. Canonicalize resource paths before constructing the plan. The scheduler compares resource keys exactly and does not enforce filesystem permissions.
 
-The available host capacity includes the coordinator. This session exposes four slots, so at most three native delegates fit. Recompute capacity in later sessions. Count nested agents and reserve the configured peak no-mistakes fan-out before admitting a gate job. Inspect its actual backend configuration rather than guessing. If the peak is unknown, hold that job while independent non-gate work proceeds. Do not promise that the scheduler limits subprocesses launched outside it.
+Inspect the active host's capacity before planning each run. If that limit includes the coordinator, reserve its slot and set the plan's capacity to the remaining delegate slots. Count nested agents and reserve the configured peak no-mistakes fan-out before admitting a gate job. Inspect its actual backend configuration rather than guessing. If the peak is unknown, hold that job while independent non-gate work proceeds. Do not promise that the scheduler limits subprocesses launched outside it.
 
 Claim before launch, then bind the returned native agent identity.
 
@@ -37,7 +37,7 @@ python3 tools/agent_loop.py --db .agent-loop/run.sqlite claim --owner worker-1
 python3 tools/agent_loop.py --db .agent-loop/run.sqlite bind --job JOB --token TOKEN --agent NATIVE_AGENT_ID
 ```
 
-Use the assignment to call `collaboration.spawn_agent` or resume a known idle agent with `followup_task`. Pass pointers to the ticket, full intent, owned paths, exact base, skills, checks, and output directory. Include the commit and publication boundaries. Workers do not spawn extra agents unless the coordinator has reserved their capacity.
+Use the assignment with the active Codex host's exposed native collaboration tools to spawn an agent or resume a known idle agent. Inspect the actual tool names and schemas; the scheduler does not supply host APIs. Pass pointers to the ticket, full intent, owned paths, exact base, skills, checks, and output directory. Include the commit and publication boundaries. Workers do not spawn extra agents unless the coordinator has reserved their capacity.
 
 Repeat claims for distinct owners until no eligible job fits. Repeating an owner returns its existing lease. Capacity and conflicting read/write resources constrain admission. Independent read-only reviewers can share a frozen candidate. Writers cannot share it with a reviewer or another writer.
 
@@ -86,7 +86,7 @@ The explicit skips preserve this loop's publication boundary. `--yes` authorizes
 
 Read every response. A bounded wait is not failure. Inspect status and reattach to the matching run. Do not start a second run because a process is quiet. Capture the raw output, run ID, submitted head, current head, and full intent digest. If strict receipts are used, reuse the recorded `--launch-nonce` and `--validation-generation` for that attempt according to installed help.
 
-Only the outer AXI controller runs pipeline-control commands. An agent assigned a validation phase performs that phase and returns. `nested_gate_context` means return control immediately. No agent edits an active candidate directly, aborts to bypass a gate, or hand-rebases a live monitor.
+Only the outer AXI controller runs pipeline-control commands. An agent assigned a validation phase performs that phase, including any fixes authorized by its phase prompt, and returns. `nested_gate_context` means return control immediately. Candidate edits during a pipeline are confined to its controller-assigned phases; outside agents remain read-only. Never abort to bypass a gate or hand-rebase a live monitor.
 
 Protected-path refusals and Test unvalidated-work refusals remain explicit exceptions under the installed CLI. Preserve the full finding, path, rule, and affected head. Delegate investigation and fix a real validation problem through the documented retry path when allowed. Do not waive a required operator decision. Leave that job blocked and continue independent work.
 

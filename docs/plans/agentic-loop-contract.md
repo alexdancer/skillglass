@@ -4,7 +4,7 @@ This contract defines the first local scheduler. It does not launch models, run 
 
 ## Public interface
 
-Use Python 3.10 or later and the standard library. The entry point is `tools/agent_loop.py`. Every command accepts `--db PATH`. Output is one JSON object. Errors use exit 2 and a JSON error on stdout. Successful commands use exit 0.
+Use Python 3.10 or later and the standard library. The entry point is `tools/agent_loop.py`. Every operational command requires `--db PATH` and outputs one JSON object. Errors use exit 2 and a JSON error on stdout. Successful commands use exit 0. `--help` prints argparse's plain-text usage and exits 0.
 
 - `init --plan PATH [--allow-local-commits]`. Create a database from a validated immutable plan. Repeating the exact normalized plan and authorization is a no-op. Refuse a different plan or authorization at the same database.
 - `claim --owner NAME`. Atomically reserve one runnable job. Repeating an owner returns its existing active lease. If nothing fits, return `assignment: null` and status. A lease has a random token and increasing job attempt number. Record reservation before native launch.
