@@ -64,7 +64,11 @@ Freeze the candidate and run Matt Pocock `code-review` Standards and Spec axes i
 
 Give material findings to an independent decision agent with the exact candidate, full intent, and acceptance criteria. It returns `fix`, `dismiss`, or `blocked`, with evidence and the rule it applied. Use `finding-verification` for behavioral defect claims. A smell alone does not justify a rewrite. Delegate reversible choices within scope. The coordinator owns the decision and checks the evidence.
 
-Before a pipeline is active, one implementer fixes accepted findings and reruns affected checks. After a pipeline starts, all fixes go through its AXI controller. Never give a second writer access to an active pipeline candidate.
+Schedule an explicit `work` job named `repair` after the read-only decision and before the gate. Give it write ownership of the ticket worktree and enough slots for its implementer and renewed Standards/Spec reviews. The example plan reserves three. The decision publishes findings and rationale as an artifact. It never edits the candidate.
+
+Keep the repair lease active through each fix, test, frozen-candidate review, and decision iteration. Do not mark it passed until the current head satisfies the checks. With no accepted findings, verify that the candidate is unchanged and complete the repair job. A review job passing means its review report is accepted; it does not imply that the candidate has no findings. The repair and ticket acceptance checkpoints assess that result. This avoids reopening a passed build or creating unscheduled writers under an immutable plan.
+
+After three iterations with the same failure, assign a fresh diagnostic agent within the reservation and reconsider the failed assumption. Continue when it produces a supported correction. Otherwise record a concrete blocker and preserve the candidate. After a pipeline starts, all fixes go through its AXI controller. Never give a second writer access to an active pipeline candidate.
 
 ## Drive no-mistakes without routine questions
 

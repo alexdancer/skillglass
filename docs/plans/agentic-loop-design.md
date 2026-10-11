@@ -38,7 +38,7 @@ The [implementation contract](agentic-loop-contract.md) defines the data shape a
 
 ## Verification record
 
-The executable behavior suite passed 19 tests. It covers competing processes, capacity, resource exclusion, idempotent claims and results, stale leases, acceptance dependencies, immutable evidence, and authorization. Run `python3 -m unittest discover -s tests/agent_loop -v` to repeat it.
+The executable behavior suite passed 20 tests. It covers competing processes, capacity, resource exclusion, idempotent claims and results, stale leases, acceptance dependencies, immutable evidence, and authorization. Run `python3 -m unittest discover -s tests/agent_loop -v` to repeat it. Native Spec review found that the example needed an explicit repair writer between decision and validation. The revised graph gives that job exclusive ownership through fix, test, and renewed review.
 
 The scheduler does not validate the truth of an agent's evidence, Git ancestry, filesystem isolation, or no-mistakes outcomes. The coordinator owns those checks. The operating guide distinguishes them from scheduler guarantees. Review and live pipeline results are recorded in the local `.agent-loop/` decision trail.
 

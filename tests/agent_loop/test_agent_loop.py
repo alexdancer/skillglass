@@ -11,6 +11,7 @@ import unittest
 
 
 SCRIPT = Path(os.environ.get("AGENT_LOOP_SCRIPT", Path(__file__).resolve().parents[2] / "tools" / "agent_loop.py"))
+EXAMPLE = Path(os.environ.get("AGENT_LOOP_EXAMPLE", SCRIPT.parent / "agent-loop" / "example-plan.json"))
 BASE = "a" * 40
 HEAD = "b" * 40
 
@@ -295,6 +296,38 @@ class AgentLoopTests(unittest.TestCase):
         oversized = self.evidence(assignment, summary="x" * (1024 * 1024))
         self.finish(assignment, oversized, code=2)
         self.finish(assignment)
+
+    def test_published_example_requires_exclusive_repair_before_gate_and_accept(self):
+        plan = json.loads(EXAMPLE.read_text())
+        plan["base_sha"] = BASE
+        self.initialize(plan, allow=True)
+
+        def take(expected):
+            assignment = self.claim(f"owner-{expected}")
+            self.assertIsNotNone(assignment)
+            self.assertEqual(assignment["job"], expected)
+            return assignment
+
+        first = take("a-build")
+        second = take("b-build")
+        self.finish(first)
+        for prefix in ("a", "b"):
+            standards = take(f"{prefix}-standards")
+            spec = take(f"{prefix}-spec")
+            self.finish(standards)
+            self.finish(spec)
+            self.finish(take(f"{prefix}-decision"))
+            if prefix == "a":
+                self.assertIsNone(self.claim("capacity-probe"))
+                self.finish(second)
+            repair = take(f"{prefix}-repair")
+            self.assertIsNone(self.claim("repair-probe"))
+            self.finish(repair)
+            gate = take(f"{prefix}-gate")
+            self.assertIsNone(self.claim("gate-probe"))
+            self.finish(gate)
+            self.finish(take(f"{prefix}-accept"))
+        self.assertIsNone(self.claim("complete-probe"))
 
     def test_context_and_check_commands_are_never_executed(self):
         marker = self.root / "unexpected-execution"

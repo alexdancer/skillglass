@@ -69,11 +69,27 @@
       ]
     },
     {
+      "id": "a-repair",
+      "ticket": "EXAMPLE-A",
+      "role": "work",
+      "depends_on": [
+        "a-decision"
+      ],
+      "slots": 3,
+      "resources": {
+        "worktree:/tmp/skillglass-example/a": "write"
+      },
+      "instructions": "Demonstration only. Hold this lease through accepted fixes, behavior checks, and renewed parallel Standards/Spec reviews. Do not start live tickets.",
+      "context": [
+        "docs/agents/agentic-loop.md"
+      ]
+    },
+    {
       "id": "a-gate",
       "ticket": "EXAMPLE-A",
       "role": "gate",
       "depends_on": [
-        "a-decision"
+        "a-repair"
       ],
       "slots": 3,
       "resources": {
@@ -164,11 +180,27 @@
       ]
     },
     {
+      "id": "b-repair",
+      "ticket": "EXAMPLE-B",
+      "role": "work",
+      "depends_on": [
+        "b-decision"
+      ],
+      "slots": 3,
+      "resources": {
+        "worktree:/tmp/skillglass-example/b": "write"
+      },
+      "instructions": "Demonstration only. Hold this lease through accepted fixes, behavior checks, and renewed parallel Standards/Spec reviews. Do not start live tickets.",
+      "context": [
+        "docs/agents/agentic-loop.md"
+      ]
+    },
+    {
       "id": "b-gate",
       "ticket": "EXAMPLE-B",
       "role": "gate",
       "depends_on": [
-        "b-decision"
+        "b-repair"
       ],
       "slots": 3,
       "resources": {
