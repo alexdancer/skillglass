@@ -1,0 +1,244 @@
+{
+  "status": "published-and-verified",
+  "parent": {
+    "id": "ALE-21",
+    "uuid": "800e86f8-7a73-4c3d-b97f-dff3ce50c41f",
+    "title": "Build Skill Viewer v1: browse, explain, compare, and control local skills",
+    "url": "https://linear.app/alex-dancer/issue/ALE-21/build-skill-viewer-v1-browse-explain-compare-and-control-local-skills"
+  },
+  "team_id": "2fc2779d-b7e3-44f7-9d57-57b42e506dba",
+  "project_id": "98ccef31-35e9-422e-80a3-a57774c3b9ef",
+  "label": "ready-for-agent",
+  "state": "Backlog",
+  "native_blocking_edges": 39,
+  "parent_content_and_status_unchanged": true,
+  "issues": [
+    {
+      "review_number": 1,
+      "id": "ALE-22",
+      "uuid": "f3b7e140-af8f-4c36-a6f6-d2f2117a1eb1",
+      "title": "Prototype the terminal journeys",
+      "url": "https://linear.app/alex-dancer/issue/ALE-22/prototype-the-terminal-journeys",
+      "blocked_by": []
+    },
+    {
+      "review_number": 2,
+      "id": "ALE-23",
+      "uuid": "67d44c1f-ff6e-41aa-a41e-41c2a3f742d8",
+      "title": "Browse and read a selected skill collection",
+      "url": "https://linear.app/alex-dancer/issue/ALE-23/browse-and-read-a-selected-skill-collection",
+      "blocked_by": [
+        "ALE-22"
+      ]
+    },
+    {
+      "review_number": 3,
+      "id": "ALE-24",
+      "uuid": "caad995e-bac3-452e-a1d0-97fc098c6357",
+      "title": "Distinguish sources and surface collection problems",
+      "url": "https://linear.app/alex-dancer/issue/ALE-24/distinguish-sources-and-surface-collection-problems",
+      "blocked_by": [
+        "ALE-23"
+      ]
+    },
+    {
+      "review_number": 4,
+      "id": "ALE-25",
+      "uuid": "d97709bf-1244-40b6-bbda-d2bf0562817b",
+      "title": "Compare independent skill bundles",
+      "url": "https://linear.app/alex-dancer/issue/ALE-25/compare-independent-skill-bundles",
+      "blocked_by": [
+        "ALE-24"
+      ]
+    },
+    {
+      "review_number": 5,
+      "id": "ALE-26",
+      "uuid": "9c6ec3b8-d213-45c3-9fca-2e5013d06664",
+      "title": "Browse and explain Codex skills",
+      "url": "https://linear.app/alex-dancer/issue/ALE-26/browse-and-explain-codex-skills",
+      "blocked_by": [
+        "ALE-24"
+      ]
+    },
+    {
+      "review_number": 6,
+      "id": "ALE-27",
+      "uuid": "6ae9dadf-92d2-4873-a396-be47ab32bdd2",
+      "title": "Enable and disable Codex globally",
+      "url": "https://linear.app/alex-dancer/issue/ALE-27/enable-and-disable-codex-globally",
+      "blocked_by": [
+        "ALE-26"
+      ]
+    },
+    {
+      "review_number": 7,
+      "id": "ALE-28",
+      "uuid": "1736e4b0-18f2-4b56-9f54-64c940abd4ab",
+      "title": "Control Codex skills within one project",
+      "url": "https://linear.app/alex-dancer/issue/ALE-28/control-codex-skills-within-one-project",
+      "blocked_by": [
+        "ALE-27"
+      ]
+    },
+    {
+      "review_number": 8,
+      "id": "ALE-29",
+      "uuid": "eec99881-3eb7-4d6b-966d-4502c8fb38b6",
+      "title": "Browse and explain Claude Code skills",
+      "url": "https://linear.app/alex-dancer/issue/ALE-29/browse-and-explain-claude-code-skills",
+      "blocked_by": [
+        "ALE-26"
+      ]
+    },
+    {
+      "review_number": 9,
+      "id": "ALE-30",
+      "uuid": "641cd1e0-921d-4fda-a306-48d625cf5b97",
+      "title": "Enable and disable Claude Code skills",
+      "url": "https://linear.app/alex-dancer/issue/ALE-30/enable-and-disable-claude-code-skills",
+      "blocked_by": [
+        "ALE-27",
+        "ALE-29"
+      ]
+    },
+    {
+      "review_number": 10,
+      "id": "ALE-31",
+      "uuid": "ed2b9610-4458-4ade-8b38-8ddd571e251e",
+      "title": "Browse and explain Hermes skills",
+      "url": "https://linear.app/alex-dancer/issue/ALE-31/browse-and-explain-hermes-skills",
+      "blocked_by": [
+        "ALE-26"
+      ]
+    },
+    {
+      "review_number": 11,
+      "id": "ALE-32",
+      "uuid": "e23e502c-911d-4f2a-bf37-e41ecb6be484",
+      "title": "Enable and disable Hermes skills",
+      "url": "https://linear.app/alex-dancer/issue/ALE-32/enable-and-disable-hermes-skills",
+      "blocked_by": [
+        "ALE-27",
+        "ALE-31"
+      ]
+    },
+    {
+      "review_number": 12,
+      "id": "ALE-33",
+      "uuid": "7b2fc588-fcfe-45fb-a89e-2df6e4ca3093",
+      "title": "Browse and explain Pi skills",
+      "url": "https://linear.app/alex-dancer/issue/ALE-33/browse-and-explain-pi-skills",
+      "blocked_by": [
+        "ALE-26"
+      ]
+    },
+    {
+      "review_number": 13,
+      "id": "ALE-34",
+      "uuid": "86e9973a-6c4d-4037-951a-5b7eaadd4c58",
+      "title": "Enable and disable Pi skills",
+      "url": "https://linear.app/alex-dancer/issue/ALE-34/enable-and-disable-pi-skills",
+      "blocked_by": [
+        "ALE-27",
+        "ALE-33"
+      ]
+    },
+    {
+      "review_number": 14,
+      "id": "ALE-35",
+      "uuid": "401f98e1-9f87-45c1-97c6-92989de8110b",
+      "title": "Browse and explain OpenCode skills",
+      "url": "https://linear.app/alex-dancer/issue/ALE-35/browse-and-explain-opencode-skills",
+      "blocked_by": [
+        "ALE-26"
+      ]
+    },
+    {
+      "review_number": 15,
+      "id": "ALE-36",
+      "uuid": "59efd4ef-c92a-4b60-97be-0110fcfe7ecb",
+      "title": "Enable and disable OpenCode skills",
+      "url": "https://linear.app/alex-dancer/issue/ALE-36/enable-and-disable-opencode-skills",
+      "blocked_by": [
+        "ALE-27",
+        "ALE-35"
+      ]
+    },
+    {
+      "review_number": 16,
+      "id": "ALE-37",
+      "uuid": "a39034c9-4588-4b4d-bbc3-8cb723ec3af3",
+      "title": "Browse and explain Gemini CLI skills",
+      "url": "https://linear.app/alex-dancer/issue/ALE-37/browse-and-explain-gemini-cli-skills",
+      "blocked_by": [
+        "ALE-26"
+      ]
+    },
+    {
+      "review_number": 17,
+      "id": "ALE-38",
+      "uuid": "0228a9d2-a19e-48e9-a798-f633d56a5b4f",
+      "title": "Enable and disable Gemini CLI skills",
+      "url": "https://linear.app/alex-dancer/issue/ALE-38/enable-and-disable-gemini-cli-skills",
+      "blocked_by": [
+        "ALE-27",
+        "ALE-37"
+      ]
+    },
+    {
+      "review_number": 18,
+      "id": "ALE-39",
+      "uuid": "20da3471-68e1-45b8-bd34-2c668c161722",
+      "title": "Browse and explain CodeAF skills",
+      "url": "https://linear.app/alex-dancer/issue/ALE-39/browse-and-explain-codeaf-skills",
+      "blocked_by": [
+        "ALE-26"
+      ]
+    },
+    {
+      "review_number": 19,
+      "id": "ALE-40",
+      "uuid": "bf2107e2-61a7-49f1-bcb4-02beafa1d9cc",
+      "title": "Control a skill across the first supported agents",
+      "url": "https://linear.app/alex-dancer/issue/ALE-40/control-a-skill-across-the-first-supported-agents",
+      "blocked_by": [
+        "ALE-30",
+        "ALE-39"
+      ]
+    },
+    {
+      "review_number": 20,
+      "id": "ALE-41",
+      "uuid": "93b52a3d-66d1-4502-aaee-84d236c80d5d",
+      "title": "Permanently delete a selected skill bundle",
+      "url": "https://linear.app/alex-dancer/issue/ALE-41/permanently-delete-a-selected-skill-bundle",
+      "blocked_by": [
+        "ALE-27",
+        "ALE-29",
+        "ALE-31",
+        "ALE-33",
+        "ALE-35",
+        "ALE-37",
+        "ALE-39"
+      ]
+    },
+    {
+      "review_number": 21,
+      "id": "ALE-42",
+      "uuid": "4a9f3e2c-1758-4499-bea5-e94fc7e8f0fe",
+      "title": "Run the complete offline workflow from a Mac build",
+      "url": "https://linear.app/alex-dancer/issue/ALE-42/run-the-complete-offline-workflow-from-a-mac-build",
+      "blocked_by": [
+        "ALE-25",
+        "ALE-28",
+        "ALE-32",
+        "ALE-34",
+        "ALE-36",
+        "ALE-38",
+        "ALE-40",
+        "ALE-41"
+      ]
+    }
+  ]
+}

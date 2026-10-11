@@ -1,0 +1,29 @@
+# Machine-local tools and review sessions
+/.tools/
+/.lavish/
+/.codegraph/
+
+# Local agent configuration and workspaces
+/.agents/
+/.codex/
+/.claude/
+/.hermes/
+/.worktrees/
+
+# Local credentials and environment overrides
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+
+# Generated build and test output
+/bin/
+/dist/
+/coverage/
+*.test
+coverage.out
+
+# macOS metadata
+.DS_Store
