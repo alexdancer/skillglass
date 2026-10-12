@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -311,25 +312,40 @@ func splitManifest(raw []byte) ([]byte, []byte, error) {
 	return nil, nil, errors.New("frontmatter has no closing --- line")
 }
 
-func validateMetadataKeys(node *yaml.Node) error {
+func validateMetadataNode(node *yaml.Node) error {
+	for _, child := range node.Content {
+		if err := validateMetadataNode(child); err != nil {
+			return err
+		}
+	}
+	if node.Kind == yaml.ScalarNode {
+		var value any
+		if err := node.Decode(&value); err != nil {
+			return err
+		}
+		if text, ok := value.(string); ok && !utf8.ValidString(text) {
+			return fmt.Errorf("line %d: metadata string must be valid UTF-8", node.Line)
+		}
+	}
 	if node.Kind == yaml.MappingNode {
+		keys := make(map[string]int, len(node.Content)/2)
 		for index := 0; index < len(node.Content); index += 2 {
 			key := node.Content[index]
-			if key.ShortTag() == "!!merge" {
+			if key.Kind == yaml.ScalarNode && key.Value == "<<" && key.ShortTag() == "!!merge" {
 				continue
 			}
 			var value any
 			if err := key.Decode(&value); err != nil {
 				return err
 			}
-			if _, ok := value.(string); !ok {
+			text, ok := value.(string)
+			if !ok {
 				return fmt.Errorf("line %d: mapping key must be a string, got %T", key.Line, value)
 			}
-		}
-	}
-	for _, child := range node.Content {
-		if err := validateMetadataKeys(child); err != nil {
-			return err
+			if line, exists := keys[text]; exists {
+				return fmt.Errorf("line %d: mapping key %q already defined at line %d", key.Line, text, line)
+			}
+			keys[text] = key.Line
 		}
 	}
 	return nil
@@ -344,7 +360,7 @@ func decodeMetadata(raw []byte) (map[string]any, []string, error) {
 		return nil, nil, errors.New("frontmatter must be a YAML mapping")
 	}
 
-	if err := validateMetadataKeys(&node); err != nil {
+	if err := validateMetadataNode(&node); err != nil {
 		return nil, nil, err
 	}
 	var metadata any
