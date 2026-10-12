@@ -44,6 +44,8 @@ Every screen begins with `FIXTURE DATA - agent behavior unverified` and shows fi
 
 At 96 columns and wider, inventory and detail share a two-column view. Narrower terminals use one-column cards. The 60-column layout is the selected usability floor. A 48-column capture deliberately stresses that decision. Long paths are middle-elided only in the rail; detail, explanation, and previews wrap the complete value.
 
+Wide layouts keep each duplicate-name marker intact. After an action, its result appears between the repeated context rail and the key footer so cancellation, refusal, mismatch, and applied-state feedback remain visible while the next screen is active.
+
 `d` and `D` remain separate keys and use full action labels. A browser disable requires `y`. A browser delete requires the exact, case-sensitive phrase `DELETE <SOURCE_ID>` after its permanent-delete preview.
 
 ## Ordinary command contract
@@ -82,7 +84,7 @@ Fixture assertions use only `declared`, `inferred`, and `unknown`. `unverified` 
 
 ## Repeatable evidence
 
-The same script drives semantic commands and real pseudoterminals at 48, 60, 80, and 120 columns:
+The same script drives semantic commands and real pseudoterminals at 48, 60, 80, the 96-column layout boundary, and 120 columns:
 
 ```sh
 python3 prototypes/ale-22/terminal_prototype.py verify \
@@ -90,7 +92,7 @@ python3 prototypes/ale-22/terminal_prototype.py verify \
   --output /tmp/ale-22-evidence
 ```
 
-The verifier copies only the inert fixture into a temporary root, supplies temporary HOME, XDG, and TMPDIR values, checks command text and exit status, hashes the fixture after every case, drives the browser through a PTY, rejects horizontal overflow, rejects bare line feeds that would produce staircase rendering in a real terminal, and saves text captures. It is a walkthrough harness for this throwaway artifact, not production test architecture.
+The verifier copies only the inert fixture into a temporary root, supplies temporary HOME, XDG, and TMPDIR values, checks command text and exit status, hashes the fixture after every case, drives the browser through a PTY, requires action feedback in the live 30-row viewport, rejects fragmented duplicate markers and horizontal overflow, rejects bare line feeds that would produce staircase rendering in a real terminal, and saves text captures. It is a walkthrough harness for this throwaway artifact, not production test architecture.
 
 Earlier transcript captures normalized carriage returns and therefore cannot prove terminal rendering. Actual tmux pane captures supersede that rendering evidence. The semantic and fixture-isolation checks remain valid.
 

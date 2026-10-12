@@ -468,6 +468,7 @@ class Console:
         title: str,
         body: Iterable[str],
         footer: str | None = None,
+        status: str | None = None,
         clear: bool = False,
         repeat_context: bool = False,
     ) -> None:
@@ -484,6 +485,10 @@ class Console:
             print("-" * min(self.width, 72))
             for line in self.rail(context):
                 print(line)
+        if status:
+            print("-" * min(self.width, 72))
+            for line in self.wrapped(status):
+                print(line)
         if footer:
             print("-" * min(self.width, 72))
             for line in self.wrapped(footer):
@@ -496,9 +501,18 @@ class Console:
             lines.extend(self.field(label, value, width))
         return lines
 
-    def two_pane(self, left: list[str], right: list[str]) -> list[str]:
+    def pane_widths(self) -> tuple[int, int]:
         left_width = min(44, max(34, self.width // 3))
         right_width = self.width - left_width - 3
+        return left_width, right_width
+
+    def two_pane(
+        self,
+        left: list[str],
+        right: list[str],
+        widths: tuple[int, int] | None = None,
+    ) -> list[str]:
+        left_width, right_width = widths or self.pane_widths()
         left_wrapped = self._rewrap_lines(left, left_width)
         right_wrapped = self._rewrap_lines(right, right_width)
         count = max(len(left_wrapped), len(right_wrapped))
@@ -1045,23 +1059,27 @@ class Browser:
         console = Console(self.state)
         source = self.selected_source()
         context = self.context()
+        pane_widths = console.pane_widths() if console.width >= 96 else None
         footer = "j/k or arrows move | / search | Enter open | Esc back/cancel | Tab section | a app | p project | c compare | d disable preview | D delete preview | q quit"
         body: list[str]
         title = "SKILLGLASS BROWSER"
         if self.mode == "inventory":
-            left = self.inventory_panel(console, 44 if console.width >= 96 else None)
-            if console.width >= 96:
-                body = console.two_pane(left, self.selected_summary(console, console.width - 47))
+            if pane_widths:
+                left_width, right_width = pane_widths
+                left = self.inventory_panel(console, left_width)
+                body = console.two_pane(left, self.selected_summary(console, right_width), pane_widths)
             else:
+                left = self.inventory_panel(console)
                 body = left
                 body.extend([""] + self.selected_summary(console))
         elif self.mode == "detail":
             title = f"SOURCE DETAIL - {self.sections[self.section_index]}"
-            detail = self.detail_panel(console, console.width - 47 if console.width >= 96 else None)
-            if console.width >= 96:
-                body = console.two_pane(self.inventory_panel(console, 44), detail)
+            if pane_widths:
+                left_width, right_width = pane_widths
+                detail = self.detail_panel(console, right_width)
+                body = console.two_pane(self.inventory_panel(console, left_width), detail, pane_widths)
             else:
-                body = detail
+                body = self.detail_panel(console)
         elif self.mode == "compare_pick":
             title = "CHOOSE COMPARISON SOURCE"
             body = []
@@ -1084,10 +1102,9 @@ class Browser:
             footer = "PERMANENT DELETE: Enter type target-specific confirmation | n or Esc cancel"
         else:
             body = ["Unknown browser mode"]
-        if self.flash:
-            body = console.wrapped(self.flash) + [""] + body
-            self.flash = ""
-        console.screen(context, title, body, footer, clear=True, repeat_context=True)
+        status = self.flash or None
+        self.flash = ""
+        console.screen(context, title, body, footer, status=status, clear=True, repeat_context=True)
 
     def move(self, delta: int) -> None:
         if self.mode in {"inventory", "detail"}:
@@ -1447,6 +1464,9 @@ def run_pty_browser(command: list[str], env: dict[str, str], width: int) -> tupl
         b"D",
         b"\r",
         b"n\n",
+        b"D",
+        b"\r",
+        b"DELETE copy.codex\n",
         b"\x1b",
         b"q",
     ]
@@ -1637,7 +1657,7 @@ def command_verify(_state: FixtureState, args: argparse.Namespace) -> int:
             ["DELETE RESULT", "Deleted copy.claude permanently", "Fixture file: unchanged"],
         )
 
-        for width in [48, 60, 80, 120]:
+        for width in [48, 60, 80, 96, 120]:
             command = [
                 sys.executable,
                 str(script),
@@ -1657,7 +1677,7 @@ def command_verify(_state: FixtureState, args: argparse.Namespace) -> int:
                 "\n\n".join(f"VISIBLE FRAME {index + 1}\n{frame}" for index, frame in enumerate(viewports)) + "\n",
                 encoding="utf-8",
             )
-            required = [BANNER, "copy.codex", "copy.claude", "BUNDLE COMPARISON", "explicit-only", "DISABLE PREVIEW", "Cancelled - no fixture state changed", "APPLIED to in-memory fixture state", "DELETE PREVIEW", "DELETE copy.claude"]
+            required = [BANNER, "copy.codex", "copy.claude", "BUNDLE COMPARISON", "explicit-only", "DISABLE PREVIEW", "Cancelled - no fixture state changed", "APPLIED to in-memory fixture state", "DELETE PREVIEW", "DELETE copy.claude", "Confirmation did not match"]
             missing = [token for token in required if token not in text]
             overflow = [line for line in text.splitlines() if len(line) > width]
             viewport_missing_context = [
@@ -1665,12 +1685,35 @@ def command_verify(_state: FixtureState, args: argparse.Namespace) -> int:
                 for index, frame in enumerate(viewports)
                 if not all(token in frame for token in ["DATA FIXTURE", "APP ", "SCOPE ", "SOURCE ", "VALIDATION unverified"])
             ]
+            status_minimums = {
+                "Cancelled - no fixture state changed": 2,
+                "APPLIED to in-memory fixture state": 1,
+                "Confirmation did not match": 1,
+            }
+            visible_status_counts = {
+                token: sum(token in frame for frame in viewports) for token in status_minimums
+            }
+            missing_visible_statuses = [
+                token for token, minimum in status_minimums.items() if visible_status_counts[token] < minimum
+            ]
+            initial_viewport = viewports[0] if viewports else ""
+            intact_duplicate_markers = initial_viewport.count("[duplicate name]")
+            fragmented_duplicate_marker_rows = sum(
+                (line.lstrip().startswith("[duplicate") and "[duplicate name]" not in line)
+                or line.lstrip().startswith("name]")
+                for line in initial_viewport.splitlines()
+            )
+            wide_marker_failure = width >= 96 and (
+                intact_duplicate_markers != 2 or fragmented_duplicate_marker_rows != 0
+            )
             current_hash = hashlib.sha256(fixture.read_bytes()).hexdigest()
             passed = (
                 return_code == 0
                 and not missing
                 and not overflow
                 and not viewport_missing_context
+                and not missing_visible_statuses
+                and not wide_marker_failure
                 and bare_line_feeds == 0
                 and current_hash == fixture_hash
             )
@@ -1684,6 +1727,10 @@ def command_verify(_state: FixtureState, args: argparse.Namespace) -> int:
                     "overflow_line_count": len(overflow),
                     "visible_frame_count": len(viewports),
                     "visible_frames_missing_context": viewport_missing_context,
+                    "visible_status_counts": visible_status_counts,
+                    "missing_visible_statuses": missing_visible_statuses,
+                    "intact_duplicate_markers_in_initial_viewport": intact_duplicate_markers,
+                    "fragmented_duplicate_marker_rows_in_initial_viewport": fragmented_duplicate_marker_rows,
                     "bare_line_feed_count": bare_line_feeds,
                     "fixture_unchanged": current_hash == fixture_hash,
                     "passed": passed,
