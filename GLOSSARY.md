@@ -24,7 +24,7 @@ A separate source of skill content, even when it has the same name as another sk
 One skill bundle directory identified by its proven filesystem object when that evidence is available. A source can have several discovery references. Equal names, equal contents, or a shared manifest file do not make separate bundle directories one source.
 
 **Discovery reference**:
-One selected root's path to a source, retaining the original path, resolved path, and custom or project context. Reference provenance does not prove native ownership or availability.
+One selected root's path to a candidate skill bundle, retaining its original location and custom or project context even when it cannot resolve to a source. A resolved path is known only when resolution succeeds; reference provenance does not prove native ownership or availability.
 
 **Shared reference**:
 A second discovery reference proven to reach the same underlying skill bundle directory. Changes to that source can affect every application that uses a shared reference.

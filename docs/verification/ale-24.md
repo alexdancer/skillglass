@@ -1,6 +1,6 @@
 # ALE-24 verification record
 
-ALE-24 adds reference-aware source identity, custom and project provenance, searchable problems, AND-combined view filters, and explicit browser refresh. The [README](../../README.md#build-and-use) owns the current commands, problem codes, JSON fields, browser keys, selection rules, and exit semantics. This document records the public evidence used to verify them.
+ALE-24 adds reference-aware source identity, custom and project provenance, searchable problems, AND-combined view filters, and explicit browser refresh. The [README](../../README.md#build-and-use) owns the current commands, problem codes, JSON fields, browser keys, selection rules, and exit semantics. This document owns current combined-suite verification procedures and ALE-24 coverage; the [ALE-23 record](ale-23.md#runtime-containment-boundary) owns inherited containment limits.
 
 ## Corrections made from executable evidence
 
@@ -25,18 +25,20 @@ ALE-24 adds reference-aware source identity, custom and project provenance, sear
 
 `TestALE24BrowserRefreshSelectionAndProblemPaste` selects a source by its public ID, then applies external rename, row insertion, manifest edit, one-alias retarget, final-alias retarget, and equal-byte path replacement changes. Refresh retains the same proven object through rename and a surviving alias, retains it while filters hide it, and visibly clears it after loss or replacement. The same journey searches Problems with bracketed-pasted shortcut letters and opens the related problem detail.
 
-The full ALE-23 suite runs unchanged. It continues to cover JSON-safe metadata, decoded-key collisions, lossless invalid UTF-8 bytes, root manifest-presence permission failures, overlapping-root problem coverage, bracketed paste, long single-row search tails, scrollable scope, strict viewport restoration, hostile terminal data, and source/settings immutability.
+`TestReviewProblemSearchUsesKnownProvenance` exercises the README's search contract with code, summary, detail, resolved-path, alias, requested-root, and case-folding queries; filter conjunctions; another associated reference's search text; and root-only failures. `TestReviewBrowserProblemSearchFindsOriginalAlias` covers an uppercase original-alias query in a real terminal.
+
+The full inherited ALE-23 coverage continues to run; see the [ALE-23 record](ale-23.md#reproduce-the-acceptance-evidence) for its journeys. Terminal action synchronization was strengthened rather than left unchanged: [the shared action driver](../../tests/acceptance/terminal_action_test.go) captures pre-action cells and dimensions, rejects an already-satisfied postcondition, and waits for changed cells with the semantic postcondition on the current grid. Resize also requires the target dimensions. Ignored paste uses subsequent observable actions as barriers. PTY waits inspect output after an action-specific checkpoint, and the strict end-frame scope-restoration assertion remains in `TestBrowserManyRootsHasScrollableScopeAt60Columns`.
 
 ## Reproduce the acceptance evidence
 
-Use macOS, Go 1.27.1, and `tmux` on PATH. Dependency downloads must already be present because the run disables Go network access. Supply a fresh absolute evidence directory so terminal captures and command receipts cannot mix with an earlier run:
+Use macOS, the [README's Go toolchain and dependency setup](../../README.md#build-and-use), and `tmux` on PATH. Containment checks require macOS `sandbox-exec`; scheduler checks require Python 3.10 or later; shell lint requires `shellcheck` on PATH. Dependency downloads must already be present because the run disables Go network access. Supply a fresh absolute evidence directory so terminal captures and command receipts cannot mix with an earlier run:
 
 ```sh
 evidence="$(pwd)/.agent-loop/ale-24-evidence-$(date +%Y%m%d-%H%M%S)"
 test ! -e "$evidence" && ./tests/acceptance/run.sh "$evidence"
 ```
 
-Inspect `cases.json`, raw PTY bytes, driven keys, pane dimensions, and current tmux cells. The acceptance driver builds the public executable and launches it with synthetic HOME, XDG, project, temporary, and current directories. The product is denied network access, file writes, unrelated file-content reads, and child execution. Fixture manifests prove that commands and browser journeys do not change sources or settings.
+Inspect `cases.json`, raw PTY bytes, driven keys, pane dimensions, and current tmux cells. The acceptance driver builds the public executable and launches it with synthetic HOME, XDG, project, temporary, and current directories. Inspect fixture before/after manifests alongside command and browser receipts for source/settings immutability. The [inherited containment boundary](ale-23.md#runtime-containment-boundary) defines runtime restrictions, positive controls, and their limits.
 
 Run repository checks after the last source or documentation change:
 
@@ -50,10 +52,10 @@ sh -n tests/acceptance/run.sh
 git diff --check
 ```
 
+The formatting check must print no files; use `gofmt -w` on any reported files and rerun. These are local checks, not a claim of green CI. Earlier verification does not cover later changes.
+
 ## Evidence limits
 
 Source identity is proven with the macOS directory object's device, inode, and birth-time information. When that evidence cannot be read, Skillglass keeps the occurrence separate, reports `identity-uncertain`, and does not retain its selection across refresh.
-
-The inherited `sandbox-exec` profile verifies content isolation rather than every metadata operation. It starts from `allow default` because denying ambient metadata reads prevented the dynamic loader or process startup from reaching application code. The evidence therefore proves the five explicit controls above, not a complete macOS capability sandbox.
 
 Permission fixtures verify that the test process itself receives a permission error before accepting an unreadable-path assertion. Environments that bypass POSIX permissions cannot claim that coverage from a mode change alone.
