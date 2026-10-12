@@ -3,7 +3,6 @@ package terminal
 import (
 	"sort"
 	"strings"
-	"unicode/utf8"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -40,13 +39,16 @@ func styledYAMLMetadataLines(value, prefix string, width int, palette browserPal
 }
 
 func yamlMappingKeySpans(value string) ([]sourceSpan, bool) {
+	offsets, ok := yamlSourceOffsets(value)
+	if !ok {
+		return nil, false
+	}
 	var document yaml.Node
 	if err := yaml.Unmarshal([]byte(value), &document); err != nil || len(document.Content) != 1 {
 		return nil, false
 	}
-	lineOffsets := yamlLineOffsets(value)
 	spans := make([]sourceSpan, 0, 8)
-	if !collectYAMLMappingKeySpans(value, lineOffsets, document.Content[0], &spans) {
+	if !collectYAMLMappingKeySpans(value, offsets, document.Content[0], &spans) {
 		return nil, false
 	}
 	sort.Slice(spans, func(left, right int) bool {
@@ -63,7 +65,7 @@ func yamlMappingKeySpans(value string) ([]sourceSpan, bool) {
 	return spans, true
 }
 
-func collectYAMLMappingKeySpans(value string, lineOffsets []int, node *yaml.Node, spans *[]sourceSpan) bool {
+func collectYAMLMappingKeySpans(value string, offsets [][]int, node *yaml.Node, spans *[]sourceSpan) bool {
 	switch node.Kind {
 	case yaml.MappingNode:
 		if len(node.Content)%2 != 0 {
@@ -74,18 +76,18 @@ func collectYAMLMappingKeySpans(value string, lineOffsets []int, node *yaml.Node
 			if key.Kind != yaml.ScalarNode {
 				return false
 			}
-			span, ok := yamlScalarSourceSpan(value, lineOffsets, key)
+			span, ok := yamlScalarSourceSpan(value, offsets, key)
 			if !ok {
 				return false
 			}
 			*spans = append(*spans, span)
-			if !collectYAMLMappingKeySpans(value, lineOffsets, node.Content[index+1], spans) {
+			if !collectYAMLMappingKeySpans(value, offsets, node.Content[index+1], spans) {
 				return false
 			}
 		}
 	case yaml.SequenceNode, yaml.DocumentNode:
 		for _, child := range node.Content {
-			if !collectYAMLMappingKeySpans(value, lineOffsets, child, spans) {
+			if !collectYAMLMappingKeySpans(value, offsets, child, spans) {
 				return false
 			}
 		}
@@ -97,8 +99,8 @@ func collectYAMLMappingKeySpans(value string, lineOffsets []int, node *yaml.Node
 	return true
 }
 
-func yamlScalarSourceSpan(value string, lineOffsets []int, node *yaml.Node) (sourceSpan, bool) {
-	start, ok := yamlSourceOffset(value, lineOffsets, node.Line, node.Column)
+func yamlScalarSourceSpan(value string, offsets [][]int, node *yaml.Node) (sourceSpan, bool) {
+	start, ok := yamlSourceOffset(offsets, node.Line, node.Column)
 	if !ok || start >= len(value) {
 		return sourceSpan{}, false
 	}
@@ -147,30 +149,29 @@ func quotedYAMLScalarEnd(value string, start int, quote byte) (int, bool) {
 	return 0, false
 }
 
-func yamlLineOffsets(value string) []int {
-	offsets := []int{0}
-	for index := 0; index < len(value); index++ {
-		if value[index] == '\n' {
-			offsets = append(offsets, index+1)
+func yamlSourceOffsets(value string) ([][]int, bool) {
+	offsets := [][]int{nil}
+	for index, char := range value {
+		switch char {
+		case '\n':
+			offsets = append(offsets, nil)
+		case '\r':
+			if index+1 >= len(value) || value[index+1] != '\n' {
+				return nil, false
+			}
+		case '\u0085', '\u2028', '\u2029':
+			return nil, false
+		default:
+			line := len(offsets) - 1
+			offsets[line] = append(offsets[line], index)
 		}
 	}
-	return offsets
+	return offsets, true
 }
 
-func yamlSourceOffset(value string, lineOffsets []int, line, column int) (int, bool) {
-	if line < 1 || line > len(lineOffsets) || column < 1 {
+func yamlSourceOffset(offsets [][]int, line, column int) (int, bool) {
+	if line < 1 || line > len(offsets) || column < 1 || column > len(offsets[line-1]) {
 		return 0, false
 	}
-	offset := lineOffsets[line-1]
-	for currentColumn := 1; currentColumn < column; currentColumn++ {
-		if offset >= len(value) || value[offset] == '\n' {
-			return 0, false
-		}
-		_, size := utf8.DecodeRuneInString(value[offset:])
-		if size == 0 {
-			return 0, false
-		}
-		offset += size
-	}
-	return offset, true
+	return offsets[line-1][column-1], true
 }
