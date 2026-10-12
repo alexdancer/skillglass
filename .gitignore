@@ -9,6 +9,9 @@
 /.claude/
 /.hermes/
 /.worktrees/
+/.agent-loop/
+__pycache__/
+*.pyc
 
 # Local credentials and environment overrides
 .env

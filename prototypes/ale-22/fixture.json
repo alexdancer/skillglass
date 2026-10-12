@@ -1,0 +1,262 @@
+{
+  "fixture": {
+    "id": "ale-22-v1",
+    "label": "ALE-22 terminal interaction fixture",
+    "disclaimer": "FIXTURE DATA - agent behavior unverified",
+    "default_project": "/fixture/projects/atlas migration 2026/region central/a deliberately very long checkout name with spaces/teams/research/platform/customer onboarding/workstream alpha/repository/release validation workspace",
+    "default_application": "Codex",
+    "default_scope": "project",
+    "validation": "unverified"
+  },
+  "sources": [
+    {
+      "id": "shared.research",
+      "name": "research",
+      "description": "Research a question against high-trust sources.",
+      "canonical_path": "/fixture/home/shared skills/research",
+      "owner": {
+        "kind": "user"
+      },
+      "digest": "sha256:shared-research-v1",
+      "instructions": "Start with the user's decision. Prefer primary sources, record uncertainty, and separate observed facts from inference.",
+      "resources": [
+        {
+          "path": "references/source-quality.md",
+          "kind": "text",
+          "digest": "sha256:source-quality-v1",
+          "summary": "Source quality rubric"
+        },
+        {
+          "path": "templates/findings.md",
+          "kind": "text",
+          "digest": "sha256:findings-v1",
+          "summary": "Findings template"
+        }
+      ]
+    },
+    {
+      "id": "copy.codex",
+      "name": "review",
+      "description": "Review code with the Codex checklist.",
+      "canonical_path": "/fixture/home/.codex/skills/review",
+      "owner": {
+        "kind": "user"
+      },
+      "digest": "sha256:review-codex-v3",
+      "instructions": "Inspect the complete change. Report correctness and maintainability findings with file and line evidence.",
+      "resources": [
+        {
+          "path": "references/checklist.md",
+          "kind": "text",
+          "digest": "sha256:checklist-codex-v3",
+          "summary": "Codex review checklist"
+        },
+        {
+          "path": "references/codex-output.md",
+          "kind": "text",
+          "digest": "sha256:codex-output-v1",
+          "summary": "Codex output conventions"
+        }
+      ]
+    },
+    {
+      "id": "copy.claude",
+      "name": "review",
+      "description": "Review code with the Claude Code checklist.",
+      "canonical_path": "/fixture/home/Library/Application Support/Skillglass prototype fixtures/agent application collections/Claude Code/a deliberately very long independent skill location with spaces/skills/review",
+      "owner": {
+        "kind": "user"
+      },
+      "digest": "sha256:review-claude-v8",
+      "instructions": "Inspect the complete patch and its tests. Rank behavior, security, and readability findings by user impact.",
+      "resources": [
+        {
+          "path": "references/checklist.md",
+          "kind": "text",
+          "digest": "sha256:checklist-claude-v8",
+          "summary": "Claude Code review checklist"
+        },
+        {
+          "path": "references/security.md",
+          "kind": "text",
+          "digest": "sha256:security-v2",
+          "summary": "Security review prompts"
+        }
+      ]
+    },
+    {
+      "id": "plugin.docs",
+      "name": "docs",
+      "description": "Managed documentation helper supplied by a plugin.",
+      "canonical_path": "/fixture/plugin cache/openai-bundled/skills/docs",
+      "owner": {
+        "kind": "plugin",
+        "plugin_id": "openai-bundled"
+      },
+      "digest": "sha256:plugin-docs-v5",
+      "instructions": "Draft and revise documents using the plugin-managed workflow.",
+      "resources": [
+        {
+          "path": "templates/brief.md",
+          "kind": "text",
+          "digest": "sha256:brief-v4",
+          "summary": "Brief template"
+        }
+      ]
+    }
+  ],
+  "references": [
+    {
+      "id": "ref.codex.research",
+      "source_id": "shared.research",
+      "application": "Codex",
+      "discovered_path": "/fixture/home/.codex/skills/research"
+    },
+    {
+      "id": "ref.hermes.research",
+      "source_id": "shared.research",
+      "application": "Hermes",
+      "discovered_path": "/fixture/home/.hermes/skills/research"
+    },
+    {
+      "id": "ref.codeaf.research",
+      "source_id": "shared.research",
+      "application": "CodeAF",
+      "discovered_path": "/fixture/home/.codeaf/skills/research",
+      "project": "/fixture/projects/atlas migration 2026/region central/a deliberately very long checkout name with spaces/teams/research/platform/customer onboarding/workstream alpha/repository/release validation workspace"
+    },
+    {
+      "id": "ref.codex.review",
+      "source_id": "copy.codex",
+      "application": "Codex",
+      "discovered_path": "/fixture/home/.codex/skills/review"
+    },
+    {
+      "id": "ref.claude.review",
+      "source_id": "copy.claude",
+      "application": "Claude Code",
+      "discovered_path": "/fixture/home/.claude/skills/review"
+    },
+    {
+      "id": "ref.codex.plugin.docs",
+      "source_id": "plugin.docs",
+      "application": "Codex",
+      "discovered_path": "/fixture/plugin cache/openai-bundled/skills/docs"
+    }
+  ],
+  "rules": [
+    {
+      "source_id": "shared.research",
+      "application": "Codex",
+      "project": null,
+      "layer": "global",
+      "state": "available",
+      "certainty": "inferred",
+      "reason": "The fixture declares a global Codex reference with no global deny rule.",
+      "observation": "unknown",
+      "control": {
+        "disable": "supported-in-prototype",
+        "project_override": "supported-in-prototype",
+        "delete": "supported-in-prototype"
+      }
+    },
+    {
+      "source_id": "shared.research",
+      "application": "Codex",
+      "project": "/fixture/projects/atlas migration 2026/region central/a deliberately very long checkout name with spaces/teams/research/platform/customer onboarding/workstream alpha/repository/release validation workspace",
+      "layer": "project override",
+      "state": "explicit-only",
+      "certainty": "declared",
+      "reason": "Atlas requires explicit invocation while the global reference remains available.",
+      "observation": "unknown",
+      "control": {
+        "disable": "supported-in-prototype",
+        "project_override": "supported-in-prototype",
+        "delete": "supported-in-prototype"
+      }
+    },
+    {
+      "source_id": "shared.research",
+      "application": "Hermes",
+      "project": null,
+      "layer": "global",
+      "state": "available",
+      "certainty": "inferred",
+      "reason": "The fixture declares a Hermes reference without a project override.",
+      "observation": "unknown",
+      "control": {
+        "disable": "unverified",
+        "project_override": "unverified",
+        "delete": "supported-in-prototype"
+      }
+    },
+    {
+      "source_id": "shared.research",
+      "application": "CodeAF",
+      "project": null,
+      "layer": "application discovery",
+      "state": "unknown",
+      "certainty": "unknown",
+      "reason": "Conversation detachment and another application's setting do not establish persistent CodeAF disable state.",
+      "observation": "unknown",
+      "control": {
+        "disable": "unsupported",
+        "project_override": "unsupported",
+        "delete": "supported-in-prototype"
+      }
+    },
+    {
+      "source_id": "copy.codex",
+      "application": "Codex",
+      "project": null,
+      "layer": "global",
+      "state": "available",
+      "certainty": "inferred",
+      "reason": "The independent Codex copy is present in the fixture inventory.",
+      "observation": "unknown",
+      "control": {
+        "disable": "supported-in-prototype",
+        "project_override": "supported-in-prototype",
+        "delete": "supported-in-prototype"
+      }
+    },
+    {
+      "source_id": "copy.claude",
+      "application": "Claude Code",
+      "project": null,
+      "layer": "global",
+      "state": "available",
+      "certainty": "inferred",
+      "reason": "The independent Claude Code copy is present in the fixture inventory.",
+      "observation": "unknown",
+      "control": {
+        "disable": "supported-in-prototype",
+        "project_override": "supported-in-prototype",
+        "delete": "supported-in-prototype"
+      }
+    },
+    {
+      "source_id": "plugin.docs",
+      "application": "Codex",
+      "project": null,
+      "layer": "managed plugin",
+      "state": "available",
+      "certainty": "declared",
+      "reason": "The fixture declares plugin ownership; only whole-plugin management is known, which is broader than this source action.",
+      "observation": "unknown",
+      "control": {
+        "disable": "unsupported",
+        "project_override": "unsupported",
+        "delete": "unsupported"
+      }
+    }
+  ],
+  "unresolved_implementation_facts": [
+    "Real discovery roots and source identity rules for every agent application",
+    "Native configuration schemas, precedence, and reload behavior",
+    "Per-application and per-project writer support at recorded versions",
+    "Managed plugin control granularity and ownership APIs",
+    "CodeAF persistent per-skill control and live session observation",
+    "Production deletion boundaries, stale preview detection, interruption handling, and recovery behavior"
+  ]
+}

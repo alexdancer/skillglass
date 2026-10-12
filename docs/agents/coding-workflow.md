@@ -2,7 +2,7 @@
 
 Use the installed Matt Pocock skills in the sequence below. Read each linked `SKILL.md` when its stage applies, using the Skill tool if available or reading the file directly. This document supplies project scope and adaptations.
 
-**Default run:** one requested ticket, implemented, tested, and reviewed. The user chose to stop before commits or ticket closure. That overrides automatic commits, merges, PR publication, closure, and further ticket dispatch in individual skills. Continue routine fixes within the authorized ticket; a broader run requires the user's authorization.
+**Default run:** one requested ticket, implemented, tested, and reviewed. Outside the agentic loop, stop before commits or ticket closure. For an explicitly requested parallel or autonomous run, use the approval and delegation boundaries in [agentic-loop.md](agentic-loop.md). Continue fixes within the authorized scope.
 
 ## 1. Orchestrate with implement-spec
 
@@ -10,7 +10,7 @@ Use [implement-spec](/Users/alex/.agents/skills/implement-spec/SKILL.md) to read
 
 Setup, `to-spec`, and `to-tickets` are complete. The local [specification](../specs/skill-viewer-v1.md) and [ticket breakdown](../plans/skill-viewer-v1-ticket-breakdown.md) are references; Linear holds current requirements and state. Read the glossary, relevant ADRs, code, local changes, and verification commands. State a short plan mapping acceptance criteria to observable behavior. CodeGraph was explicitly skipped; proceed without initializing it or asking again.
 
-Use one integration branch for the spec once Git is established. Read [launch-subagent](/Users/alex/.agents/skills/launch-subagent/SKILL.md), then assign the selected ticket to an implementer in its own branch/worktree based on the integration tip. Pass context pointers and the no-commit stopping rule. Verify ancestry before work, preserving existing changes instead of blindly resetting them. Review in the ticket worktree; integration waits for step 6.
+Use one integration branch for the spec once Git is established. Read [launch-subagent](/Users/alex/.agents/skills/launch-subagent/SKILL.md), then assign the selected ticket to an implementer in its own branch/worktree based on the integration tip. Pass context pointers and the applicable approval boundary from the default run or agentic-loop guide. Verify ancestry before work, preserving existing changes instead of blindly resetting them. Review in the ticket worktree; integration waits for step 6.
 
 **Before Git exists:** preserve an exact scoped before-state and file manifest, and use an isolated directory for the implementer. Record branch/worktree stages as pending. Do not create an initial commit to bypass the approval boundary. Preserve the baseline and reviewed changes for the subsequently authorized Git setup.
 
@@ -36,7 +36,7 @@ Use [code-review](/Users/alex/.agents/skills/code-review/SKILL.md) with two inde
 
 **Pre-commit adaptation:** `git diff <fixed-point>...HEAD` excludes uncommitted work. Pin the before-state before editing and freeze a reproducible candidate bundle containing the complete scoped change: staged, unstaged, and untracked files, deletions, and relevant modes/symlinks. Record its path manifest and digest. Preserve unrelated local work separately.
 
-For Git review, obtain the user's supplied or approved fixed point once, validate it, and record its immutable SHA. If absent, propose the starting integration SHA and ask as `code-review` requires. Include the scoped tracked working-tree delta against that base and complete untracked contents. Without Git, compare the preserved before/after trees and label this a snapshot review. An invalid base or empty complete candidate must be resolved before dispatch; do not manufacture commits to enable review.
+For Git review, record and validate the immutable fixed-point SHA. Use a user-supplied point when present. In the agentic loop, delegated decision authority permits selecting the starting base without another question. Outside that loop, propose the starting integration SHA and ask as `code-review` requires. Include the scoped tracked working-tree delta against that base and complete untracked contents for pre-commit reviews. Without Git, compare the preserved before/after trees and label this a snapshot review. An invalid base or empty complete candidate must be resolved before dispatch.
 
 Present separate **Standards** and **Spec** reports, with counts and the worst finding within each axis. Do not merge or rerank the axes.
 
@@ -46,11 +46,11 @@ Use [finding-verification](/Users/alex/.agents/skills/finding-verification/SKILL
 
 Have one implementer fix confirmed defects, rerun affected checks, and re-review material changes against a newly frozen candidate. Report unavailable review and inconclusive findings explicitly.
 
-Present changed behavior, acceptance coverage, exact verification results, both review outcomes, and a runnable artifact plus diff or snapshot manifest. **Stop with the ticket open and changes uncommitted.** Preserve pending work for the user's approval.
+Present changed behavior, acceptance coverage, exact verification results, both review outcomes, and a runnable artifact plus diff or snapshot manifest. **Stop with the ticket open.** The ordinary workflow leaves changes uncommitted; use the [agentic-loop guide](agentic-loop.md) for its commit and custody rules. Preserve pending work for the user's approval.
 
 ## 6. Integrate, then use pr when authorized
 
-After commits/integration are authorized, resume `implement-spec`: commit scoped work, synchronize the ticket branch with the current integration tip, and use a merger subagent to integrate it. Resolve conflicts conservatively. Rerun applicable checks on the integrated artifact and re-review changed behavior or conflict resolutions.
+Only after integration is explicitly authorized (and commits are authorized outside the loop), resume `implement-spec`: commit scoped work, synchronize the ticket branch with the current integration tip, and use a merger subagent to integrate it. Resolve conflicts conservatively. Rerun applicable checks on the integrated artifact and re-review changed behavior or conflict resolutions.
 
 For ALE-22, retain throwaway code on its prototype branch as `prototype` directs; carry only validated decisions into production. Once Git exists, use the preserved baseline and reviewed delta rather than losing the pre-commit review context.
 

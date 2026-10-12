@@ -6,7 +6,7 @@ Skillglass is a planned Go terminal tool for browsing, reading, comparing, and c
 
 ## Status
 
-Planning is complete; application implementation has not started. This repository contains the approved specification, ticket breakdown, research, and coding workflow. There is no runnable application or build/test suite yet.
+Planning is complete; production application implementation has not started. This repository contains the approved specification, ticket breakdown, research, coding workflow, a local agent scheduler with behavior tests, and the [runnable ALE-22 terminal prototype](prototypes/ale-22/README.md). There is no runnable production Skillglass application yet.
 
 The project was planned as **Skill Viewer**. Existing Linear titles and historical planning documents retain that name; **Skillglass** is the product and repository name.
 
@@ -25,6 +25,7 @@ Planned integrations cover Codex, Claude Code, Hermes, Pi, OpenCode, Gemini CLI,
 - [Specification](docs/specs/skill-viewer-v1.md)
 - [Published ticket breakdown](docs/plans/skill-viewer-v1-ticket-breakdown.md)
 - [Coding workflow](docs/agents/coding-workflow.md)
+- [Parallel agentic loop](docs/agents/agentic-loop.md)
 - [Domain glossary](GLOSSARY.md)
 - [Agent instructions](AGENTS.md)
 
@@ -32,7 +33,15 @@ Planned integrations cover Codex, Claude Code, Hermes, Pi, OpenCode, Gemini CLI,
 
 ## Development workflow
 
-Follow the Matt Pocock skill sequence in the [coding workflow](docs/agents/coding-workflow.md): implement one authorized ticket, verify the actual result, and review Standards and Spec independently. Stop before committing or closing the ticket unless the user has authorized those actions. The initial repository setup does not change that rule for future implementation work.
+Follow the Matt Pocock skill sequence in the [coding workflow](docs/agents/coding-workflow.md). Implement authorized work, verify the actual result, and review Standards and Spec independently. For parallel tickets and ticket parts, delegated decisions, and automatic no-mistakes fixes, follow the [agentic-loop operating guide](docs/agents/agentic-loop.md), including its approval boundaries.
+
+The active Codex chat drives the loop through native agents. The scheduler persists leases and evidence across interruptions. It does not launch models or keep running after the coordinating chat ends.
+
+Run the scheduler checks with Python 3.10 or later.
+
+```sh
+python3 -m unittest discover -s tests/agent_loop -v
+```
 
 Skill links in the workflow point to the maintainer's installed local skills; those external skill files are not bundled in this repository.
 
