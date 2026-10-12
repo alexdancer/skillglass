@@ -60,9 +60,6 @@ func TestBrowserPTYJourney(t *testing.T) {
 	}()
 
 	keys := []string{
-		"/",
-		"description-only-literal",
-		"enter",
 		"enter",
 		"G",
 		"esc",
@@ -71,8 +68,8 @@ func TestBrowserPTYJourney(t *testing.T) {
 		"enter",
 		"q",
 	}
-	raw.wait(t, 0, "Selected: none", "Enter read")
-	postconditions := []string{"type to search", "description-only-literal", "Enter read", "Read lines", "LAST_INSTRUCTION_SENTINEL", "Enter read", "type to search", "0 matches | selected source unchanged", "Enter read", ""}
+	raw.wait(t, 0, "Selected: none", "Focus: 1/2", "normal-skill", "Enter read")
+	postconditions := []string{"Read lines", "LAST_INSTRUCTION_SENTINEL", "Enter read", "type to search", "0 matches | selected source unchanged", "Enter read", ""}
 	for index, key := range keys {
 		checkpoint := len(raw.Bytes())
 		payload := key
@@ -152,6 +149,15 @@ func TestBrowserTmuxCellsAtRequiredWidths(t *testing.T) {
 	}
 	fx := newFixture(t)
 	before := treeManifest(t, fx.base)
+	list := fx.run(t, "list", "--root", fx.cleanRoot, "--project", fx.project, "--search", "description-only-literal", "--json")
+	assertExit(t, list, 0)
+	var inventory publicList
+	decodeJSON(t, list.stdout, &inventory)
+	normal := sourceNamed(t, inventory.Sources, "normal-skill")
+	if len(inventory.Sources) != 1 {
+		t.Fatalf("description search returned %d sources, want 1", len(inventory.Sources))
+	}
+	writeEvidence(t, "tmux/description-search-list.json", list.stdout)
 	for _, width := range []int{48, 60, 80, 96, 120} {
 		width := width
 		t.Run(strconv.Itoa(width), func(t *testing.T) {
@@ -176,11 +182,14 @@ func TestBrowserTmuxCellsAtRequiredWidths(t *testing.T) {
 			)
 
 			initial := waitForPane(
-				t, tmux, fx, socket, false, "Selected: none", "normal-skill", "Scope: 1 root |",
+				t, tmux, fx, socket, false, "Selected: none", "normal-skill", "Focus: 1/2", "Scope: 1 root |",
 			)
 			assertPaneCells(t, initial, width, 30)
 			writeEvidence(t, fmt.Sprintf("tmux/%d/00-inventory.txt", width), []byte(initial))
 			if width == 80 {
+				if !strings.Contains(initial, "description-only-literal") {
+					t.Fatalf("initial inventory did not expose the pre-satisfied description predicate:\n%s", initial)
+				}
 				scope := actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() {
 					runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "s")
 				}, "SKILLGLASS | Scope", "Root 1 [searched]", "Esc back")
@@ -198,17 +207,20 @@ func TestBrowserTmuxCellsAtRequiredWidths(t *testing.T) {
 
 			search := actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() {
 				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "/")
-				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "normal-skill")
-			}, "Search: normal-skill", "1/1")
-			assertPaneCells(t, search, width, 30)
+				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "description-only-literal")
+			}, "Search: description-only-literal█", "Focus: 1/1", normal.Name, "type to search")
+			assertSearchViewport(t, search, width, 30, "description-only-literal", true, false)
+			if strings.Contains(search, "second-skill") {
+				t.Fatalf("description search retained a nonmatching inventory row:\n%s", search)
+			}
 			writeEvidence(t, fmt.Sprintf("tmux/%d/01-search.txt", width), []byte(search))
 
 			_ = actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() {
 				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter")
-			}, "Search: normal-skill", "Enter read")
+			}, "Search: description-only-literal", "Focus: 1/1", normal.Name, "Enter read")
 			detail := actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() {
 				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter")
-			}, "Manifest: parsed", "Read lines")
+			}, "Manifest: parsed", "Read lines", "Selector: "+normal.ID)
 			assertPaneCells(t, detail, width, 30)
 			writeEvidence(t, fmt.Sprintf("tmux/%d/02-detail.txt", width), []byte(detail))
 
@@ -230,7 +242,7 @@ func TestBrowserTmuxCellsAtRequiredWidths(t *testing.T) {
 				t.Fatalf("pane dimensions = %q", dimensions)
 			}
 			writeEvidence(t, fmt.Sprintf("tmux/%d/dimensions.txt", width), []byte(dimensions+"\n"))
-			writeEvidence(t, fmt.Sprintf("tmux/%d/keys.txt", width), []byte("/\nnormal-skill\nEnter\nEnter\nG\nq\n"))
+			writeEvidence(t, fmt.Sprintf("tmux/%d/keys.txt", width), []byte("/\ndescription-only-literal\nEnter\nEnter\nG\nq\n"))
 			writeEvidence(t, fmt.Sprintf("tmux/%d/command.txt", width), []byte(commandLine+"\n"))
 			title := strings.TrimSpace(runTmux(
 				t, tmux, fx, socket,
