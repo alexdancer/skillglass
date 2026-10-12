@@ -6,7 +6,7 @@ It reads one inert JSON fixture. Canonical and discovered paths are display stri
 
 ## Start the browser
 
-From the repository root:
+Use Python 3.10 or later on macOS or another Unix-like system. Browser interaction requires a TTY. From the repository root:
 
 ```sh
 python3 prototypes/ale-22/terminal_prototype.py browse \
@@ -82,6 +82,8 @@ Identity is always `sources.id`, never a display name. A preview records source 
 
 Fixture assertions use only `declared`, `inferred`, and `unknown`. `unverified` in the rail means no real agent behavior has been validated.
 
+For the selected source and application, the first rule matching the selected project wins; otherwise the first global rule wins. A project winner lists global rules as lower-precedence context. Rules for other projects and equal-precedence project rules are not shadowed; a global winner has no lower-precedence context. No matching rule yields `unknown`. This is fixture logic, not validated native precedence.
+
 ## Repeatable evidence
 
 The same script drives semantic commands and real pseudoterminals at 48, 60, 80, the 96-column layout boundary, and 120 columns:
@@ -94,6 +96,12 @@ python3 prototypes/ale-22/terminal_prototype.py verify \
 
 The verifier copies only the inert fixture into a temporary root, supplies temporary HOME, XDG, and TMPDIR values, checks command text and exit status, hashes the fixture after every case, drives the browser through a PTY, requires action feedback in the live 30-row viewport, rejects fragmented duplicate markers and horizontal overflow, rejects bare line feeds that would produce staircase rendering in a real terminal, and saves text captures. It is a walkthrough harness for this throwaway artifact, not production test architecture.
 
+The context and navigation regression checks run separately:
+
+```sh
+python3 -B -m unittest discover -s prototypes/ale-22 -p 'test_*.py' -v
+```
+
 Earlier transcript captures normalized carriage returns and therefore cannot prove terminal rendering. Actual tmux pane captures supersede that rendering evidence. The semantic and fixture-isolation checks remain valid.
 
 ## Decisions carried forward
@@ -104,7 +112,7 @@ Earlier transcript captures normalized carriage returns and therefore cannot pro
 - Disable retains content and targets one application and scope. Delete targets one user-owned source and lists known reference effects.
 - Managed plugin controls are refused when only broader whole-plugin management is known.
 - CodeAF persistent per-skill disable is unsupported. Conversation detachment and another application's setting are not evidence of CodeAF disablement.
-- A confirmed fixture action prints the full relevant mutable state and proves unrelated fixture state stayed unchanged.
+- Confirmed ordinary-command actions print the full relevant mutable state and unchanged-state checks. The browser reports the result and unchanged-state checks in its status area; an applied disable opens Why for reinspection.
 
 ## Unresolved implementation facts
 

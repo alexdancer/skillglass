@@ -6,7 +6,7 @@ Skillglass is a planned Go terminal tool for browsing, reading, comparing, and c
 
 ## Status
 
-Planning is complete; application implementation has not started. This repository contains the approved specification, ticket breakdown, research, coding workflow, and a local agent scheduler. The scheduler has its own behavior tests. There is no runnable Skillglass application yet.
+Planning is complete; production application implementation has not started. This repository contains the approved specification, ticket breakdown, research, coding workflow, a local agent scheduler with behavior tests, and the [runnable ALE-22 terminal prototype](prototypes/ale-22/README.md). There is no runnable production Skillglass application yet.
 
 The project was planned as **Skill Viewer**. Existing Linear titles and historical planning documents retain that name; **Skillglass** is the product and repository name.
 
