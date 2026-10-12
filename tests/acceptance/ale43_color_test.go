@@ -248,7 +248,7 @@ func captureColorProbe(
 	runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(width), "-y", "30")
 	_ = waitForPaneAt(t, tmux, fx, socket, target, false, "Focused:", sourceName, "? help", "q quit")
 	runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "Enter")
-	readerNeedles := append([]string{"Rendered instructions"}, instructionNeedles...)
+	readerNeedles := append([]string{"Selected:", "Rendered instructions"}, instructionNeedles...)
 	_ = waitForPaneAt(t, tmux, fx, socket, target, false, readerNeedles...)
 	instructions := captureStyledPane(t, tmux, fx, socket, target)
 	runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "-l", "d")

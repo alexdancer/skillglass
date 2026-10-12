@@ -106,7 +106,7 @@ Dark and light themes share semantic roles:
 
 Dark uses navigation accent `#93C5FD`, content accent `#C4B5FD`, body `#DCE5EF`, muted `#A8B3C3`, code background `#342B47`, and selected background `#20425B`. Light uses navigation accent `#0369A1`, content accent `#6D28D9`, body `#1E293B`, muted `#5A6574`, code background `#EFE8FF`, and selected background `#DBEAFE`.
 
-The Markdown renderer uses the content accent for headings, links, and inline code. Details styles parser-identified YAML mapping keys over the preserved raw text. Values, block-scalar bodies, and malformed raw metadata stay neutral. The renderer does not load ambient Glamour configuration or a separate syntax-color theme. No-color mode emits structural text without SGR styling.
+The Markdown renderer uses the content accent for headings, links, and inline code. Details uses bold content accent for field prefixes (including their colons), section labels, and parser-identified YAML mapping keys over the preserved raw text. Values, colons within values, and literal or folded block-scalar bodies stay neutral. Malformed raw metadata, or metadata whose key spans cannot be safely identified, remains escaped plain text. The renderer does not load ambient Glamour configuration or a separate syntax-color theme. No-color mode emits structural text without SGR styling.
 
 `browse --theme auto|dark|light|none` selects presentation deterministically. `NO_COLOR` overrides dark or light to none. Auto selects light only from a light `COLORFGBG` background and otherwise uses dark. Theme selection reads environment values but writes no settings.
 
