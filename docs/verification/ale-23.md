@@ -12,6 +12,7 @@ ALE-23 adds the first production `skillglass` executable. Its immutable collecti
 - A readable manifest inside a mode `0111` bundle was retained, but failure to enumerate its resources was initially missed. Resource discovery now handles a root `WalkDir` error before skipping the bundle directory, reports `unreadable-resource`, preserves the useful source, and exits with status 1 because coverage is incomplete.
 - YAML non-finite floats initially made JSON encoding fail after discovery. Metadata normalization now recursively represents `.nan`, `.inf`, and `-.inf` as tagged JSON objects while preserving the exact raw manifest. Each affected manifest gets one non-coverage-limiting `metadata-non-finite-float` diagnostic, and otherwise complete `list` and `read` requests exit with status 0.
 - Long project paths and many discovery roots could consume the entire browser viewport. The normal header is now four bounded rows. Pressing `s` opens a scrollable scope view containing the full project and every requested root, plus the resolved path when it differs; `Esc` or left returns to the prior inventory or detail view. Search input continues to treat `s` as query text.
+- A long search query could still wrap across the whole browser viewport. Search now sanitizes the complete query, keeps that complete value for filtering and editing, and renders a one-row terminal-cell viewport with a leading ellipsis, rightmost query tail, and editing cursor.
 
 ## Reproduce the acceptance evidence
 
@@ -23,7 +24,7 @@ The harness builds with the checked-in module graph while Go network access is d
 
 It covers complete, empty, missing, unreadable, mixed, malformed, hostile-control, non-finite metadata, unlistable bundle resources, and renamed-directory cases. It checks exit codes 0, 1, and 2; exact JSON data; safe human rendering; full instructions and nested resources; fixture immutability; no script execution; and nonblocking FIFO discovery.
 
-The browser coverage includes a public PTY journey and real tmux cell captures at 48, 60, 80, 96, and 120 columns by 30 rows. The journey searches, selects, opens, scrolls to the end, checks the complete final resource and footer, and exits with `q`. A separate 60 by 30 journey uses a long project and eight long roots to prove the bounded normal header, full scope top and end, search handling of `s`, and restoration of both inventory and detail. The single-root journey also exercises a live resize from 80 by 30 to 63 by 20 and back.
+The browser coverage includes a public PTY journey and real tmux cell captures at 48, 60, 80, 96, and 120 columns by 30 rows. The journey searches, selects, opens, scrolls to the end, checks the complete final resource and footer, and exits with `q`. A separate 60 by 30 journey uses a long project and eight long roots to prove the bounded normal header, full scope top and end, search handling of `s`, and restoration of both inventory and detail. The single-root journey also exercises a live resize from 80 by 30 to 63 by 20 and back. A focused search journey covers a complete 1,800-character query, full-query filtering, wide Unicode, backspace, keep/cancel/clear transitions, and a 60 by 30 to 48 by 20 resize while the body, status, and controls remain visible.
 
 The portable metadata tags are:
 

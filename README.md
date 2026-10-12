@@ -49,7 +49,7 @@ bin/skillglass read --root /path/to/skills SOURCE_ID
 bin/skillglass browse --root /path/to/skills --project /path/to/project
 ```
 
-In the browser, press `s` from the inventory or source detail to inspect the full selected project and every discovery root. The scope view scrolls with the arrow keys or `j`/`k`, `PgUp`/`PgDn`, and `g`/`G`; press `Esc` or the left arrow to return. While search input is active, `s` remains ordinary query text.
+In the browser, press `s` from the inventory or source detail to inspect the full selected project and every discovery root. The scope view scrolls with the arrow keys or `j`/`k`, `PgUp`/`PgDn`, and `g`/`G`; press `Esc` or the left arrow to return. While search input is active, `s` remains ordinary query text. Long searches retain the complete query for filtering and show its current tail on one row with a leading ellipsis.
 
 JSON output preserves YAML non-finite floats with an explicit, portable representation instead of failing serialization:
 

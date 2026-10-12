@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/creack/pty"
@@ -406,6 +407,154 @@ func TestBrowserManyRootsHasScrollableScopeAt60Columns(t *testing.T) {
 	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "-l", "q")
 }
 
+func TestBrowserLongSearchUsesSingleRowTailViewport(t *testing.T) {
+	tmux, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skip("tmux is unavailable")
+	}
+	fx := newFixture(t)
+	root := filepath.Join(fx.base, "allowed", "roots", "long-search")
+	asciiTail := "ASCII_TAIL_987654321"
+	longQuery := strings.Repeat("x", 1800-len(asciiTail)) + asciiTail
+	visibleSuffix := longQuery[len(longQuery)-40:]
+	writeFile(t, filepath.Join(root, "tail-only", "SKILL.md"), []byte(
+		"---\nname: tail-only-source\ndescription: "+strings.Repeat("x", 80)+asciiTail+"\n---\nTAIL_ONLY\n",
+	), 0o644)
+	writeFile(t, filepath.Join(root, "other", "SKILL.md"), []byte(
+		"---\nname: other-source\ndescription: unrelated\n---\nOTHER\n",
+	), 0o644)
+
+	control := fx.run(t, "list", "--root", root, "--search", visibleSuffix, "--json")
+	assertExit(t, control, 0)
+	var controlInventory publicList
+	decodeJSON(t, control.stdout, &controlInventory)
+	if len(controlInventory.Sources) != 1 || controlInventory.Sources[0].Name != "tail-only-source" {
+		t.Fatalf("visible suffix control = %s", control.stdout)
+	}
+
+	socket := fmt.Sprintf("skillglass-long-search-%d", os.Getpid())
+	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
+	commandLine := strings.Join([]string{
+		"exec",
+		shellQuote(skillglassBinary),
+		"browse",
+		"--root",
+		shellQuote(root),
+		"--project",
+		shellQuote(fx.project),
+	}, " ")
+	runTmux(t, tmux, fx, socket,
+		"new-session", "-d", "-x", "60", "-y", "30", "-s", "long", commandLine,
+	)
+	runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
+	runTmux(t, tmux, fx, socket, "resize-window", "-t", "long:0", "-x", "60", "-y", "30")
+	_ = waitForPaneAt(t, tmux, fx, socket, "long:0.0", false, "Focus: 1/2", "/ search")
+	writeEvidence(t, "tmux/long-search/command.txt", []byte(commandLine+"\n"))
+
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "/")
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "-l", longQuery)
+	longEditing := waitForPaneCaptureAt(
+		t, tmux, fx, socket, "long:0.0", false,
+		asciiTail+"█", "No matching sources.", "0 matches | selected source unchanged",
+		"type to search", "Enter keep", "Esc cancel", "Ctrl+U clear",
+	)
+	writeEvidence(t, "tmux/long-search/01-long-editing-60x30.txt", []byte(longEditing))
+	longRow := assertSearchViewport(t, longEditing, 60, 30, asciiTail, true, true)
+	assertSearchChrome(t, longEditing)
+
+	runTmux(t, tmux, fx, socket,
+		"resize-window", "-t", "long:0", "-x", "48", "-y", "20",
+	)
+	narrow := waitForPaneCaptureAt(
+		t, tmux, fx, socket, "long:0.0", false,
+		asciiTail+"█", "No matching sources.", "0 matches | selected source unchanged",
+		"type to search", "Enter keep", "Esc cancel", "Ctrl+U clear",
+	)
+	writeEvidence(t, "tmux/long-search/02-long-editing-48x20.txt", []byte(narrow))
+	narrowRow := assertSearchViewport(t, narrow, 48, 20, asciiTail, true, true)
+	assertSearchChrome(t, narrow)
+	if narrowRow == longRow {
+		t.Fatalf("search viewport did not change after resize: %q", narrowRow)
+	}
+
+	runTmux(t, tmux, fx, socket,
+		"resize-window", "-t", "long:0", "-x", "60", "-y", "30",
+	)
+	restored := waitForPaneCaptureAt(
+		t, tmux, fx, socket, "long:0.0", false,
+		longRow, "No matching sources.", "0 matches | selected source unchanged",
+		"type to search", "Enter keep", "Esc cancel", "Ctrl+U clear",
+	)
+	writeEvidence(t, "tmux/long-search/03-long-editing-restored.txt", []byte(restored))
+	if restoredRow := assertSearchViewport(t, restored, 60, 30, asciiTail, true, true); restoredRow != longRow {
+		t.Fatalf("restored search row = %q, want %q", restoredRow, longRow)
+	}
+	assertSearchChrome(t, restored)
+
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "Enter")
+	kept := waitForPaneAt(
+		t, tmux, fx, socket, "long:0.0", false,
+		asciiTail, "No matching sources.", "0 matches | selected source unchanged", "Enter read", "s scope",
+	)
+	writeEvidence(t, "tmux/long-search/04-long-kept.txt", []byte(kept))
+	assertSearchViewport(t, kept, 60, 30, asciiTail, false, true)
+
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "/")
+	_ = waitForPaneAt(t, tmux, fx, socket, "long:0.0", false, asciiTail+"█", "type to search")
+	cancelTail := "CANCEL_TAIL"
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "-l", cancelTail)
+	_ = waitForPaneAt(t, tmux, fx, socket, "long:0.0", false, cancelTail+"█", "type to search")
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "Escape")
+	cancelled := waitForPaneAt(
+		t, tmux, fx, socket, "long:0.0", false,
+		asciiTail, "No matching sources.", "0 matches | selected source unchanged", "Enter read", "s scope",
+	)
+	writeEvidence(t, "tmux/long-search/05-long-cancelled.txt", []byte(cancelled))
+	assertSearchViewport(t, cancelled, 60, 30, asciiTail, false, true)
+	if strings.Contains(cancelled, cancelTail) {
+		t.Fatal("Escape retained text appended after queryBefore")
+	}
+
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "/")
+	_ = waitForPaneAt(t, tmux, fx, socket, "long:0.0", false, asciiTail+"█", "type to search")
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "C-u")
+	cleared := waitForPaneAt(
+		t, tmux, fx, socket, "long:0.0", false,
+		"Search: █", "Focus: 1/2", "tail-only-source", "other-source", "Ctrl+U clear",
+	)
+	writeEvidence(t, "tmux/long-search/06-cleared.txt", []byte(cleared))
+	assertSearchViewport(t, cleared, 60, 30, "", true, false)
+
+	wideTail := "終端尾"
+	wideQuery := strings.Repeat("界", 120) + wideTail
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "-l", wideQuery)
+	wide := waitForPaneCaptureAt(
+		t, tmux, fx, socket, "long:0.0", false,
+		wideTail+"█", "No matching sources.", "0 matches | selected source unchanged", "Ctrl+U clear",
+	)
+	writeEvidence(t, "tmux/long-search/07-wide-editing.txt", []byte(wide))
+	assertSearchViewport(t, wide, 60, 30, wideTail, true, true)
+	assertSearchChrome(t, wide)
+
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "-l", "Z")
+	_ = waitForPaneAt(t, tmux, fx, socket, "long:0.0", false, wideTail+"Z█")
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "BSpace")
+	backspaced := waitForPaneAt(t, tmux, fx, socket, "long:0.0", false, wideTail+"█")
+	writeEvidence(t, "tmux/long-search/08-wide-backspaced.txt", []byte(backspaced))
+	assertSearchViewport(t, backspaced, 60, 30, wideTail, true, true)
+
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "C-u")
+	_ = waitForPaneAt(t, tmux, fx, socket, "long:0.0", false, "Search: █", "Focus: 1/2")
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "Enter")
+	clearKept := waitForPaneAt(t, tmux, fx, socket, "long:0.0", false, "Search:", "Focus: 1/2", "Enter read")
+	writeEvidence(t, "tmux/long-search/09-clear-kept.txt", []byte(clearKept))
+	assertSearchViewport(t, clearKept, 60, 30, "", false, false)
+	writeEvidence(t, "tmux/long-search/keys.txt", []byte(
+		"/\n<1800-character-query>\nresize 48x20\nresize 60x30\nEnter\n/\nCANCEL_TAIL\nEsc\n/\nCtrl+U\n<wide-query>\nZ\nBackspace\nCtrl+U\nEnter\nq\n",
+	))
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "-l", "q")
+}
+
 func TestBrowserHostileTerminalDataUsesSafeCells(t *testing.T) {
 	tmux, err := exec.LookPath("tmux")
 	if err != nil {
@@ -537,6 +686,96 @@ func paneContains(capture, needle string) bool {
 		return strings.Join(strings.Fields(value), "")
 	}
 	return strings.Contains(compact(capture), compact(needle))
+}
+
+func waitForPaneCaptureAt(
+	t *testing.T,
+	tmux string,
+	fx fixture,
+	socket string,
+	target string,
+	joinWrapped bool,
+	needles ...string,
+) string {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	var capture string
+	for time.Now().Before(deadline) {
+		capture = capturePaneAt(t, tmux, fx, socket, target, joinWrapped)
+		found := true
+		for _, needle := range needles {
+			if !paneContains(capture, needle) {
+				found = false
+				break
+			}
+		}
+		if found {
+			return capture
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	return capture
+}
+
+func assertSearchViewport(
+	t *testing.T,
+	capture string,
+	width int,
+	height int,
+	tail string,
+	editing bool,
+	cropped bool,
+) string {
+	t.Helper()
+	if !utf8.ValidString(capture) {
+		t.Fatal("search capture is not valid UTF-8")
+	}
+	assertPaneCells(t, capture, width, height)
+	var rows []string
+	for _, line := range strings.Split(strings.TrimSuffix(capture, "\n"), "\n") {
+		if strings.HasPrefix(line, "Search:") {
+			rows = append(rows, line)
+		}
+	}
+	if len(rows) != 1 {
+		t.Fatalf("Search row count = %d, want 1:\n%s", len(rows), capture)
+	}
+	row := rows[0]
+	if cropped && !strings.HasPrefix(row, "Search: …") {
+		t.Fatalf("cropped search row has no leading ellipsis: %q", row)
+	}
+	if !cropped && strings.HasPrefix(row, "Search: …") {
+		t.Fatalf("uncropped search row has an ellipsis: %q", row)
+	}
+	if tail != "" && !strings.Contains(row, tail) {
+		t.Fatalf("search row does not show tail %q: %q", tail, row)
+	}
+	if editing && !strings.HasSuffix(row, "█") {
+		t.Fatalf("editing search row has no cursor: %q", row)
+	}
+	if !editing && strings.Contains(row, "█") {
+		t.Fatalf("inventory search row retained editing cursor: %q", row)
+	}
+	if cells := ansi.StringWidth(row); cells > width {
+		t.Fatalf("search row uses %d cells, pane has %d: %q", cells, width, row)
+	}
+	return row
+}
+
+func assertSearchChrome(t *testing.T, capture string) {
+	t.Helper()
+	for _, expected := range []string{
+		"No matching sources.",
+		"0 matches | selected source unchanged",
+		"type to search",
+		"Enter keep",
+		"Esc cancel",
+		"Ctrl+U clear",
+	} {
+		if !paneContains(capture, expected) {
+			t.Fatalf("search frame does not show %q:\n%s", expected, capture)
+		}
+	}
 }
 
 func waitForPaneTitle(

@@ -281,11 +281,7 @@ func (model browserModel) View() tea.View {
 
 func (model browserModel) renderInventory() []string {
 	header := model.headerLines()
-	searchLabel := "Search: " + safeInline(model.query)
-	if model.mode == browserSearch {
-		searchLabel += "█"
-	}
-	header = append(header, wrapLine(searchLabel, model.width)...)
+	header = append(header, model.searchLine())
 
 	body, focusLines := model.inventoryBodyLines()
 	helpGroups := []string{"↑/↓ or j/k move", "/ search", "Enter read", "s scope", "q quit"}
@@ -308,6 +304,45 @@ func (model browserModel) renderInventory() []string {
 		lines = append(lines, "")
 	}
 	return append(lines, footer...)
+}
+
+func (model browserModel) searchLine() string {
+	const prefix = "Search: "
+	cursor := ""
+	if model.mode == browserSearch {
+		cursor = "█"
+	}
+	query := safeInline(model.query)
+	queryWidth := max(
+		0,
+		model.width-ansi.StringWidth(prefix)-ansi.StringWidth(cursor),
+	)
+	return prefix + rightmostCells(query, queryWidth) + cursor
+}
+
+func rightmostCells(value string, width int) string {
+	valueWidth := ansi.StringWidth(value)
+	if valueWidth <= width {
+		return value
+	}
+	if width <= 0 {
+		return ""
+	}
+	const overflow = "…"
+	overflowWidth := ansi.StringWidth(overflow)
+	if width <= overflowWidth {
+		return ansi.Truncate(overflow, width, "")
+	}
+	suffixWidth := width - overflowWidth
+	removeWidth := max(0, valueWidth-suffixWidth)
+	for removeWidth <= valueWidth {
+		visible := ansi.TruncateLeft(value, removeWidth, overflow)
+		if ansi.StringWidth(visible) <= width {
+			return visible
+		}
+		removeWidth++
+	}
+	return ansi.Truncate(overflow, width, "")
 }
 
 func (model browserModel) renderDetail() []string {
