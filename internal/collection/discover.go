@@ -111,13 +111,12 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 	if err != nil {
 		code := ProblemRootUnreadable
 		state := RootUnreadable
-		rootInfo, lstatErr := os.Lstat(root.Path)
-		if lstatErr == nil && rootInfo.Mode()&os.ModeSymlink != 0 {
+		if isSymlinkCycle(err) {
+			code = ProblemSymlinkCycle
+			state = RootIncomplete
+		} else if rootInfo, lstatErr := os.Lstat(root.Path); lstatErr == nil && rootInfo.Mode()&os.ModeSymlink != 0 {
 			code = ProblemBrokenReference
 			state = RootIncomplete
-			if isSymlinkCycle(err) {
-				code = ProblemSymlinkCycle
-			}
 		} else if errors.Is(err, os.ErrNotExist) {
 			code = ProblemRootMissing
 			state = RootMissing
