@@ -576,7 +576,9 @@ func (model *browserModel) refresh() {
 			if model.mode == browserScope && model.previousMode == browserProblemDetail {
 				model.previousMode = browserProblems
 			}
-			model.feedback = "Refresh: selected problem is no longer reported"
+			if model.chromeTarget(model.mode) == browserProblems {
+				model.feedback = "Refresh: selected problem is no longer reported"
+			}
 		}
 	}
 }

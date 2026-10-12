@@ -78,6 +78,9 @@ func TestBrowserRefreshReconcilesSelectedProblem(t *testing.T) {
 					assertPaneCells(t, returned, width, 30)
 					if repair {
 						for _, frame := range []string{refreshed, returned} {
+							if !strings.Contains(frame, "Refresh: selected problem") {
+								t.Fatalf("active Problems context lost disappearance feedback:\n%s", frame)
+							}
 							if strings.Contains(frame, "Selected problem:") || strings.Contains(frame, "unavailable") || strings.Contains(frame, "Problem lines") {
 								t.Fatalf("vanished problem kept a stale detail target or identity:\n%s", frame)
 							}
@@ -115,6 +118,124 @@ func TestBrowserRefreshReconcilesSelectedProblem(t *testing.T) {
 						t.Fatal("refresh/navigation mutated fixture content or settings")
 					}
 				})
+			}
+		}
+	}
+}
+
+func TestBrowserRefreshFeedbackUsesActiveSourceContext(t *testing.T) {
+	for _, width := range []int{48, 120} {
+		for _, reader := range []bool{false, true} {
+			for _, throughScope := range []bool{false, true} {
+				for _, replace := range []bool{true, false} {
+					name := fmt.Sprintf("%d/reader-%t/scope-%t/replace-%t", width, reader, throughScope, replace)
+					t.Run(name, func(t *testing.T) {
+						fx := newFixture(t)
+						root := filepath.Join(fx.base, "allowed", "roots", "feedback")
+						sourceDirectory := filepath.Join(root, "source")
+						repairDirectory := filepath.Join(fx.base, "allowed", "outside", "repaired")
+						writeSkill(t, sourceDirectory, "a-source", "selected before problem visit", "A_SOURCE")
+						if err := os.Symlink(repairDirectory, filepath.Join(root, "broken")); err != nil {
+							t.Fatal(err)
+						}
+						initial := fx.run(t, "list", "--root", root, "--json")
+						assertExit(t, initial, 1)
+						var inventory publicList
+						decodeJSON(t, initial.stdout, &inventory)
+						source := sourceNamed(t, inventory.Sources, "a-source")
+						if len(inventory.Problems) != 1 || inventory.Problems[0].Code != "broken-reference" {
+							t.Fatalf("expected one broken reference, got %#v", inventory.Problems)
+						}
+						tmux, socket, target := startALE43ReviewBrowser(t, fx, width, 30, "--root", root, "--theme", "dark")
+						act := func(key string, needles ...string) string {
+							return actForPaneAt(t, tmux, fx, socket, target, false, func() {
+								runTmux(t, tmux, fx, socket, "send-keys", "-t", target, key)
+							}, needles...)
+						}
+						_ = act("Enter", "Selected: a-source", "Rendered instructions", "A_SOURCE")
+						_ = act("d", "Details", "Source ID: "+source.ID)
+						_ = act("Tab", "Focused: broken-reference", "Enter problem")
+						problem := act("Enter", "Selected problem: broken-reference", inventory.Problems[0].ID, "Problem lines")
+						writeEvidence(t, "ale43-review/refresh-feedback/"+name+"/00-problem.txt", []byte(problem))
+						returned := act("Tab", "Focused: a-source", "Search / type to filter")
+						if reader {
+							_ = act("Enter", "Selected: a-source", "Rendered instructions", "A_SOURCE")
+							returned = act("d", "Selected: a-source", "Details", "Source ID: "+source.ID)
+						}
+						writeEvidence(t, "ale43-review/refresh-feedback/"+name+"/01-source-context.txt", []byte(returned))
+						if throughScope {
+							scope := act("s", "Scope and filters")
+							writeEvidence(t, "ale43-review/refresh-feedback/"+name+"/02-scope.txt", []byte(scope))
+						}
+						writeSkill(t, repairDirectory, "repaired", "external reference repair", "REPAIRED_REFERENCE")
+						if replace {
+							if err := os.Rename(sourceDirectory, filepath.Join(fx.base, "allowed", "outside", "original-source")); err != nil {
+								t.Fatal(err)
+							}
+							writeSkill(t, sourceDirectory, "a-source", "selected before problem visit", "A_SOURCE")
+						}
+						beforeRefresh := treeManifest(t, fx.base)
+						afterEdit := fx.run(t, "list", "--root", root, "--json")
+						assertExit(t, afterEdit, 0)
+						var updated publicList
+						decodeJSON(t, afterEdit.stdout, &updated)
+						current := sourceNamed(t, updated.Sources, "a-source")
+						if (current.ID != source.ID) != replace || len(updated.Problems) != 0 {
+							t.Fatalf("external edit did not establish replacement=%t and problem disappearance: %#v", replace, updated)
+						}
+						refreshed := act("r", "coverage complete", "Refresh:")
+						writeEvidence(t, "ale43-review/refresh-feedback/"+name+"/03-refreshed.txt", []byte(refreshed))
+						returned = refreshed
+						if throughScope {
+							frame := actOnPane(t, tmux, fx, socket, target, func() {
+								runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "Escape")
+							}, func(frame paneSnapshot) bool {
+								return !paneContains(frame.cells, "Scope and filters")
+							})
+							returned = frame.cells
+						}
+						writeEvidence(t, "ale43-review/refresh-feedback/"+name+"/04-returned.txt", []byte(returned))
+						styled := captureStyledPane(t, tmux, fx, socket, target)
+						writeEvidence(t, "ale43-review/refresh-feedback/"+name+"/04-returned.ansi", []byte(styled))
+						assertActiveChromeTab(t, styled, "Sources")
+						wantFeedback := "Refresh: selected directory"
+						if replace {
+							wantFeedback = "Refresh: selection cleared"
+						}
+						for _, frame := range []string{refreshed, returned} {
+							assertPaneCells(t, frame, width, 30)
+							if !strings.Contains(frame, wantFeedback) || strings.Contains(frame, "Refresh: selected problem") {
+								t.Fatalf("historical problem replaced active source feedback %q:\n%s", wantFeedback, frame)
+							}
+						}
+						if reader && !replace {
+							for _, want := range []string{"Selected: a-source", "Details", "Source ID: " + source.ID} {
+								if !paneContains(returned, want) {
+									t.Fatalf("retained source lost its reader state %q:\n%s", want, returned)
+								}
+							}
+							_ = act("Escape", "Focused: a-source", "Search / type to filter")
+						} else if !paneContains(returned, "Search / type to filter") || strings.Contains(returned, "Selected:") {
+							t.Fatalf("source refresh did not reconcile inventory/selection:\n%s", returned)
+						}
+						filtered := act("c", "context project", "No matching sources.")
+						writeEvidence(t, "ale43-review/refresh-feedback/"+name+"/05-filtered-selection.txt", []byte(filtered))
+						if replace {
+							if strings.Contains(filtered, "Selected:") {
+								t.Fatalf("replacement inherited the old source selection:\n%s", filtered)
+							}
+						} else {
+							selection := frameLineWithPrefix(t, filtered, "Selected: ")
+							hint := strings.Trim(identityHint(selection), "[]")
+							if !strings.Contains(selection, "hidden by filters") || hint == "" || !strings.HasPrefix(strings.TrimPrefix(source.ID, "src_"), hint) {
+								t.Fatalf("retained source identity was lost:\n%s", filtered)
+							}
+						}
+						if !bytes.Equal(beforeRefresh, treeManifest(t, fx.base)) {
+							t.Fatal("refresh/navigation mutated the externally edited fixture or settings")
+						}
+					})
+				}
 			}
 		}
 	}
