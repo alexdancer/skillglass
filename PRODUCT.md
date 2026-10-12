@@ -42,7 +42,7 @@ At 48, 60, and 80 columns the browser uses one focused pane, keeps navigation un
 
 ### Color supports structure
 
-Text labels, focus markers, headings, and spacing carry meaning in every theme. Blue marks navigation and focus. Lavender distinguishes readable content structure in Markdown and Details. One selected-row surface preserves inventory focus, and no-color output preserves the same structure without terminal styling.
+Text labels, focus markers, headings, and spacing carry meaning in every theme. Color reinforces navigation, source identity, and readable content structure without being the only signal. The [visual system](DESIGN.md#visual-system) owns palette roles, selected-row styling, and no-color presentation.
 
 ## Current product boundary
 
