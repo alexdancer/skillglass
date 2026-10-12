@@ -191,13 +191,12 @@ class FixtureState:
             exact = [(index, rule) for index, rule in candidates if rule.get("project") == project]
             if exact:
                 winner_index, winner = exact[0]
-                shadowed = [rule for _, rule in candidates if rule is not winner]
+                shadowed = [rule for _, rule in candidates if rule.get("project") is None]
                 return winner_index, winner, shadowed
         global_rules = [(index, rule) for index, rule in candidates if rule.get("project") is None]
         if global_rules:
             winner_index, winner = global_rules[0]
-            shadowed = [rule for _, rule in candidates if rule is not winner]
-            return winner_index, winner, shadowed
+            return winner_index, winner, []
         unknown = {
             "source_id": source_id,
             "application": application,
@@ -1177,8 +1176,6 @@ class Browser:
                 self.mode = "inventory"
             elif key == "\t":
                 self.section_index = (self.section_index + 1) % len(self.sections)
-            elif key == "e":
-                self.section_index = 1
             elif key == "c":
                 self.mode = "compare_pick"
                 self.compare_index = 0
@@ -1450,7 +1447,7 @@ def run_pty_browser(command: list[str], env: dict[str, str], width: int) -> tupl
         b"/",
         b"research\n",
         b"\r",
-        b"e",
+        b"\t",
         b"d",
         b"\x1b",
         b"d",
