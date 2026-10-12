@@ -540,6 +540,15 @@ func (builder *discoveryBuilder) finalizeProblemRelationships() {
 		sort.Slice(problem.SourceIDs, func(left, right int) bool { return problem.SourceIDs[left] < problem.SourceIDs[right] })
 		builder.problems = append(builder.problems, problem)
 	}
+	sort.Slice(builder.problems, func(left, right int) bool {
+		if builder.problems[left].Code != builder.problems[right].Code {
+			return builder.problems[left].Code < builder.problems[right].Code
+		}
+		if builder.problems[left].Path != builder.problems[right].Path {
+			return builder.problems[left].Path < builder.problems[right].Path
+		}
+		return builder.problems[left].ID < builder.problems[right].ID
+	})
 }
 
 func appendUniqueRootIDs(values []RootID, additions ...RootID) []RootID {

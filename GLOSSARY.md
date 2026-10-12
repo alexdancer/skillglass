@@ -20,8 +20,14 @@ A project-specific choice about a globally available skill, allowing its availab
 **Independent copy**:
 A separate source of skill content, even when it has the same name as another skill. Matching names alone do not make two copies interchangeable.
 
+**Source**:
+One skill bundle directory identified by its proven filesystem object when that evidence is available. A source can have several discovery references. Equal names, equal contents, or a shared manifest file do not make separate bundle directories one source.
+
+**Discovery reference**:
+One selected root's path to a source, retaining the original path, resolved path, and custom or project context. Reference provenance does not prove native ownership or availability.
+
 **Shared reference**:
-An additional way to reach the same underlying skill source. Changes to that source can affect every application that uses a shared reference.
+A second discovery reference proven to reach the same underlying skill bundle directory. Changes to that source can affect every application that uses a shared reference.
 _Avoid_: Duplicate copy when no separate content exists.
 
 **Disable**:

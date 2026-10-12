@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
@@ -389,6 +390,9 @@ func (model *browserModel) refresh() {
 		if model.mode == browserSourceDetail {
 			model.mode = browserSources
 		}
+		if model.mode == browserScope && model.previousMode == browserSourceDetail {
+			model.previousMode = browserSources
+		}
 		model.feedback = "Refresh: selection cleared because its directory object is no longer reachable"
 	} else if change.State == "retained" {
 		model.feedback = "Refresh: selected directory object retained"
@@ -645,48 +649,75 @@ func (model browserModel) headerLines(mode browserMode) []string {
 		scope.Completeness,
 		len(model.snapshot.Problems()),
 	)
-	filterSummary := fmt.Sprintf(
-		"Filters: root=%s | context=%s | problem=%s",
-		optionalValue(model.filters.SourceRoot),
-		model.filters.Context,
-		optionalValue(string(model.filters.Problem)),
-	)
-	selected := model.selectedSummary(mode)
-	return []string{
+	header := []string{
 		fitLine(title, model.width),
 		fitLine(project, model.width),
 		fitLine(scopeSummary, model.width),
-		fitLine(filterSummary, model.width),
-		fitLine(selected, model.width),
 	}
+	header = append(header, wrapGroups([]string{
+		fitLine("Context filter: "+string(model.filters.Context), model.width),
+		fitLine("Problem filter: "+browserFilterValue(string(model.filters.Problem)), model.width),
+		fitLine("Root filter: "+model.rootFilterSummary(), model.width),
+	}, model.width)...)
+	return append(header, model.selectedSummaryLines(mode)...)
 }
 
-func (model browserModel) selectedSummary(mode browserMode) string {
+func browserFilterValue(value string) string {
+	if value == "" {
+		return "all"
+	}
+	return value
+}
+
+func (model browserModel) rootFilterSummary() string {
+	if model.filters.SourceRoot == "" {
+		return "all"
+	}
+	roots := model.uniqueRoots()
+	for index, root := range roots {
+		if root == model.filters.SourceRoot {
+			name := filepath.Base(root)
+			if name == "." || name == string(filepath.Separator) {
+				name = root
+			}
+			return fmt.Sprintf("#%d/%d %s", index+1, len(roots), safeInline(name))
+		}
+	}
+	return "selected root"
+}
+
+func (model browserModel) selectedSummaryLines(mode browserMode) []string {
 	if mode == browserProblems || mode == browserProblemDetail {
 		if model.selectedProblem == "" {
-			return "Selected problem: none"
+			return []string{"Selected problem: none"}
 		}
 		if problem, ok := model.problemByID(model.selectedProblem); ok {
-			return fmt.Sprintf("Selected problem: %s [%s]", problem.Code, problem.ID)
+			return wrapGroups([]string{
+				fitLine("Selected problem: "+string(problem.Code), model.width),
+				fitLine("Problem selector: "+string(problem.ID), model.width),
+			}, model.width)
 		}
-		return "Selected problem: unavailable"
+		return []string{"Selected problem: unavailable"}
 	}
 	if model.selected == "" {
-		return "Selected: none"
+		return []string{"Selected: none"}
 	}
 	source, ok := model.snapshot.Source(model.selected)
 	if !ok {
-		return "Selected: unavailable"
+		return []string{"Selected: unavailable"}
 	}
 	name := source.Name
 	if name == "" {
 		name = "<metadata unavailable>"
 	}
-	hidden := ""
+	lines := wrapGroups([]string{
+		fitLine("Selected: "+safeInline(name), model.width),
+		fitLine("Selector: "+safeInline(string(source.ID)), model.width),
+	}, model.width)
 	if !model.sourceVisible(model.selected) {
-		hidden = " (hidden by filters)"
+		lines = append(lines, fitLine("Selection: hidden by filters", model.width))
 	}
-	return fmt.Sprintf("Selected: %s [%s]%s", safeInline(name), safeInline(string(source.ID)), hidden)
+	return lines
 }
 
 func (model browserModel) sourceVisible(id collection.SourceID) bool {
