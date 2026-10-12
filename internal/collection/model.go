@@ -1,7 +1,9 @@
 package collection
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -82,17 +84,18 @@ func NewRequest(rawRoots []string, rawProject *string) (Request, error) {
 type ProblemCode string
 
 const (
-	ProblemRootMissing        ProblemCode = "root-missing"
-	ProblemRootUnreadable     ProblemCode = "root-unreadable"
-	ProblemBrokenReference    ProblemCode = "broken-reference"
-	ProblemSymlinkCycle       ProblemCode = "symlink-cycle"
-	ProblemUnreadableManifest ProblemCode = "unreadable-manifest"
-	ProblemMalformedManifest  ProblemCode = "malformed-manifest"
-	ProblemMetadataNonFinite  ProblemCode = "metadata-non-finite-float"
-	ProblemManifestTooLarge   ProblemCode = "manifest-too-large"
-	ProblemUnreadableResource ProblemCode = "unreadable-resource"
-	ProblemResourceLimit      ProblemCode = "resource-limit"
-	ProblemIdentityUncertain  ProblemCode = "identity-uncertain"
+	ProblemRootMissing             ProblemCode = "root-missing"
+	ProblemRootUnreadable          ProblemCode = "root-unreadable"
+	ProblemBrokenReference         ProblemCode = "broken-reference"
+	ProblemSymlinkCycle            ProblemCode = "symlink-cycle"
+	ProblemUnreadableManifest      ProblemCode = "unreadable-manifest"
+	ProblemMalformedManifest       ProblemCode = "malformed-manifest"
+	ProblemMetadataNonFinite       ProblemCode = "metadata-non-finite-float"
+	ProblemManifestTooLarge        ProblemCode = "manifest-too-large"
+	ProblemManifestInvalidEncoding ProblemCode = "manifest-invalid-encoding"
+	ProblemUnreadableResource      ProblemCode = "unreadable-resource"
+	ProblemResourceLimit           ProblemCode = "resource-limit"
+	ProblemIdentityUncertain       ProblemCode = "identity-uncertain"
 )
 
 type Problem struct {
@@ -159,6 +162,25 @@ type Manifest struct {
 	RawFrontmatter   string         `json:"raw_frontmatter,omitempty"`
 	Instructions     string         `json:"instructions,omitempty"`
 	RawText          string         `json:"raw_text"`
+	RawBytesBase64   string         `json:"raw_bytes_base64,omitempty"`
+}
+
+func (manifest Manifest) MarshalJSON() ([]byte, error) {
+	type manifestFields Manifest
+	output := struct {
+		manifestFields
+		RawText *string `json:"raw_text,omitempty"`
+	}{manifestFields: manifestFields(manifest)}
+	if manifest.RawBytesBase64 == "" {
+		output.RawText = &manifest.RawText
+	}
+	var encoded bytes.Buffer
+	encoder := json.NewEncoder(&encoded)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(output); err != nil {
+		return nil, err
+	}
+	return encoded.Bytes(), nil
 }
 
 type Resource struct {

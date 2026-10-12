@@ -113,10 +113,7 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 		return report
 	}
 
-	rootIsBundle, err := hasManifest(resolvedRoot)
-	if err != nil {
-		rootIsBundle = false
-	}
+	rootIsBundle, manifestErr := hasManifest(resolvedRoot)
 	if rootIsBundle {
 		if builder.discoverCandidate(ctx, root, root.Path, ".") {
 			report.SourceCount++
@@ -135,6 +132,9 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 			report.State = RootUnreadable
 			report.ProblemCount = 1
 			return report
+		}
+		if manifestErr != nil {
+			builder.addProblem(manifestPresenceProblem(resolvedRoot, manifestErr))
 		}
 		sort.Slice(entries, func(left, right int) bool {
 			return entries[left].Name() < entries[right].Name()
@@ -260,13 +260,7 @@ func (builder *discoveryBuilder) discoverCandidate(
 
 	present, manifestErr := hasManifest(resolvedPath)
 	if manifestErr != nil {
-		problem := makeProblem(
-			ProblemUnreadableManifest,
-			filepath.Join(resolvedPath, "SKILL.md"),
-			"manifest presence could not be determined",
-			manifestErr,
-			true,
-		)
+		problem := manifestPresenceProblem(resolvedPath, manifestErr)
 		reference.Problems = []Problem{problem}
 		builder.addReference(reference)
 		builder.addProblem(problem)
@@ -345,6 +339,16 @@ func (builder *discoveryBuilder) addReference(reference Reference) {
 
 func (builder *discoveryBuilder) addProblem(problem Problem) {
 	builder.problems = append(builder.problems, problem)
+}
+
+func manifestPresenceProblem(directory string, err error) Problem {
+	return makeProblem(
+		ProblemUnreadableManifest,
+		filepath.Join(directory, "SKILL.md"),
+		"manifest presence could not be determined",
+		err,
+		true,
+	)
 }
 
 func hasManifest(directory string) (bool, error) {

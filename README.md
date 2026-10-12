@@ -61,6 +61,8 @@ JSON output preserves YAML non-finite floats with an explicit, portable represen
 
 Each affected manifest also reports one `metadata-non-finite-float` diagnostic. The diagnostic does not limit discovery coverage, so an otherwise complete request still exits with status 0.
 
+A manifest that is not valid UTF-8 reports `manifest-invalid-encoding`, remains selectable with its paths and resources, and makes coverage incomplete with exit status 1. JSON preserves the complete file as standard padded base64 in `manifest.raw_bytes_base64` instead of replacing invalid bytes. Content-derived text and metadata fields are omitted for that manifest. Human output and browser detail show a recovery hint directing you to `list` or `read` with `--json`; they do not display an altered body. Valid UTF-8 output is unchanged, including a literal U+FFFD character.
+
 Exit status 0 means the requested result is complete, including an empty collection. Status 1 means discovery, reading, or selection was incomplete and useful partial output is preserved. Status 2 reports command usage errors.
 
 ## Development workflow

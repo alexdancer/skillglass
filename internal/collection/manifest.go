@@ -2,6 +2,7 @@ package collection
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -125,6 +126,19 @@ func inspectManifest(bundleDirectory string) (Manifest, []Problem) {
 			lexicalPath,
 			"manifest exceeds the read limit",
 			err,
+			true,
+		)
+		return manifest, []Problem{problem}
+	}
+
+	if !utf8.Valid(raw) {
+		manifest.Status = ManifestMalformed
+		manifest.RawBytesBase64 = base64.StdEncoding.EncodeToString(raw)
+		problem := makeProblem(
+			ProblemManifestInvalidEncoding,
+			lexicalPath,
+			"manifest is not valid UTF-8",
+			errors.New("exact bytes are available via list/read --json at manifest.raw_bytes_base64"),
 			true,
 		)
 		return manifest, []Problem{problem}

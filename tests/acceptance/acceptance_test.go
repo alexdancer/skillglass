@@ -141,6 +141,7 @@ type publicList struct {
 }
 
 type publicProblem struct {
+	Summary        string `json:"summary"`
 	Code           string `json:"code"`
 	Path           string `json:"path"`
 	Detail         string `json:"detail"`
@@ -153,6 +154,9 @@ type publicRead struct {
 }
 
 type publicSource struct {
+	Identity struct {
+		Certainty string `json:"certainty"`
+	} `json:"identity"`
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
