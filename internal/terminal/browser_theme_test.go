@@ -21,11 +21,12 @@ func TestResolveBrowserThemeAndBackgroundHint(t *testing.T) {
 	}
 }
 
-func TestBrowserThemesKeepNavigationBlueAndUseLavenderForContent(t *testing.T) {
+func TestBrowserThemesUseRoseNavigationSageNamesAndLavenderContent(t *testing.T) {
 	tests := []struct {
 		name           string
 		theme          browserTheme
 		navigation     string
+		sourceName     string
 		content        string
 		warning        string
 		danger         string
@@ -35,7 +36,8 @@ func TestBrowserThemesKeepNavigationBlueAndUseLavenderForContent(t *testing.T) {
 		{
 			name:           "dark",
 			theme:          themeDark,
-			navigation:     "38;2;147;197;253",
+			navigation:     "38;2;249;168;212",
+			sourceName:     "38;2;187;247;208",
 			content:        "38;2;196;181;253",
 			warning:        "38;2;246;193;119",
 			danger:         "38;2;248;113;113",
@@ -45,7 +47,8 @@ func TestBrowserThemesKeepNavigationBlueAndUseLavenderForContent(t *testing.T) {
 		{
 			name:           "light",
 			theme:          themeLight,
-			navigation:     "38;2;3;105;161",
+			navigation:     "38;2;157;23;77",
+			sourceName:     "38;2;22;101;52",
 			content:        "38;2;109;40;217",
 			warning:        "38;2;146;64;14",
 			danger:         "38;2;185;28;28",
@@ -58,6 +61,9 @@ func TestBrowserThemesKeepNavigationBlueAndUseLavenderForContent(t *testing.T) {
 			palette := paletteFor(test.theme)
 			if palette.accent != test.navigation {
 				t.Fatalf("navigation accent = %q, want %q", palette.accent, test.navigation)
+			}
+			if palette.sourceNameAccent != test.sourceName {
+				t.Fatalf("source name accent = %q, want %q", palette.sourceNameAccent, test.sourceName)
 			}
 			if palette.contentAccent != test.content {
 				t.Fatalf("content accent = %q, want %q", palette.contentAccent, test.content)

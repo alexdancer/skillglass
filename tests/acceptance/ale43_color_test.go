@@ -55,8 +55,8 @@ func TestBrowserUsesContentAccentForMarkdownAndDetails(t *testing.T) {
 		foreground     string
 		codeBackground string
 	}{
-		{name: "dark", theme: "dark", navigation: "5;117", foreground: "5;183", codeBackground: "5;53"},
-		{name: "light", theme: "light", navigation: "5;25", foreground: "5;56", codeBackground: "5;225"},
+		{name: "dark", theme: "dark", navigation: "5;218", foreground: "5;183", codeBackground: "5;53"},
+		{name: "light", theme: "light", navigation: "5;125", foreground: "5;56", codeBackground: "5;225"},
 		{name: "none", theme: "none"},
 		{name: "no-color", theme: "dark", noColor: true},
 	}

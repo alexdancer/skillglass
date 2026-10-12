@@ -108,7 +108,9 @@ func (model browserModel) renderSourceList(width, height int) []string {
 		if focused {
 			marker = "› "
 		}
-		nameLine := marker + model.fitSourceLabel(source, max(1, width-ansi.StringWidth(marker)))
+		label := model.sourceDisplayLabel(source)
+		label.name = model.palette().sourceName(label.name)
+		nameLine := marker + label.fit(max(1, width-ansi.StringWidth(marker)))
 		descriptionLine := "  " + displayOptional(source.Description)
 		locationLine := "  " + model.sourceLocation(source)
 		row := []string{

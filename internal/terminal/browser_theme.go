@@ -66,6 +66,7 @@ func backgroundIsLight(colorFGBG string) bool {
 type browserPalette struct {
 	enabled            bool
 	accent             string
+	sourceNameAccent   string
 	contentAccent      string
 	muted              string
 	warning            string
@@ -78,7 +79,8 @@ func paletteFor(theme browserTheme) browserPalette {
 	case themeLight:
 		return browserPalette{
 			enabled:            true,
-			accent:             "38;2;3;105;161",
+			accent:             "38;2;157;23;77",
+			sourceNameAccent:   "38;2;22;101;52",
 			contentAccent:      "38;2;109;40;217",
 			muted:              "38;2;90;101;116",
 			warning:            "38;2;146;64;14",
@@ -90,7 +92,8 @@ func paletteFor(theme browserTheme) browserPalette {
 	default:
 		return browserPalette{
 			enabled:            true,
-			accent:             "38;2;147;197;253",
+			accent:             "38;2;249;168;212",
+			sourceNameAccent:   "38;2;187;247;208",
 			contentAccent:      "38;2;196;181;253",
 			muted:              "38;2;168;179;195",
 			warning:            "38;2;246;193;119",
@@ -124,6 +127,10 @@ func (palette browserPalette) active(value string) string {
 	return palette.styled(value, palette.accent, "1")
 }
 
+func (palette browserPalette) sourceName(value string) string {
+	return palette.styled(value, palette.sourceNameAccent)
+}
+
 func (palette browserPalette) contentLabel(value string) string {
 	return palette.styled(value, palette.contentAccent, "1")
 }
@@ -141,6 +148,10 @@ func (palette browserPalette) failure(value string) string {
 }
 
 func (palette browserPalette) selected(value string) string {
+	if !palette.enabled {
+		return value
+	}
+	value = strings.ReplaceAll(value, "\x1b[0m", "\x1b[0m\x1b["+palette.selectedBackground+"m")
 	return palette.styled(value, palette.selectedBackground)
 }
 

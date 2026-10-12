@@ -2,7 +2,7 @@
 
 ## Chosen direction
 
-The production browser uses **Quiet split**, the approved ALE-43 direction. It keeps the collection and the focused instructions in one visual context at wide widths, then reduces to one focused pane when space is limited. The design uses minimal dividers, blue navigation, lavender content accents, quiet secondary text, and a visible selected-row surface.
+The production browser uses **Quiet split**, the approved ALE-43 direction. It keeps the collection and the focused instructions in one visual context at wide widths, then reduces to one focused pane when space is limited. The design uses minimal dividers, rose navigation, sage source names, lavender content accents, quiet secondary text, and a visible selected-row surface.
 
 The collection snapshot and stable `SourceID` remain the domain authority. Browser state is limited to mode, focus, selected IDs, source tab, rendered or raw instruction view, filters, scroll positions, feedback, terminal size, and presentation theme.
 
@@ -97,14 +97,15 @@ While search input is active, filter and navigation letters are ordinary query t
 
 Dark and light themes share semantic roles:
 
-- **Navigation accent:** product name, active mode, active tab, and focus.
+- **Navigation accent:** product name, application headings, active mode, active tab, and reader title.
+- **Source-name accent:** source names in focused and unfocused inventory rows; disambiguation hints retain their neutral appearance.
 - **Content accent:** Markdown headings, links, and inline code, plus Details labels, section titles, and YAML mapping keys.
 - **Body:** primary reading text.
 - **Muted:** descriptions, provenance, dividers, inactive tabs, and help text.
 - **Caution:** incomplete coverage.
-- **Selected surface:** the complete focused inventory row.
+- **Selected surface:** the complete focused inventory row, including padding after styled names.
 
-Dark uses navigation accent `#93C5FD`, content accent `#C4B5FD`, body `#DCE5EF`, muted `#A8B3C3`, code background `#342B47`, and selected background `#20425B`. Light uses navigation accent `#0369A1`, content accent `#6D28D9`, body `#1E293B`, muted `#5A6574`, code background `#EFE8FF`, and selected background `#DBEAFE`.
+Dark uses navigation accent `#F9A8D4`, source-name accent `#BBF7D0`, content accent `#C4B5FD`, body `#DCE5EF`, muted `#A8B3C3`, code background `#342B47`, and selected background `#20425B`. Light uses navigation accent `#9D174D`, source-name accent `#166534`, content accent `#6D28D9`, body `#1E293B`, muted `#5A6574`, code background `#EFE8FF`, and selected background `#DBEAFE`.
 
 The Markdown renderer uses the content accent for headings, links, and inline code. Details uses bold content accent for field prefixes (including their colons), section labels, and parser-identified YAML mapping keys over the preserved raw text. Values, colons within values, and literal or folded block-scalar bodies stay neutral. Malformed raw metadata, or metadata whose key spans cannot be safely identified, remains escaped plain text. Key highlighting supports LF and CRLF; metadata containing standalone CR, NEL (U+0085), line separator (U+2028), or paragraph separator (U+2029) falls back to escaped plain text for the entire metadata block without changing manifest validity. The renderer does not load ambient Glamour configuration or a separate syntax-color theme. No-color mode emits structural text without SGR styling.
 
