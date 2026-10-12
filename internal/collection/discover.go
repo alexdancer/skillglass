@@ -612,10 +612,14 @@ func isSymlink(path string) bool {
 }
 
 func isSymlinkCycle(err error) bool {
-	message := strings.ToLower(err.Error())
-	return errors.Is(err, syscall.ELOOP) ||
-		strings.Contains(message, "too many levels of symbolic links") ||
-		strings.Contains(message, "too many links")
+	if errors.Is(err, syscall.ELOOP) {
+		return true
+	}
+	if err == nil || errors.Unwrap(err) != nil {
+		return false
+	}
+	return err.Error() == "EvalSymlinks: too many links" ||
+		err.Error() == "EvalSymlinks: too many levels of symbolic links"
 }
 
 func inventoryResources(ctx context.Context, bundleDirectory string) ([]Resource, []Problem) {

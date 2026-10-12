@@ -217,6 +217,18 @@ func TestALE24ProblemsRemainSearchableWithUsablePartialInventory(t *testing.T) {
 			t.Fatalf("problem lost useful path or reason: %#v", problem)
 		}
 	}
+	assertProblemReferenceIntegrity(t, inventory)
+	assertUnresolvedReferenceNames(t, inventory.References, []string{
+		"broken-entry",
+		"broken-target-too-many-levels",
+		"broken-target-too-many-links",
+		"entry-cycle-a",
+		"entry-cycle-b",
+	})
+	assertReferenceProblemCode(t, inventory.References, "broken-target-too-many-links", "broken-reference")
+	assertReferenceProblemCode(t, inventory.References, "broken-target-too-many-levels", "broken-reference")
+	assertReferenceProblemCode(t, inventory.References, "entry-cycle-a", "symlink-cycle")
+	assertReferenceProblemCode(t, inventory.References, "entry-cycle-b", "symlink-cycle")
 
 	filtered := fx.run(t, append([]string{
 		"problems",
@@ -229,11 +241,34 @@ func TestALE24ProblemsRemainSearchableWithUsablePartialInventory(t *testing.T) {
 	if len(malformed.Problems) != 1 || malformed.Problems[0].Code != "malformed-manifest" {
 		t.Fatalf("problem filters = %#v", malformed.Problems)
 	}
+	assertProblemReferenceIntegrity(t, malformed)
+
+	broken := fx.run(t, append([]string{
+		"list",
+		"--problem", "broken-reference",
+	}, args...)...)
+	assertExit(t, broken, 1)
+	var brokenReferences publicList
+	decodeJSON(t, broken.stdout, &brokenReferences)
+	assertProblemReferenceIntegrity(t, brokenReferences)
+	assertUnresolvedReferenceNames(t, brokenReferences.References, []string{
+		"broken-entry",
+		"broken-target-too-many-levels",
+		"broken-target-too-many-links",
+	})
 
 	list := fx.run(t, append([]string{"list"}, args...)...)
 	assertExit(t, list, 1)
 	var sources publicList
 	decodeJSON(t, list.stdout, &sources)
+	assertProblemReferenceIntegrity(t, sources)
+	assertUnresolvedReferenceNames(t, sources.References, []string{
+		"broken-entry",
+		"broken-target-too-many-levels",
+		"broken-target-too-many-links",
+		"entry-cycle-a",
+		"entry-cycle-b",
+	})
 	normal := sourceNamed(t, sources.Sources, "normal-a")
 	read := fx.run(t, append([]string{"read"}, append(args[:len(args)-1], normal.ID)...)...)
 	assertExit(t, read, 1)
@@ -376,6 +411,20 @@ func (fx ale24Fixture) addProblems(t *testing.T) ale24ProblemPaths {
 	if err := os.Symlink(filepath.Join("..", "..", "outside", "does-not-exist"), filepath.Join(fx.rootA, "broken-entry")); err != nil {
 		t.Fatal(err)
 	}
+	for _, link := range []struct {
+		name   string
+		target string
+	}{
+		{"broken-target-too-many-links", "absent-too many links"},
+		{"broken-target-too-many-levels", "absent-too many levels of symbolic links"},
+	} {
+		if err := os.Symlink(
+			filepath.Join("..", "..", "outside", link.target),
+			filepath.Join(fx.rootA, link.name),
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := os.Symlink("entry-cycle-b", filepath.Join(fx.rootA, "entry-cycle-a")); err != nil {
 		t.Fatal(err)
 	}
@@ -465,4 +514,52 @@ func assertInformationalCode(t *testing.T, problems []publicProblem, code string
 		}
 	}
 	t.Fatalf("informational problem %q missing from %#v", code, problems)
+}
+
+func assertProblemReferenceIntegrity(t *testing.T, inventory publicList) {
+	t.Helper()
+	references := make(map[string]publicReference, len(inventory.References))
+	for _, reference := range inventory.References {
+		references[reference.ID] = reference
+	}
+	for _, problem := range inventory.Problems {
+		for _, referenceID := range problem.ReferenceIDs {
+			if _, ok := references[referenceID]; !ok {
+				t.Fatalf("problem %q has unavailable reference %q", problem.Code, referenceID)
+			}
+		}
+	}
+}
+
+func assertUnresolvedReferenceNames(t *testing.T, references []publicReference, want []string) {
+	t.Helper()
+	var got []string
+	for _, reference := range references {
+		if reference.Status != "unresolved" {
+			continue
+		}
+		if reference.SourceID != "" || reference.ResolvedPath != "" || !reference.MatchesFilters || len(reference.Problems) == 0 {
+			t.Fatalf("unresolved reference lost provenance: %#v", reference)
+		}
+		got = append(got, filepath.Base(reference.DiscoveredPath))
+	}
+	sort.Strings(got)
+	sort.Strings(want)
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("unresolved references = %v, want %v", got, want)
+	}
+}
+
+func assertReferenceProblemCode(t *testing.T, references []publicReference, name, want string) {
+	t.Helper()
+	for _, reference := range references {
+		if filepath.Base(reference.DiscoveredPath) != name {
+			continue
+		}
+		if len(reference.Problems) != 1 || reference.Problems[0].Code != want {
+			t.Fatalf("reference %q problems = %#v, want %q", name, reference.Problems, want)
+		}
+		return
+	}
+	t.Fatalf("reference %q was not reported", name)
 }

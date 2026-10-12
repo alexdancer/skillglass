@@ -158,6 +158,7 @@ type publicReference struct {
 	Context        string          `json:"context"`
 	DiscoveredPath string          `json:"discovered_path"`
 	ResolvedPath   string          `json:"resolved_path"`
+	Status         string          `json:"status"`
 	SourceID       string          `json:"source_id"`
 	MatchesFilters bool            `json:"matches_filters"`
 	Problems       []publicProblem `json:"problems"`

@@ -5,7 +5,8 @@ ALE-24 adds reference-aware source identity, custom and project provenance, sear
 ## Corrections made from executable evidence
 
 - The accepted ALE-23 executable rejected `--project-root`, which reproduced the missing public capability before implementation.
-- Darwin can report a symlink cycle as `too many links`. Cycle classification now recognizes the operating-system error as well as `ELOOP`; a broken path whose name contains those words remains a `broken-reference`.
+- Darwin can report a symlink cycle as a bare `EvalSymlinks: too many links` error. Cycle classification now recognizes typed `ELOOP` or that exact unwrapped sentinel instead of scanning arbitrary path text. Missing targets containing `too many links` or `too many levels of symbolic links` remain `broken-reference` problems.
+- An early query projection retained references only through resolved sources. Unresolved broken and cyclic references therefore disappeared while problems still named their IDs. Views now retain references selected through either visible sources or visible problem relationships, including their original path, status, filter match, and diagnostic.
 - A fixed filter row allowed a long selected root to hide context and problem values. The browser now renders complete bounded filter fields, combines them only when they fit, and puts the full root path in the scrollable scope view.
 - Adding selection identity to the header initially reduced the 80 by 24 detail body enough to hide the inherited final-instruction PTY evidence. Selection and filter fields now share rows only when complete, preserving the body, controls, selector, and filter dimensions.
 - Terminal delta rendering could emit only the changed suffix of `Resources:` after an end jump. The end action requests a complete repaint, retaining the raw PTY proof as well as the current-cell proof.
@@ -16,7 +17,7 @@ ALE-24 adds reference-aware source identity, custom and project provenance, sear
 
 `TestALE24FiltersUseReferenceProvenanceWithANDSemantics` covers custom and project roots, selected-root filtering, context filtering, problem filtering, search, invalid inputs, and the same normalized root supplied through both contexts. It verifies that filters narrow matching references without manufacturing ownership or availability evidence.
 
-`TestALE24ProblemsRemainSearchableWithUsablePartialInventory` combines healthy sources with missing roots, broken references, directory and entry cycles, unreadable and malformed manifests, and external resource links. Each reported problem retains a path and reason. Healthy source detail remains readable while the complete selected scope returns status 1.
+`TestALE24ProblemsRemainSearchableWithUsablePartialInventory` combines healthy sources with missing roots, broken references, directory and entry cycles, unreadable and malformed manifests, and external resource links. Each reported problem retains a path and reason, every reported reference ID resolves to preserved reference data, and unresolved references remain source-free. Missing targets whose names contain cycle-like error phrases stay distinct from real cycles. Healthy source detail remains readable while the complete selected scope returns status 1.
 
 `TestALE24FreshInvocationRetainsObjectIdentityAcrossReferenceChanges` proves that a new CLI invocation sees source insertion, manifest edits, broken references, and alias retargeting. A surviving alias retains the original source ID.
 

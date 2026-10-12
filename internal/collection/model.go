@@ -394,17 +394,8 @@ func (snapshot *Snapshot) Query(filters Filters, target QueryTarget) View {
 		sources = append(sources, cloneSource(source))
 		selected[id] = struct{}{}
 	}
-	references := make([]Reference, 0, len(snapshot.referenceOrder))
-	for _, id := range snapshot.referenceOrder {
-		reference := snapshot.references[id]
-		if _, ok := selected[reference.Source]; !ok {
-			continue
-		}
-		cloned := cloneReference(reference)
-		cloned.MatchesFilters = matchingReferences[id]
-		references = append(references, cloned)
-	}
 	problems := make([]Problem, 0, len(snapshot.problems))
+	problemReferences := make(map[ReferenceID]struct{})
 	for _, problem := range snapshot.problems {
 		if !snapshot.problemMatches(problem, filters, matchingReferences) {
 			continue
@@ -413,6 +404,21 @@ func (snapshot *Snapshot) Query(filters Filters, target QueryTarget) View {
 			continue
 		}
 		problems = append(problems, cloneProblem(problem))
+		for _, id := range problem.ReferenceIDs {
+			problemReferences[id] = struct{}{}
+		}
+	}
+	references := make([]Reference, 0, len(snapshot.referenceOrder))
+	for _, id := range snapshot.referenceOrder {
+		reference := snapshot.references[id]
+		_, selectedSource := selected[reference.Source]
+		_, selectedProblem := problemReferences[id]
+		if !selectedSource && !selectedProblem {
+			continue
+		}
+		cloned := cloneReference(reference)
+		cloned.MatchesFilters = matchingReferences[id]
+		references = append(references, cloned)
 	}
 	return View{
 		Filters:    filters,
