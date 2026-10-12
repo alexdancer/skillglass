@@ -273,8 +273,9 @@ func (model browserModel) sourceTabs(active sourceTab) string {
 
 func (model browserModel) sourceDetailLines(source collection.Source, width int) []string {
 	lines := make([]string, 0, 32+len(source.Resources))
+	palette := model.palette()
 	appendField := func(label, value string) {
-		lines = append(lines, wrapLine(label+": "+safeInline(value), width)...)
+		lines = append(lines, wrapLine(palette.contentLabel(label+":")+" "+safeInline(value), width)...)
 	}
 	appendField("Source ID", string(source.ID))
 	appendField("Source path", source.Directory)
@@ -287,7 +288,7 @@ func (model browserModel) sourceDetailLines(source collection.Source, width int)
 		appendField("Manifest resolved path", source.Manifest.ResolvedPath)
 	}
 
-	lines = append(lines, "", "References")
+	lines = append(lines, "", palette.contentLabel("References"))
 	references := model.snapshot.ReferencesMatchingFilters(source.ID, model.filters)
 	if len(references) == 0 {
 		lines = append(lines, "  none")
@@ -303,7 +304,7 @@ func (model browserModel) sourceDetailLines(source collection.Source, width int)
 	}
 
 	if len(source.Problems) > 0 {
-		lines = append(lines, "", "Diagnostics")
+		lines = append(lines, "", palette.contentLabel("Diagnostics"))
 		for _, problem := range source.Problems {
 			lines = append(lines, wrapLine(
 				"  "+string(problem.Code)+": "+safeInline(problem.Summary)+" ("+safeInline(problem.Detail)+")",
@@ -312,18 +313,20 @@ func (model browserModel) sourceDetailLines(source collection.Source, width int)
 		}
 	}
 
-	lines = append(lines, "", "Raw metadata")
+	lines = append(lines, "", palette.contentLabel("Raw metadata"))
 	if source.Manifest.RawFrontmatter == "" {
 		lines = append(lines, "  none")
-	} else {
+	} else if source.Manifest.Status != collection.ManifestParsed {
 		lines = append(lines, wrappedBlock(source.Manifest.RawFrontmatter, "  ", width)...)
+	} else {
+		lines = append(lines, styledYAMLMetadataLines(source.Manifest.RawFrontmatter, "  ", width, palette)...)
 	}
 	if source.Manifest.Status != collection.ManifestParsed && source.Manifest.RawText != "" {
-		lines = append(lines, "", "Raw manifest")
+		lines = append(lines, "", palette.contentLabel("Raw manifest"))
 		lines = append(lines, wrappedBlock(source.Manifest.RawText, "  ", width)...)
 	}
 
-	lines = append(lines, "", "Resources")
+	lines = append(lines, "", palette.contentLabel("Resources"))
 	if len(source.Resources) == 0 {
 		lines = append(lines, "  none")
 	}

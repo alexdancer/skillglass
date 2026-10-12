@@ -102,6 +102,7 @@ func TestBrowserPTYJourney(t *testing.T) {
 			t.Fatalf("PTY did not restore terminal mode %q", restored)
 		}
 	}
+	visibleOutput := ansi.Strip(string(raw.Bytes()))
 	for _, expected := range []string{
 		"coverage complete",
 		"normal-skill",
@@ -114,7 +115,7 @@ func TestBrowserPTYJourney(t *testing.T) {
 		"executable",
 		"0 matches | selected source unchanged",
 	} {
-		if !bytes.Contains(raw.Bytes(), []byte(expected)) {
+		if !strings.Contains(visibleOutput, expected) {
 			t.Fatalf("PTY output missing %q", expected)
 		}
 	}

@@ -66,6 +66,7 @@ func backgroundIsLight(colorFGBG string) bool {
 type browserPalette struct {
 	enabled            bool
 	accent             string
+	contentAccent      string
 	muted              string
 	warning            string
 	danger             string
@@ -78,6 +79,7 @@ func paletteFor(theme browserTheme) browserPalette {
 		return browserPalette{
 			enabled:            true,
 			accent:             "38;2;3;105;161",
+			contentAccent:      "38;2;109;40;217",
 			muted:              "38;2;90;101;116",
 			warning:            "38;2;146;64;14",
 			danger:             "38;2;185;28;28",
@@ -89,6 +91,7 @@ func paletteFor(theme browserTheme) browserPalette {
 		return browserPalette{
 			enabled:            true,
 			accent:             "38;2;147;197;253",
+			contentAccent:      "38;2;196;181;253",
 			muted:              "38;2;168;179;195",
 			warning:            "38;2;246;193;119",
 			danger:             "38;2;248;113;113",
@@ -121,6 +124,10 @@ func (palette browserPalette) active(value string) string {
 	return palette.styled(value, palette.accent, "1")
 }
 
+func (palette browserPalette) contentLabel(value string) string {
+	return palette.styled(value, palette.contentAccent, "1")
+}
+
 func (palette browserPalette) secondary(value string) string {
 	return palette.styled(value, palette.muted)
 }
@@ -143,14 +150,14 @@ func (theme browserTheme) markdownStyle() ansi.StyleConfig {
 	}
 
 	body := "#DCE5EF"
-	accent := "#93C5FD"
+	accent := "#C4B5FD"
 	muted := "#A8B3C3"
-	codeBackground := "#162231"
+	codeBackground := "#342B47"
 	if theme == themeLight {
 		body = "#1E293B"
-		accent = "#0369A1"
+		accent = "#6D28D9"
 		muted = "#5A6574"
-		codeBackground = "#E7F1FA"
+		codeBackground = "#EFE8FF"
 	}
 
 	one := uint(1)
