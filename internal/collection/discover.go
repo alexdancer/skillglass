@@ -66,6 +66,7 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 		State:     RootSearched,
 	}
 	problemStart := len(builder.problems)
+	referenceStart := len(builder.referenceOrder)
 
 	resolvedRoot, err := filepath.EvalSymlinks(root.Path)
 	if err != nil {
@@ -160,23 +161,30 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 		}
 	}
 
-	report.ProblemCount = len(builder.problems) - problemStart
-	rootProblems := builder.problems[problemStart:]
-	if problemsLimitCoverage(rootProblems) {
-		report.State = RootIncomplete
-	} else if report.SourceCount == 0 {
-		report.State = RootEmpty
+	rootProblems := make(map[ProblemID]Problem)
+	for _, problem := range builder.problems[problemStart:] {
+		rootProblems[problem.ID] = problem
 	}
-	return report
-}
-
-func problemsLimitCoverage(problems []Problem) bool {
-	for _, problem := range problems {
-		if problem.LimitsCoverage {
-			return true
+	for _, id := range builder.referenceOrder[referenceStart:] {
+		reference := builder.references[id]
+		for _, problem := range reference.Problems {
+			rootProblems[problem.ID] = problem
+		}
+		for _, problem := range builder.sources[reference.Source].Problems {
+			rootProblems[problem.ID] = problem
 		}
 	}
-	return false
+	report.ProblemCount = len(rootProblems)
+	if report.SourceCount == 0 {
+		report.State = RootEmpty
+	}
+	for _, problem := range rootProblems {
+		if problem.LimitsCoverage {
+			report.State = RootIncomplete
+			break
+		}
+	}
+	return report
 }
 
 func (builder *discoveryBuilder) discoverCandidate(

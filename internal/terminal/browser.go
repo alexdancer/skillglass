@@ -113,6 +113,12 @@ func (model browserModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			model.scopeScroll = min(model.scopeScroll, model.maxScopeScroll())
 		}
 		return model, nil
+	case tea.PasteMsg:
+		if model.mode == browserSearch {
+			model.query += message.Content
+			model.applyQuery()
+		}
+		return model, nil
 	case tea.KeyPressMsg:
 		if message.String() == "ctrl+c" {
 			return model, tea.Quit

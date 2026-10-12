@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -144,7 +145,7 @@ func inspectManifest(bundleDirectory string) (Manifest, []Problem) {
 
 	manifest.RawFrontmatter = string(frontmatter)
 	manifest.Instructions = string(instructions)
-	metadata, err := decodeMetadata(frontmatter)
+	metadata, nonFiniteValues, err := decodeMetadata(frontmatter)
 	if err != nil {
 		manifest.Status = ManifestMalformed
 		problem := makeProblem(
@@ -186,11 +187,10 @@ func inspectManifest(bundleDirectory string) (Manifest, []Problem) {
 		}
 	}
 
-	normalizedMetadata, nonFiniteValues := normalizeNonFiniteMetadata(metadata)
 	manifest.Status = ManifestParsed
 	manifest.Name = name
 	manifest.Description = description
-	manifest.Metadata = normalizedMetadata
+	manifest.Metadata = metadata
 	if len(nonFiniteValues) == 0 {
 		return manifest, nil
 	}
@@ -204,13 +204,18 @@ func inspectManifest(bundleDirectory string) (Manifest, []Problem) {
 	return manifest, []Problem{problem}
 }
 
-func normalizeNonFiniteMetadata(metadata map[string]any) (map[string]any, []string) {
-	normalized, values := normalizeNonFiniteValue(metadata, "$")
-	return normalized.(map[string]any), values
-}
-
-func normalizeNonFiniteValue(value any, path string) (any, []string) {
+func normalizeMetadataValue(value any, path string) (any, []string, error) {
 	switch typed := value.(type) {
+	case map[any]any:
+		mapping := make(map[string]any, len(typed))
+		for key, item := range typed {
+			text, ok := key.(string)
+			if !ok {
+				return nil, nil, fmt.Errorf("%s: mapping key must be a string, got %T", path, key)
+			}
+			mapping[text] = item
+		}
+		return normalizeMetadataValue(mapping, path)
 	case map[string]any:
 		keys := make([]string, 0, len(typed))
 		for key := range typed {
@@ -220,29 +225,39 @@ func normalizeNonFiniteValue(value any, path string) (any, []string) {
 		normalized := make(map[string]any, len(typed))
 		var values []string
 		for _, key := range keys {
-			item, nested := normalizeNonFiniteValue(typed[key], path+"."+key)
+			item, nested, err := normalizeMetadataValue(typed[key], path+"."+key)
+			if err != nil {
+				return nil, nil, err
+			}
 			normalized[key] = item
 			values = append(values, nested...)
 		}
-		return normalized, values
+		return normalized, values, nil
 	case []any:
 		normalized := make([]any, len(typed))
 		var values []string
 		for index, item := range typed {
-			normalizedItem, nested := normalizeNonFiniteValue(
+			normalizedItem, nested, err := normalizeMetadataValue(
 				item,
 				fmt.Sprintf("%s[%d]", path, index),
 			)
+			if err != nil {
+				return nil, nil, err
+			}
 			normalized[index] = normalizedItem
 			values = append(values, nested...)
 		}
-		return normalized, values
+		return normalized, values, nil
 	case float64:
-		return normalizeFloat(typed, path)
+		normalized, values := normalizeFloat(typed, path)
+		return normalized, values, nil
 	case float32:
-		return normalizeFloat(float64(typed), path)
+		normalized, values := normalizeFloat(float64(typed), path)
+		return normalized, values, nil
+	case nil, string, bool, int, int64, uint64, time.Time:
+		return value, nil, nil
 	default:
-		return value, nil
+		return nil, nil, fmt.Errorf("%s: unsupported metadata value %T", path, value)
 	}
 }
 
@@ -296,18 +311,49 @@ func splitManifest(raw []byte) ([]byte, []byte, error) {
 	return nil, nil, errors.New("frontmatter has no closing --- line")
 }
 
-func decodeMetadata(raw []byte) (map[string]any, error) {
+func validateMetadataKeys(node *yaml.Node) error {
+	if node.Kind == yaml.MappingNode {
+		for index := 0; index < len(node.Content); index += 2 {
+			key := node.Content[index]
+			if key.ShortTag() == "!!merge" {
+				continue
+			}
+			var value any
+			if err := key.Decode(&value); err != nil {
+				return err
+			}
+			if _, ok := value.(string); !ok {
+				return fmt.Errorf("line %d: mapping key must be a string, got %T", key.Line, value)
+			}
+		}
+	}
+	for _, child := range node.Content {
+		if err := validateMetadataKeys(child); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func decodeMetadata(raw []byte) (map[string]any, []string, error) {
 	var node yaml.Node
 	if err := yaml.Unmarshal(raw, &node); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(node.Content) != 1 || node.Content[0].Kind != yaml.MappingNode {
-		return nil, errors.New("frontmatter must be a YAML mapping")
+		return nil, nil, errors.New("frontmatter must be a YAML mapping")
 	}
 
-	metadata := make(map[string]any)
-	if err := node.Content[0].Decode(&metadata); err != nil {
-		return nil, err
+	if err := validateMetadataKeys(&node); err != nil {
+		return nil, nil, err
 	}
-	return metadata, nil
+	var metadata any
+	if err := node.Content[0].Decode(&metadata); err != nil {
+		return nil, nil, err
+	}
+	normalized, values, err := normalizeMetadataValue(metadata, "$")
+	if err != nil {
+		return nil, nil, err
+	}
+	return normalized.(map[string]any), values, nil
 }
