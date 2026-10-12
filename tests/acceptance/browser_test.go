@@ -394,11 +394,23 @@ func TestBrowserManyRootsHasScrollableScopeAt60Columns(t *testing.T) {
 	)
 	assertPaneCells(t, detail, 60, 30)
 	writeEvidence(t, "tmux/many-roots/04-detail.txt", []byte(detail))
+	detailLineCount := 0
+	for _, line := range strings.Split(detail, "\n") {
+		var first, last, total int
+		if _, err := fmt.Sscanf(strings.TrimSpace(line), "Read lines %d-%d of %d", &first, &last, &total); err == nil {
+			detailLineCount = total
+			break
+		}
+	}
+	if detailLineCount == 0 {
+		t.Fatalf("detail frame does not report its line count:\n%s", detail)
+	}
+	detailEndStatus := fmt.Sprintf("-%d of %d", detailLineCount, detailLineCount)
 	// Long fixture prefixes can push instructions below the first viewport.
 	// Prove they are reachable and that the scope round trip keeps that position.
 	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "-l", "G")
 	detailEnd := waitForPaneAt(
-		t, tmux, fx, socket, "many:0.0", false, "MANY_ROOT_INSTRUCTIONS", "Read lines", "s scope",
+		t, tmux, fx, socket, "many:0.0", false, "MANY_ROOT_INSTRUCTIONS", detailEndStatus, "s scope",
 	)
 	assertPaneCells(t, detailEnd, 60, 30)
 	writeEvidence(t, "tmux/many-roots/04-detail-end.txt", []byte(detailEnd))
