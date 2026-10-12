@@ -251,9 +251,9 @@ func renderScope(output *strings.Builder, scope collection.Scope) {
 	for _, root := range scope.Roots {
 		fmt.Fprintf(
 			output,
-			"  [%s/%s] %s\n",
-			root.Context,
+			"  [%s] [%s] %s\n",
 			root.State,
+			root.Context,
 			safeInline(root.Requested),
 		)
 	}

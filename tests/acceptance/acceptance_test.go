@@ -317,8 +317,15 @@ func TestEmptyMissingMixedAndNoImplicitRoots(t *testing.T) {
 	fx := newFixture(t)
 	help := fx.run(t, "--help")
 	assertExit(t, help, 0)
-	if !bytes.Contains(help.stdout, []byte("skillglass list --root ROOT")) {
-		t.Fatalf("help output = %s", help.stdout)
+	for _, expected := range []string{
+		"skillglass list [SCOPE] [FILTERS] [--search TEXT] [--json]",
+		"skillglass problems [SCOPE] [FILTERS] [--search TEXT] [--json]",
+		"--project-root ROOT",
+		"--source-root ROOT",
+	} {
+		if !bytes.Contains(help.stdout, []byte(expected)) {
+			t.Fatalf("help output missing %q: %s", expected, help.stdout)
+		}
 	}
 	empty := fx.run(t, "list", "--root", fx.emptyRoot, "--json")
 	assertExit(t, empty, 0)

@@ -132,7 +132,6 @@ const (
 	ProblemIdentityUncertain       ProblemCode = "identity-uncertain"
 	ProblemDuplicateName           ProblemCode = "duplicate-name"
 	ProblemSharedManifest          ProblemCode = "shared-manifest"
-	ProblemExternalResource        ProblemCode = "external-resource"
 )
 
 var documentedProblemCodes = []ProblemCode{
@@ -150,7 +149,6 @@ var documentedProblemCodes = []ProblemCode{
 	ProblemIdentityUncertain,
 	ProblemDuplicateName,
 	ProblemSharedManifest,
-	ProblemExternalResource,
 }
 
 func ProblemCodes() []ProblemCode {

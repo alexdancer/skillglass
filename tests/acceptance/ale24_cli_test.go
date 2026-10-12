@@ -207,7 +207,6 @@ func TestALE24ProblemsRemainSearchableWithUsablePartialInventory(t *testing.T) {
 		"symlink-cycle",
 		"unreadable-manifest",
 		"malformed-manifest",
-		"external-resource",
 	} {
 		if !hasProblemCode(inventory.Problems, code) {
 			t.Fatalf("problem code %q missing from %#v", code, inventory.Problems)

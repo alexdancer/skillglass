@@ -66,13 +66,13 @@ func discover(ctx context.Context, request Request) (*Snapshot, error) {
 func recountRootReports(reports []RootReport, builder discoveryBuilder) {
 	for index := range reports {
 		report := &reports[index]
-		sources := make(map[SourceID]struct{})
+		sourceCount := 0
 		for _, reference := range builder.references {
 			if reference.Root == report.ID && reference.Source != "" {
-				sources[reference.Source] = struct{}{}
+				sourceCount++
 			}
 		}
-		report.SourceCount = len(sources)
+		report.SourceCount = sourceCount
 		problems := make(map[ProblemID]Problem)
 		for _, problem := range builder.problems {
 			if containsRootID(problem.RootIDs, report.ID) {
@@ -415,22 +415,6 @@ func (builder *discoveryBuilder) addRelationshipProblems() {
 		if source.Manifest.ResolvedPath != "" {
 			byManifest[source.Manifest.ResolvedPath] = append(byManifest[source.Manifest.ResolvedPath], id)
 		}
-		for _, resource := range source.Resources {
-			if resource.Kind != "symlink" || resource.LinkScope != "external" {
-				continue
-			}
-			problem := makeProblem(
-				ProblemExternalResource,
-				filepath.Join(source.Directory, filepath.FromSlash(resource.Path)),
-				"resource link points outside the bundle",
-				fmt.Errorf("target %q is inventoried as a link and is not followed", resource.LinkTarget),
-				false,
-			)
-			problem.SourceIDs = []SourceID{id}
-			source.Problems = append(source.Problems, problem)
-			builder.addProblem(problem)
-		}
-		builder.sources[id] = source
 	}
 	for name, ids := range byName {
 		if len(ids) < 2 {
