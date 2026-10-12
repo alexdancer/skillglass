@@ -27,6 +27,9 @@ Filters:
   --context VALUE      all, project, or custom (default all)
   --problem CODE       one documented problem code
 
+Browser:
+  --theme VALUE        auto, dark, light, or none (default auto)
+
 At least one explicit --root or --project-root is required. Project context never adds an implicit root.
 `
 

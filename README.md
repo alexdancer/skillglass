@@ -21,6 +21,8 @@ Planned integrations cover Codex, Claude Code, Hermes, Pi, OpenCode, Gemini CLI,
 
 ## Start here
 
+- [Product principles](PRODUCT.md)
+- [Terminal design](DESIGN.md)
 - [Specification](docs/specs/skill-viewer-v1.md)
 - [Published ticket breakdown](docs/plans/skill-viewer-v1-ticket-breakdown.md)
 - [Coding workflow](docs/agents/coding-workflow.md)
@@ -29,6 +31,7 @@ Planned integrations cover Codex, Claude Code, Hermes, Pi, OpenCode, Gemini CLI,
 - [Agent instructions](AGENTS.md)
 - [ALE-23 verification](docs/verification/ale-23.md)
 - [ALE-24 verification](docs/verification/ale-24.md)
+- [ALE-43 verification](docs/verification/ale-43.md)
 
 [Linear](https://linear.app/alex-dancer/project/skill-viewer-58706f175bed) holds live ticket requirements, status, and dependencies. The local copies are references.
 
@@ -48,10 +51,10 @@ bin/skillglass list --root /path/to/skills
 bin/skillglass list --root /path/to/custom --project /path/to/project --project-root /path/to/project-skills --context project --problem duplicate-name --search testing --json
 bin/skillglass problems --root /path/to/custom --project /path/to/project --project-root /path/to/project-skills --search broken --json
 bin/skillglass read --root /path/to/custom --project /path/to/project --project-root /path/to/project-skills SOURCE_ID
-bin/skillglass browse --root /path/to/custom --project /path/to/project --project-root /path/to/project-skills
+bin/skillglass browse --root /path/to/custom --project /path/to/project --project-root /path/to/project-skills --theme auto
 ```
 
-`list` and `problems` accept `--source-root`, `--context all|project|custom`, and `--problem CODE`; `browse` accepts the same filters for its initial view, with search entered interactively. All supplied filters combine with AND. The source-root value must be one of the selected normalized absolute roots and never expands discovery. Search is case-insensitive. `list --search` matches source names and descriptions. `problems --search` matches problem codes, summaries, details, reported diagnostic paths, and all associated original discovery and requested-root paths. Context and source-root must match the same associated reference or root, but search may match any known provenance of that eligible problem. Filters change the view of the selected snapshot, not its completeness or exit status. Each CLI invocation performs a fresh scan.
+`list` and `problems` accept `--source-root`, `--context all|project|custom`, and `--problem CODE`; `browse` accepts the same filters for its initial view, with search entered interactively, plus `--theme auto|dark|light|none`. All supplied filters combine with AND. The source-root value must be one of the selected normalized absolute roots and never expands discovery. Search is case-insensitive. `list --search` matches source names and descriptions. `problems --search` matches problem codes, summaries, details, reported diagnostic paths, and all associated original discovery and requested-root paths. Context and source-root must match the same associated reference or root, but search may match any known provenance of that eligible problem. Filters change the view of the selected snapshot, not its completeness or exit status. Each CLI invocation performs a fresh scan.
 
 Use a source ID from `list` as the final `read` argument, after all scope and JSON flags. `read` deliberately has no view filters and returns the selected source with every known discovery reference. Supporting resources are inventoried recursively inside each bundle without following resource symlinks or opening resource contents. Browsing and reading never execute bundled instructions or scripts or change sources or agent settings. Human output escapes terminal controls; JSON preserves the text for programmatic use.
 
@@ -59,11 +62,15 @@ Directory symlinks that reach the same proven directory object produce one sourc
 
 The documented problem codes are `root-missing`, `root-unreadable`, `broken-reference`, `symlink-cycle`, `unreadable-manifest`, `malformed-manifest`, `metadata-non-finite-float`, `manifest-too-large`, `manifest-invalid-encoding`, `unreadable-resource`, `resource-limit`, `identity-uncertain`, `duplicate-name`, and `shared-manifest`. Duplicate names, shared manifests, and non-finite metadata are informational and do not make otherwise complete coverage incomplete. External resource links remain visible through their resource path, target, and `link_scope: external`; they are not traversed. Failures that prevent selected content from being discovered or read preserve useful partial output, mark coverage incomplete, and return status 1.
 
-In the browser, move with the arrow keys or `j`/`k`, press `/` to search the current Sources or Problems view, `Enter` to keep a search or open the focused item, `Tab` to switch views, `Esc` or the left arrow to return from detail, and `q` to quit outside search. Search supports bracketed paste as query data and `Ctrl+U` to clear. Source and problem detail scroll with the same movement keys, `PgUp`/`PgDn`, and `g`/`G` for top/end.
+At 96 columns and wider, the browser keeps a 32 to 36 column source list beside a live rendered-instruction preview. Moving focus updates the preview; `Enter` opens the full-width reader. Below 96 columns, Sources uses the full width and `Enter` opens the focused reader. The reader starts on Instructions. Press `d` for exact Details, `i` to return to Instructions, and `v` to switch between rendered and escaped raw instructions. Details retains full source IDs, paths, identity, ownership and availability evidence, every reference, diagnostics, raw metadata, and supporting resources. Equal root basenames receive scope ordinals, and otherwise-indistinguishable independent sources receive a compact stable source-ID hint before Details. When a name is too long, the browser truncates the human name while retaining the hint and compact provenance.
 
-Press `c` to cycle all, project, and custom reference contexts; `o` to cycle selected roots; `f` to cycle problem codes; and `r` to refresh explicitly. The browser has no watcher. Refresh observes external edits and retains a selected source only while the same proven directory object remains reachable. A rename or one retargeted alias can retain selection when another reference still reaches that object. Replacement, loss, uncertain identity, or retargeting its final reference clears selection visibly. A selected source hidden by filters remains explicitly identified as hidden and is never rebound to a visible row.
+Move with the arrow keys or `j`/`k`, press `/` to search the current Sources or Problems view, `Enter` to keep a search or open the focused item, `Tab` to switch views, `Esc` or the left arrow to return, and `q` to quit outside search. Search supports bracketed paste as query data and `Ctrl+U` to clear. Readers, Scope, and Help also support `PgUp`/`PgDn`, `Home`/`End`, and `g`/`G` for top and end. Press `?` for complete scrollable help.
 
-Press `s` from either inventory view or source/problem detail to inspect the full selected project, every discovery root, and active filters. The scope view scrolls with the arrow keys or `j`/`k`, `PgUp`/`PgDn`, and `g`/`G`; press `Esc` or the left arrow to return. While search input is active, `c`, `o`, `f`, `r`, and `s` remain ordinary query text. Long searches retain the complete query for filtering and show its current tail on one row with a leading ellipsis.
+Press `c` to cycle all, project, and custom reference contexts; `o` to cycle selected roots; `f` to cycle problem codes; and `r` to refresh explicitly. The browser has no watcher. Refresh observes external edits and retains a selected source only while the same proven directory object remains reachable. A rename or one retargeted alias can retain selection when another reference still reaches that object. Replacement, loss, uncertain identity, or retargeting its final reference clears selection visibly. A selected source hidden by filters remains explicitly identified as hidden, includes a globally unique stable source-ID hint in its compact summary, and is never rebound to a visible row.
+
+Press `s` from either inventory view or source/problem detail to inspect the full selected project, every discovery root, and active filters. While search input is active, `c`, `o`, `f`, `r`, and `s` remain ordinary query text. Long searches retain the complete query for filtering and show its current tail on one row with a leading ellipsis.
+
+`browse --theme auto` uses `COLORFGBG` to choose light when it reports a light background and otherwise uses dark. Choose `dark`, `light`, or `none` for deterministic output; `mono` is accepted as a no-color alias. A non-empty `NO_COLOR` forces no-color output. Theme selection never writes settings or reads ambient Glamour style files. Rendered Markdown uses the browser palette for headings, links, emphasis, quotes, lists, tables, and code. Raw and Markdown-decoded terminal controls are shown as inert escape notation, and renderer-created terminal links are removed while their visible text and URL remain.
 
 Manifests require YAML mapping frontmatter with a non-empty string `name` and an optional string `description`. Mapping keys must decode to unique UTF-8 strings within each mapping; non-string keys and invalid decoded strings are rejected. Ordinary aliases and merge overrides remain supported. A malformed readable UTF-8 manifest stays selectable with exact `manifest.raw_text` and diagnostics, without fabricated valid metadata. Manifest reads are limited to 4 MiB and resource inventories to 10,000 entries; exceeding either bound reports incomplete coverage rather than silent truncation.
 

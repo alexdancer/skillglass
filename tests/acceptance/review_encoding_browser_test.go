@@ -36,25 +36,30 @@ func TestBrowserInvalidManifestEncodingHasRecoveryHint(t *testing.T) {
 			writeEvidence(t, "tmux/encoding/raw.ansi", raw)
 		}
 	}()
-	_ = waitForPaneAt(t, tmux, fx, socket, "encoding:0.0", false, "Selected: none", "Focus: 1/1")
+	_ = waitForPaneAt(t, tmux, fx, socket, "encoding:0.0", false, "Focused: <metadata unavailable>", "Focus: 1/1")
 	joined := actForPaneAt(t, tmux, fx, socket, "encoding:0.0", true, func() {
 		runTmux(t, tmux, fx, socket, "send-keys", "-t", "encoding:0.0", "Enter")
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", "encoding:0.0", "-l", "d")
 	}, "manifest-invalid-encoding", "manifest.raw_bytes_base64", "Manifest: malformed")
+	end := actForPaneAt(t, tmux, fx, socket, "encoding:0.0", false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", "encoding:0.0", "-l", "G")
+	}, "resource.txt", "Resources", "← back")
+	allDetails := joined + "\n" + end
 	cells := capturePaneAt(t, tmux, fx, socket, "encoding:0.0", false)
 	writeEvidence(t, "tmux/encoding/detail.txt", []byte(cells))
 	writeEvidence(t, "tmux/encoding/detail-joined.txt", []byte(joined))
 	writeEvidence(t, "tmux/encoding/command.txt", []byte(commandLine+"\n"))
-	writeEvidence(t, "tmux/encoding/keys.txt", []byte("Enter\nq\n"))
+	writeEvidence(t, "tmux/encoding/keys.txt", []byte("Enter\nd\nG\nq\n"))
 	writeEvidence(t, "tmux/encoding/dimensions.txt", []byte("120x35\n"))
 	assertPaneCells(t, cells, 120, 35)
-	for _, expected := range []string{"Coverage: incomplete", "Manifest: malformed", "manifest-invalid-encoding", "list/read --json", "manifest.raw_bytes_base64", "resource.txt", "Availability: unknown"} {
-		if !paneContains(joined, expected) {
-			t.Fatalf("recovery detail missing %q:\n%s", expected, joined)
+	for _, expected := range []string{"coverage incomplete", "Manifest: malformed", "manifest-invalid-encoding", "list/read --json", "manifest.raw_bytes_base64", "resource.txt", "Availability: unknown"} {
+		if !paneContains(allDetails, expected) {
+			t.Fatalf("recovery detail missing %q:\n%s", expected, allDetails)
 		}
 	}
 	for _, forbidden := range []string{"DO_NOT_RENDER", "SENTINEL", "�", "Raw manifest:", "Instructions:", base64.StdEncoding.EncodeToString(rawManifest)} {
-		if paneContains(joined, forbidden) {
-			t.Fatalf("invalid body displayed %q:\n%s", forbidden, joined)
+		if paneContains(allDetails, forbidden) {
+			t.Fatalf("invalid body displayed %q:\n%s", forbidden, allDetails)
 		}
 	}
 	_ = actForPaneAt(t, tmux, fx, socket, "encoding:0.0", false, func() {
