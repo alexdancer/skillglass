@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestALE24BrowserModesAndReferencesAtRequiredWidths(t *testing.T) {
@@ -65,12 +64,19 @@ func TestALE24BrowserModesAndReferencesAtRequiredWidths(t *testing.T) {
 			assertPaneCells(t, initial, width, 30)
 			writeEvidence(t, fmt.Sprintf("tmux/ale24-modes/%d/00-sources.txt", width), []byte(initial))
 
-			runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "/")
-			runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "-l", "shared-directory")
-			_ = waitForPane(t, tmux, fx.fixture, socket, false, "Search: shared-directory", "Focus: 1/1")
-			runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "Enter")
-			runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "Enter")
-			detailTop := waitForPane(t, tmux, fx.fixture, socket, false,
+			act := func(action func(), needles ...string) string {
+				return actForPaneAt(t, tmux, fx.fixture, socket, "browser:0.0", false, action, needles...)
+			}
+			_ = act(func() {
+				runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "/")
+				runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "-l", "shared-directory")
+			}, "Search: shared-directory█", "Focus: 1/1")
+			_ = act(func() {
+				runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "Enter")
+			}, "Enter read")
+			detailTop := act(func() {
+				runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "Enter")
+			},
 				"Selected: shared-directory",
 				"Selector: "+shared.ID,
 				"Reference custom",
@@ -86,14 +92,19 @@ func TestALE24BrowserModesAndReferencesAtRequiredWidths(t *testing.T) {
 			assertPaneCells(t, projectReference, width, 30)
 			writeEvidence(t, fmt.Sprintf("tmux/ale24-modes/%d/02-reference-project.txt", width), []byte(projectReference))
 
-			runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "Escape")
-			_ = waitForPane(t, tmux, fx.fixture, socket, false, "SKILLGLASS | Sources", "Focus: 1/1")
-			runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "Tab")
-			_ = waitForPane(t, tmux, fx.fixture, socket, false, "SKILLGLASS | Problems")
-			runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "/")
-			runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "C-u")
-			runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "Enter")
-			problems := waitForPane(t, tmux, fx.fixture, socket, false,
+			_ = act(func() {
+				runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "Escape")
+			}, "SKILLGLASS | Sources", "Focus: 1/1")
+			_ = act(func() {
+				runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "Tab")
+			}, "SKILLGLASS | Problems")
+			_ = act(func() {
+				runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "/")
+			}, "type to search")
+			problems := act(func() {
+				runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "C-u")
+				runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "Enter")
+			},
 				"SKILLGLASS | Problems",
 				"duplicate-name",
 				"Enter problem",
@@ -102,8 +113,9 @@ func TestALE24BrowserModesAndReferencesAtRequiredWidths(t *testing.T) {
 			assertPaneCells(t, problems, width, 30)
 			writeEvidence(t, fmt.Sprintf("tmux/ale24-modes/%d/03-problems.txt", width), []byte(problems))
 
-			runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "Enter")
-			problemDetail := waitForPane(t, tmux, fx.fixture, socket, false,
+			problemDetail := act(func() {
+				runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "Enter")
+			},
 				"SKILLGLASS | Problem",
 				string(firstProblem.ID),
 				"Code: "+firstProblem.Code,
@@ -116,8 +128,9 @@ func TestALE24BrowserModesAndReferencesAtRequiredWidths(t *testing.T) {
 				"/\nshared-directory\nEnter\nEnter\n<scroll>\nEsc\nTab\n/\nCtrl+U\nEnter\nEnter\nEsc\nq\n",
 			))
 			writeEvidence(t, fmt.Sprintf("tmux/ale24-modes/%d/command.txt", width), []byte(commandLine+"\n"))
-			runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "Escape")
-			_ = waitForPane(t, tmux, fx.fixture, socket, false, "SKILLGLASS | Problems", "Enter problem")
+			_ = act(func() {
+				runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "Escape")
+			}, "SKILLGLASS | Problems", "Enter problem")
 			runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "q")
 		})
 	}
@@ -179,12 +192,12 @@ func TestALE24BrowserRefreshSelectionAndProblemPaste(t *testing.T) {
 		runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", target, "-l", payload)
 	}
 
-	key("/")
-	literal("shared-directory")
-	_ = waitForPaneAt(t, tmux, fx.fixture, socket, target, false, "Search: shared-directory", "Focus: 1/1")
-	key("Enter")
-	key("Enter")
-	selected := waitForPaneAt(t, tmux, fx.fixture, socket, target, false,
+	act := func(action func(), needles ...string) string {
+		return actForPaneAt(t, tmux, fx.fixture, socket, target, false, action, needles...)
+	}
+	_ = act(func() { key("/"); literal("shared-directory") }, "Search: shared-directory█", "Focus: 1/1")
+	_ = act(func() { key("Enter") }, "Enter read")
+	selected := act(func() { key("Enter") },
 		"Selected: shared-directory", "Selector: "+shared.ID, "Reference custom",
 	)
 	writeEvidence(t, "tmux/ale24-refresh/00-selected.txt", []byte(selected))
@@ -197,8 +210,7 @@ func TestALE24BrowserRefreshSelectionAndProblemPaste(t *testing.T) {
 	writeSkill(t, filepath.Join(fx.rootA, "00-row-insertion"), "00-row-insertion", "inserted before selection", "ROW_INSERTION")
 	replaceDirectoryAlias(t, filepath.Join(fx.rootA, "directory-alias-one"), filepath.Join("..", "..", "outside", "shared-directory-renamed"))
 	replaceDirectoryAlias(t, filepath.Join(fx.rootB, "directory-alias-two"), filepath.Join("..", "..", "outside", "shared-directory-renamed"))
-	key("r")
-	renamed := waitForPaneAt(t, tmux, fx.fixture, socket, target, false,
+	renamed := act(func() { key("r") },
 		"Selected: shared-directory-renamed",
 		"Selector: "+shared.ID,
 		"Description: rename and insertion refresh marker",
@@ -206,9 +218,7 @@ func TestALE24BrowserRefreshSelectionAndProblemPaste(t *testing.T) {
 	)
 	writeEvidence(t, "tmux/ale24-refresh/01-rename-retained.txt", []byte(renamed))
 
-	key("c")
-	key("o")
-	hidden := waitForPaneAt(t, tmux, fx.fixture, socket, target, false,
+	hidden := act(func() { key("c"); key("o") },
 		"Context filter: project",
 		"Root filter: #1/2 ale24-a",
 		"Selector: "+shared.ID,
@@ -224,8 +234,7 @@ func TestALE24BrowserRefreshSelectionAndProblemPaste(t *testing.T) {
 	writeSkill(t, retargetDirectory, "retarget-after-alias", "new alias target", "RETARGETED_ALIAS")
 	writeSkill(t, renamedDirectory, "shared-directory-renamed", "alias survives refresh", "ALIAS_SURVIVES_REFRESH")
 	replaceDirectoryAlias(t, filepath.Join(fx.rootA, "directory-alias-one"), filepath.Join("..", "..", "outside", "retarget-after-alias"))
-	key("r")
-	oneAlias := waitForPaneAt(t, tmux, fx.fixture, socket, target, false,
+	oneAlias := act(func() { key("r") },
 		"Selector: "+shared.ID,
 		"Selection: hidden by filters",
 		"Description: alias survives refresh",
@@ -234,20 +243,19 @@ func TestALE24BrowserRefreshSelectionAndProblemPaste(t *testing.T) {
 	writeEvidence(t, "tmux/ale24-refresh/03-one-alias-retained.txt", []byte(oneAlias))
 
 	replaceDirectoryAlias(t, filepath.Join(fx.rootB, "directory-alias-two"), filepath.Join("..", "..", "outside", "retarget-after-alias"))
-	key("r")
-	aliasLost := waitForPaneAt(t, tmux, fx.fixture, socket, target, false,
+	aliasLost := act(func() { key("r") },
 		"SKILLGLASS | Sources", "Selected: none", "Refresh: selection cleared",
 	)
 	writeEvidence(t, "tmux/ale24-refresh/04-last-alias-cleared.txt", []byte(aliasLost))
 
-	key("c")
-	key("/")
-	key("C-u")
-	literal("replacement-target")
-	key("Enter")
-	_ = waitForPaneAt(t, tmux, fx.fixture, socket, target, false, "Focus: 1/1", "replacement-target")
-	key("Enter")
-	_ = waitForPaneAt(t, tmux, fx.fixture, socket, target, false,
+	_ = act(func() {
+		key("c")
+		key("/")
+		key("C-u")
+		literal("replacement-target")
+	}, "Search: replacement-target█", "Focus: 1/1")
+	_ = act(func() { key("Enter") }, "Focus: 1/1", "replacement-target", "Enter read")
+	_ = act(func() { key("Enter") },
 		"Selected: replacement-target", "Selector: "+replacement.ID,
 	)
 	replacedOld := filepath.Join(fx.base, "allowed", "outside", "replacement-old")
@@ -255,24 +263,18 @@ func TestALE24BrowserRefreshSelectionAndProblemPaste(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeSkill(t, replacementDirectory, "replacement-target", "same bytes after replacement", "REPLACEMENT_BYTES")
-	key("r")
-	replaced := waitForPaneAt(t, tmux, fx.fixture, socket, target, false,
+	replaced := act(func() { key("r") },
 		"SKILLGLASS | Sources", "Selected: none", "Refresh: selection cleared",
 	)
 	writeEvidence(t, "tmux/ale24-refresh/05-replacement-cleared.txt", []byte(replaced))
 
-	key("Tab")
-	_ = waitForPaneAt(t, tmux, fx.fixture, socket, target, false, "SKILLGLASS | Problems")
-	key("/")
-	key("C-u")
-	paste("qrcfo")
-	problemSearch := waitForPaneAt(t, tmux, fx.fixture, socket, target, false,
+	_ = act(func() { key("Tab") }, "SKILLGLASS | Problems")
+	problemSearch := act(func() { key("/"); key("C-u"); paste("qrcfo") },
 		"SKILLGLASS | Problems", "Search: qrcfo█", "problem-qrcfo-marker", "Problem focus: 1/1",
 	)
 	writeEvidence(t, "tmux/ale24-refresh/06-problem-paste.txt", []byte(problemSearch))
-	key("Enter")
-	key("Enter")
-	problemDetail := waitForPaneAt(t, tmux, fx.fixture, socket, target, false,
+	_ = act(func() { key("Enter") }, "Enter problem", "Problem focus: 1/1")
+	problemDetail := act(func() { key("Enter") },
 		"SKILLGLASS | Problem", "Code: broken-reference", "problem-qrcfo-marker", "Limits coverage: true",
 	)
 	writeEvidence(t, "tmux/ale24-refresh/07-problem-detail.txt", []byte(problemDetail))
@@ -281,8 +283,7 @@ func TestALE24BrowserRefreshSelectionAndProblemPaste(t *testing.T) {
 	expected := treeManifest(t, fx.base)
 	writeEvidence(t, "tmux/ale24-refresh/command.txt", []byte(commandLine+"\n"))
 	writeEvidence(t, "tmux/ale24-refresh/keys.txt", []byte(keys.String()+"<q>\n"))
-	key("q")
-	_ = waitForPaneAt(t, tmux, fx.fixture, socket, target, false, "Pane is dead")
+	_ = act(func() { key("q") }, "Pane is dead")
 	status := strings.TrimSpace(runTmux(t, tmux, fx.fixture, socket,
 		"display-message", "-p", "-t", target, "#{pane_dead}:#{pane_dead_status}",
 	))
@@ -318,8 +319,12 @@ func scrollALE24Until(
 		if found {
 			return capture
 		}
-		runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "-l", "j")
-		time.Sleep(20 * time.Millisecond)
+		before := capture
+		_ = actOnPane(t, tmux, fx, socket, target, func() {
+			runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "-l", "j")
+		}, func(frame paneSnapshot) bool {
+			return frame.cells != before && paneHas(frame, false, "Read lines", "Esc back")
+		})
 	}
 	t.Fatalf("pane did not expose %q after scrolling:\n%s", needles, capture)
 	return ""

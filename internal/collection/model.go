@@ -408,7 +408,7 @@ func (snapshot *Snapshot) Query(filters Filters, target QueryTarget) View {
 		if !snapshot.problemMatches(problem, filters, matchingReferences) {
 			continue
 		}
-		if target == QueryProblems && needle != "" && !problemContains(problem, needle) {
+		if target == QueryProblems && needle != "" && !snapshot.problemContains(problem, needle) {
 			continue
 		}
 		problems = append(problems, cloneProblem(problem))
@@ -598,11 +598,26 @@ func (snapshot *Snapshot) problemMatches(
 	return false
 }
 
-func problemContains(problem Problem, needle string) bool {
-	return strings.Contains(strings.ToLower(string(problem.Code)), needle) ||
+func (snapshot *Snapshot) problemContains(problem Problem, needle string) bool {
+	if strings.Contains(strings.ToLower(string(problem.Code)), needle) ||
 		strings.Contains(strings.ToLower(problem.Path), needle) ||
 		strings.Contains(strings.ToLower(problem.Summary), needle) ||
-		strings.Contains(strings.ToLower(problem.Detail), needle)
+		strings.Contains(strings.ToLower(problem.Detail), needle) {
+		return true
+	}
+	for _, id := range problem.ReferenceIDs {
+		if strings.Contains(strings.ToLower(snapshot.references[id].DiscoveredPath), needle) {
+			return true
+		}
+	}
+	for _, id := range problem.RootIDs {
+		for _, root := range snapshot.scope.Roots {
+			if root.ID == id && strings.Contains(strings.ToLower(root.Requested), needle) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func cloneMap(input map[string]any) map[string]any {
