@@ -165,7 +165,9 @@ func TestBrowserTmuxCellsAtRequiredWidths(t *testing.T) {
 				"resize-window", "-t", "browser:0", "-x", strconv.Itoa(width), "-y", "30",
 			)
 
-			initial := waitForPane(t, tmux, fx, socket, false, "Selected: none", "normal-skill")
+			initial := waitForPane(
+				t, tmux, fx, socket, false, "Selected: none", "normal-skill", "Scope: 1 root |",
+			)
 			assertPaneCells(t, initial, width, 30)
 			writeEvidence(t, fmt.Sprintf("tmux/%d/00-inventory.txt", width), []byte(initial))
 			if width == 80 {
@@ -323,6 +325,7 @@ func TestBrowserManyRootsHasScrollableScopeAt60Columns(t *testing.T) {
 		false,
 		"many-root-source",
 		"Focus: 1/1",
+		"Scope: 8 roots |",
 		"s scope",
 		"q quit",
 	)

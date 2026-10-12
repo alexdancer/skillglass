@@ -350,8 +350,8 @@ func (model browserModel) headerLines() []string {
 		project = "Project: " + safeInline(scope.Project.Path)
 	}
 	scopeSummary := fmt.Sprintf(
-		"Scope: %d roots | Coverage: %s | Problems: %d | s view",
-		len(scope.Roots),
+		"Scope: %s | Coverage: %s | Problems: %d | s view",
+		rootCountLabel(len(scope.Roots)),
 		scope.Completeness,
 		len(model.snapshot.Problems()),
 	)
@@ -373,6 +373,14 @@ func (model browserModel) headerLines() []string {
 		fitLine(scopeSummary, model.width),
 		fitLine(selected, model.width),
 	}
+}
+
+func rootCountLabel(count int) string {
+	unit := "roots"
+	if count == 1 {
+		unit = "root"
+	}
+	return fmt.Sprintf("%d %s", count, unit)
 }
 
 func (model browserModel) renderScope() []string {
