@@ -568,8 +568,14 @@ func (model *browserModel) refresh() {
 		model.problemScroll = min(model.problemScroll, model.maxProblemScroll())
 	}
 	if model.selectedProblem != "" {
-		if _, ok := model.problemByID(model.selectedProblem); !ok && model.mode == browserProblemDetail {
-			model.mode = browserProblems
+		if _, ok := model.problemByID(model.selectedProblem); !ok {
+			model.selectedProblem = ""
+			if model.mode == browserProblemDetail {
+				model.mode = browserProblems
+			}
+			if model.mode == browserScope && model.previousMode == browserProblemDetail {
+				model.previousMode = browserProblems
+			}
 			model.feedback = "Refresh: selected problem is no longer reported"
 		}
 	}
