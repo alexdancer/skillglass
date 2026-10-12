@@ -2,7 +2,7 @@
 
 ## Chosen direction
 
-The production browser uses **Quiet split**, the approved ALE-43 direction. It keeps the collection and the selected instructions in one visual context at wide widths, then reduces to one focused pane when space is limited. The design uses minimal dividers, a restrained blue accent, quiet secondary text, and a visible selected-row surface.
+The production browser uses **Quiet split**, the approved ALE-43 direction. It keeps the collection and the focused instructions in one visual context at wide widths, then reduces to one focused pane when space is limited. The design uses minimal dividers, a restrained blue accent, quiet secondary text, and a visible selected-row surface.
 
 The collection snapshot and stable `SourceID` remain the domain authority. Browser state is limited to mode, focus, selected IDs, source tab, rendered or raw instruction view, filters, scroll positions, feedback, terminal size, and presentation theme.
 
@@ -13,6 +13,8 @@ Every frame has three regions:
 1. **Chrome** shows `Skillglass`, coverage, Sources and Problems, root count, active filters, and focused or selected identity.
 2. **Content** shows the current inventory, reader, problem, scope, or help view.
 3. **Footer** shows the shortest useful controls for that context, with `? help` and `q quit` retained in ordinary views at narrow widths.
+
+Help and Scope keep the underlying inventory or reader's mode and focused or selected identity in chrome, including hidden selections and Help opened from Scope.
 
 Search sits directly above the active inventory. Source rows show name, description, and compact provenance. Focus uses both a `›` marker and a selected surface, so no state depends on color alone.
 
@@ -61,7 +63,7 @@ Details contains, in order:
 
 Problems show a text severity label, problem code, summary, and the distinguishing end of long paths. Problem detail exposes the exact problem ID, code, path, summary, detail, coverage effect, and related source, reference, and root IDs.
 
-Scope shows the selected project, active filters, every root's state and context, counts, IDs, requested path, and resolved path. It is scrollable and returns to the prior inventory or reader.
+Scope shows the selected project, active filters, every root's state and context, counts, IDs, requested path, and resolved path. It is scrollable and returns to the prior inventory or reader, subject to [refresh reconciliation](#empty-error-and-refresh-states).
 
 Help is a scrollable view. It documents movement, open and return, Sources and Problems switching, search, clear, source tabs, raw view, every filter, refresh, Scope, top and end, help, quit, theme selection, and `NO_COLOR`. Its scroll position resets when opened and remains valid across resize.
 
@@ -117,6 +119,6 @@ If Markdown rendering fails, the reader shows escaped raw text with a visible fa
 
 An empty selected scope says that no sources were found. A filtered empty state says there are no matching sources or problems. Coverage stays visible as complete or incomplete in both states.
 
-Refresh retains a selected source only while the same proven directory object remains reachable. If it is lost, replaced, uncertain, or no longer selected by any reference, selection clears and the browser returns to Sources with visible feedback. Filters may hide a selected source without rebinding selection.
+The [README's refresh rules](README.md#build-and-use) own source and problem selection reconciliation, reader and Scope return targets, and context-specific feedback. Filtering alone does not clear a retained selection.
 
 The browser has no loading spinner because discovery completes before the interactive program starts and refresh is explicit. Operational discovery failures remain represented as collection problems and incomplete coverage.

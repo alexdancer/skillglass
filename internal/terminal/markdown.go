@@ -116,7 +116,7 @@ func numericControlEntity(value string, start int) (int, rune, bool) {
 // sanitizeRenderedTerminal removes renderer-owned OSC 8 links while keeping
 // their visible text and URL. Any other control introduced during Markdown
 // decoding is rendered as inert escape notation. Only CSI SGR styling emitted
-// by the selected built-in style is allowed through.
+// by the explicit browser style is allowed through.
 func sanitizeRenderedTerminal(value string) string {
 	var output strings.Builder
 	for index := 0; index < len(value); {

@@ -44,6 +44,10 @@ The hostile source-name, description, and root-basename probe did not reproduce 
 
 `TestBrowserHelpPreservesUnderlyingChrome` checks direct Help and Scope-to-Help round trips from Sources, Problems, visible and hidden source readers, hidden inventory, and problem detail at 48 and 120 columns. It preserves the exact focused or selected identity and returns to the same tab and view. `TestBrowserSearchCancellationUsesEscapeOnly` proves that Left leaves active Sources and Problems searches byte-identical while Escape cancels and restores each inventory.
 
+`TestBrowserRefreshReconcilesSelectedProblem` covers vanished and retained problems from direct detail and through Scope at 48 and 120 columns, including a retained problem hidden by filters. It inspects refreshed and returned cells, the active Problems tab, disappearance feedback, preservation of an unrelated selected source, and fixture immutability after explicit external edits.
+
+`TestBrowserRefreshFeedbackUsesActiveSourceContext` visits a problem before returning to Sources or a source reader, repairs the synthetic reference externally, and either retains or replaces the selected source directory. At 48 and 120 columns, directly and through Scope, it checks source-reconciliation feedback, return mode, retained Details state, selected identity under filtering, and unchanged content/settings after fixture setup edits.
+
 `TestBrowserThemeModesApplyDeterministically` captures ANSI for explicit dark and light themes and proves that explicit none and `NO_COLOR` emit no SGR or OSC sequences. Theme unit tests cover auto detection, invalid values, and `NO_COLOR` precedence.
 
 `TestRenderMarkdownSupportsCommonSkillContent` covers headings, emphasis, links, nested lists, blockquotes, inline code, and fenced code. `TestRenderMarkdownNeutralizesDecodedTerminalControls` covers numeric control entities, raw controls, OSC 8 removal, and retained visible text. Raw browser journeys prove exact hostile entities remain accessible.
