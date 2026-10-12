@@ -26,7 +26,7 @@ A skill's instructions are the primary content. Wide terminals keep the collecti
 
 ### Identity stays visible
 
-The authoritative source identity is the stable `SourceID`, not a display name, manifest bytes, path text, or a shared manifest target. The browser leads with human-readable name and root provenance. When those labels would collide, it adds the shortest stable source-ID hint needed to distinguish independent sources. A hidden retained selection always carries a source-ID hint that is unique across the snapshot because its compact summary may omit provenance. Width allocation preserves the hidden marker, identity hint, and compact provenance before truncating a long human name. Exact IDs and paths remain in Details.
+Independent sources must remain distinguishable before Details, even when names match or long labels are truncated. Compact presentation must not change source identity or rebind a retained selection. [Terminal design](DESIGN.md#source-inventory-and-identity) owns the labeling and width-allocation rules.
 
 ### Scope and coverage are never implicit
 

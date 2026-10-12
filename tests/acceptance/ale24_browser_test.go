@@ -237,7 +237,7 @@ func TestALE24BrowserRefreshSelectionAndProblemPaste(t *testing.T) {
 	writeEvidence(t, "tmux/ale24-refresh/01-rename-retained.txt", []byte(renamed))
 
 	hidden := act(func() { key("c"); key("o") },
-		"Filters: search shared-directory · context project",
+		"Filters: s:shared-directory c:project r:ale24-a",
 		"Source-root filter:",
 		"Source ID: "+shared.ID,
 		"Selected: shared-directory-renamed (hidden by filters)",

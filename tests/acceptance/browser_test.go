@@ -389,22 +389,40 @@ func TestBrowserDisambiguatesEqualSourcesUnderSameBasenameRoots(t *testing.T) {
 	runTmux(t, tmux, fx, socket, "resize-window", "-t", "same-basename:0", "-x", "120", "-y", "30")
 	target := "same-basename:0.0"
 	initial := waitForPaneAt(t, tmux, fx, socket, target, false,
-		"Focused: same-basename @ custom · #", "custom · #1 skills", "custom · #2 skills", "EQUAL_INSTRUCTIONS",
+		"Focused: same-basename [", "custom · #1 skills", "custom · #2 skills", "EQUAL_INSTRUCTIONS",
 	)
-	firstOrdinal := "#1 skills"
-	secondOrdinal := "#2 skills"
-	if strings.Contains(initial, "Focused: same-basename @ custom · #2 skills") {
+	firstFocused := frameLineWithPrefix(t, initial, "Focused: ")
+	firstHint := identityHint(firstFocused)
+	if firstHint == "" {
+		t.Fatalf("focused source lacks an identity hint:\n%s", initial)
+	}
+	firstOrdinal := "#1"
+	secondOrdinal := "#2"
+	if strings.Contains(firstFocused, "#2 skills") {
 		firstOrdinal, secondOrdinal = secondOrdinal, firstOrdinal
 	}
 	compact := resizePaneAt(t, tmux, fx, socket, target, 48, 20,
-		"Focused: same-basename @ custom · "+firstOrdinal, "custom · #1 skills", "custom · #2 skills",
+		"Focus: 1/2", "Focused:", "custom · #1 skills", "custom · #2 skills",
 	)
+	compactFocused := frameLineWithPrefix(t, compact, "Focused: ")
+	if identityHint(compactFocused) != firstHint || !strings.Contains(compactFocused, firstOrdinal) {
+		t.Fatalf("resize lost focused identity or root ordinal:\n%s", compact)
+	}
 	selectedSibling := actForPaneAt(t, tmux, fx, socket, target, false, func() {
 		runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "Down")
-	}, "Focused: same-basename @ custom · "+secondOrdinal, "custom · #1 skills", "custom · #2 skills")
+	}, "Focus: 2/2", "Focused:", "custom · #1 skills", "custom · #2 skills")
+	secondFocused := frameLineWithPrefix(t, selectedSibling, "Focused: ")
+	secondHint := identityHint(secondFocused)
+	if secondHint == "" || secondHint == firstHint || !strings.Contains(secondFocused, secondOrdinal) {
+		t.Fatalf("sibling focus lost distinct identity or root ordinal:\n%s", selectedSibling)
+	}
 	reader := actForPaneAt(t, tmux, fx, socket, target, false, func() {
 		runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "Enter")
-	}, "Selected: same-basename @ custom · "+secondOrdinal, "EQUAL_INSTRUCTIONS", "Details")
+	}, "Selected:", "EQUAL_INSTRUCTIONS", "Details")
+	selectedLabel := frameLineWithPrefix(t, reader, "Selected: ")
+	if identityHint(selectedLabel) != secondHint || !strings.Contains(selectedLabel, secondOrdinal) {
+		t.Fatalf("reader lost selected identity or root ordinal:\n%s", reader)
+	}
 	assertPaneCells(t, initial, 120, 30)
 	assertPaneCells(t, compact, 48, 20)
 	assertPaneCells(t, selectedSibling, 48, 20)

@@ -12,7 +12,7 @@ The [README](../../README.md#build-and-use) owns current commands and keys. [PRO
 - A long feedback message could displace both help and quit at 48 columns. Contextual footers now reserve a compact right-hand `? help  q quit` region. Narrow reader and problem footers shorten their left-hand guidance without losing the return or open action.
 - Help initially fit its full content only at taller sizes. At 48 by 20, `G` left the screen byte-identical and lower movement, help, quit, theme, and `NO_COLOR` guidance was unreachable. Help now has its own scroll position, top/end and page movement, resize clamping, and a return target.
 - Equal-name sources under roots with the same basename produced identical list, Focused, and Selected labels. Root labels now include stable scope ordinals when basenames collide.
-- Two independent equal-name sources within the same physical root still produced identical labels after root disambiguation. Otherwise-colliding names now include the shortest unique stable source-ID prefix in inventory, focus, and reader labels. The complete ID remains in Details.
+- Two independent equal-name sources within the same physical root still produced identical labels after root disambiguation. Source-ID hints repaired that ambiguity; [DESIGN.md](../../DESIGN.md#source-inventory-and-identity) owns the current hint rules, including same-name sources whose full provenance differs.
 - Long problem paths showed only their common leading directories in compact rows. Problem inventory now retains the distinguishing path tail while problem detail retains the exact full path.
 - Entering search after a filter action retained stale filter feedback in place of search-result navigation status. Entering search now clears transient feedback without changing filters.
 - Help handled `q` as an inert key before the global quit action. Global quit now runs from Help and every other view outside active search, where `q` remains query text.
@@ -36,7 +36,9 @@ The hostile source-name, description, and root-basename probe did not reproduce 
 
 `TestBrowserHiddenSelectionPreservesDistinctIdentity` selects byte-identical same-name sources under separate equal-basename roots, records their distinct complete IDs in Details, hides each behind the same root filter, and proves distinct retained-selection summaries at 48, 80, and 120 columns without modifying fixtures.
 
-`TestBrowserDisambiguatesEqualSourcesUnderSameBasenameRoots` proves root ordinals at 120 and 48 columns and preserves the selected ordinal in the reader. `TestBrowserDisambiguatesEqualSourcesWithinOneRoot` uses equal names, descriptions, and instructions for two bundle directories inside one root, then proves distinct source-ID hints in inventory, focus, and reader labels.
+`TestBrowserDisambiguatesEqualSourcesUnderSameBasenameRoots` proves distinct hints and root ordinals at 120 and 48 columns and preserves both in the reader. `TestBrowserDisambiguatesEqualSourcesWithinOneRoot` uses equal names, descriptions, and instructions for two bundle directories inside one root, then proves distinct source-ID hints in inventory, focus, and reader labels. `TestBrowserSameNameAcrossLongRootNames` covers distinct roots whose differing basename tails are lost in compact provenance.
+
+`TestBrowserEveryActiveFilterSurvivesWidthAllocation` checks all active dimensions in Sources, Problems, readers, Scope, and Help across the five required widths with a long query. `TestBrowserDetailsReferenceFilterFlags` checks complete reference inventory and context/root match flags, including hidden selections, and unchanged unfiltered CLI `read` semantics. `TestBrowserRejectsAdditionalThemeSpellings` checks rejection of aliases and case/whitespace variants.
 
 `TestBrowserThemeModesApplyDeterministically` captures ANSI for explicit dark and light themes and proves that explicit none and `NO_COLOR` emit no SGR or OSC sequences. Theme unit tests cover auto detection, invalid values, and `NO_COLOR` precedence.
 
@@ -46,26 +48,7 @@ The inherited ALE-23 and ALE-24 suites continue to cover collection identity, fi
 
 ## Reproduce the acceptance evidence
 
-Use macOS, Go 1.27.1, and `tmux` on PATH. Dependencies must already be available because verification disables module network access. Run from a clean shell with a fresh absolute evidence directory:
-
-```sh
-evidence="$(pwd)/.agent-loop/ale-43-evidence-$(date +%Y%m%d-%H%M%S)"
-test ! -e "$evidence" && ./tests/acceptance/run.sh "$evidence"
-```
-
-The acceptance runner builds a fresh public executable, uses isolated HOME, XDG, project, temporary, and current directories, and records build identity, CLI results, PTY streams, tmux cells, dimensions, commands, keys, containment controls, and before/after fixture manifests.
-
-Run repository checks after the last source or documentation change:
-
-```sh
-/opt/homebrew/bin/gofmt -l cmd internal tests/acceptance
-env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go vet ./...
-env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go test -count=1 -mod=readonly ./...
-python3 -m unittest discover -s tests/agent_loop -v
-shellcheck tests/acceptance/run.sh
-sh -n tests/acceptance/run.sh
-git diff --check
-```
+Follow the [current combined-suite procedure](ale-24.md#reproduce-the-acceptance-evidence) for prerequisites, a fresh absolute evidence directory, the public executable runner, fixture immutability checks, and repository checks after the last change. The same runner includes all ALE-43 journeys above; the [ALE-23 containment boundary](ale-23.md#runtime-containment-boundary) defines isolation guarantees and limits.
 
 Inspect current terminal cells rather than relying only on raw history. Required production captures include 48, 60, 80, 96, and 120 columns, a 48 by 20 Help journey, dark and light ANSI output, no-color cells, empty and missing roots, long Markdown, same-name independent sources, and hostile content. Prototype images are design references and are not acceptance evidence.
 
