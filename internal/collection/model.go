@@ -297,9 +297,17 @@ type Filters struct {
 	Problem    ProblemCode   `json:"problem,omitempty"`
 }
 
+type SelectionChangeState string
+
+const (
+	SelectionChangeNone     SelectionChangeState = "none"
+	SelectionChangeRetained SelectionChangeState = "retained"
+	SelectionChangeCleared  SelectionChangeState = "cleared"
+)
+
 type SelectionChange struct {
-	State  string `json:"state"`
-	Reason string `json:"reason,omitempty"`
+	State  SelectionChangeState `json:"state"`
+	Reason string               `json:"reason,omitempty"`
 }
 
 type Snapshot struct {
@@ -435,15 +443,15 @@ func (snapshot *Snapshot) Refresh(ctx context.Context, selected SourceID) (*Snap
 		return nil, SelectionChange{}, err
 	}
 	if selected == "" {
-		return refreshed, SelectionChange{State: "none"}, nil
+		return refreshed, SelectionChange{State: SelectionChangeNone}, nil
 	}
 	previous, previousOK := snapshot.sources[selected]
 	current, currentOK := refreshed.sources[selected]
 	if previousOK && currentOK &&
 		previous.Identity.Certainty == "proven" && current.Identity.Certainty == "proven" {
-		return refreshed, SelectionChange{State: "retained", Reason: "same proven directory object remains reachable"}, nil
+		return refreshed, SelectionChange{State: SelectionChangeRetained, Reason: "same proven directory object remains reachable"}, nil
 	}
-	return refreshed, SelectionChange{State: "cleared", Reason: "selected directory object is no longer provably reachable"}, nil
+	return refreshed, SelectionChange{State: SelectionChangeCleared, Reason: "selected directory object is no longer provably reachable"}, nil
 }
 
 func (snapshot *Snapshot) Source(id SourceID) (Source, bool) {

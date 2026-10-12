@@ -49,6 +49,65 @@ type browserModel struct {
 	height          int
 }
 
+type pagedView struct {
+	header      []string
+	body        []string
+	help        []string
+	statusLabel string
+	feedback    string
+	scroll      int
+	width       int
+	height      int
+}
+
+type pagedViewLayout struct {
+	lines     []string
+	pageSize  int
+	maxScroll int
+}
+
+func (view pagedView) layout() pagedViewLayout {
+	lastLine := max(1, len(view.body))
+	footerCapacity := len(wrapLine(fmt.Sprintf(
+		"%s %d-%d of %d",
+		view.statusLabel,
+		lastLine,
+		lastLine,
+		len(view.body),
+	), view.width)) + len(view.help)
+	if view.feedback != "" {
+		footerCapacity++
+	}
+	pageSize := max(1, view.height-len(view.header)-footerCapacity)
+	maxScroll := max(0, len(view.body)-pageSize)
+	start := min(max(view.scroll, 0), maxScroll)
+	end := min(len(view.body), start+pageSize)
+
+	footer := make([]string, 0, footerCapacity)
+	if view.feedback != "" {
+		footer = append(footer, fitLine(view.feedback, view.width))
+	}
+	footer = append(footer, wrapLine(fmt.Sprintf(
+		"%s %d-%d of %d",
+		view.statusLabel,
+		min(len(view.body), start+1),
+		min(len(view.body), start+pageSize),
+		len(view.body),
+	), view.width)...)
+	footer = append(footer, view.help...)
+
+	lines := append([]string(nil), view.header...)
+	lines = append(lines, view.body[start:end]...)
+	for len(lines) < view.height-footerCapacity {
+		lines = append(lines, "")
+	}
+	for len(footer) < footerCapacity {
+		footer = append([]string{""}, footer...)
+	}
+	lines = append(lines, footer...)
+	return pagedViewLayout{lines: lines, pageSize: pageSize, maxScroll: maxScroll}
+}
+
 func runBrowse(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("browse", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -385,19 +444,17 @@ func (model *browserModel) refresh() {
 		return
 	}
 	model.snapshot = refreshed
-	if change.State == "cleared" {
-		model.selected = ""
-		if model.mode == browserSourceDetail {
-			model.mode = browserSources
-		}
-		if model.mode == browserScope && model.previousMode == browserSourceDetail {
-			model.previousMode = browserSources
-		}
+	switch change.State {
+	case collection.SelectionChangeCleared:
+		model.clearSelectedSource()
 		model.feedback = "Refresh: selection cleared because its directory object is no longer reachable"
-	} else if change.State == "retained" {
+	case collection.SelectionChangeRetained:
 		model.feedback = "Refresh: selected directory object retained"
-	} else {
+	case collection.SelectionChangeNone:
 		model.feedback = "Refresh: collection updated"
+	default:
+		model.clearSelectedSource()
+		model.feedback = "Refresh: selection cleared because reconciliation returned an unknown state"
 	}
 	model.applyView()
 	if detailAtEnd {
@@ -415,6 +472,16 @@ func (model *browserModel) refresh() {
 			model.mode = browserProblems
 			model.feedback = "Refresh: selected problem is no longer reported"
 		}
+	}
+}
+
+func (model *browserModel) clearSelectedSource() {
+	model.selected = ""
+	if model.mode == browserSourceDetail {
+		model.mode = browserSources
+	}
+	if model.mode == browserScope && model.previousMode == browserSourceDetail {
+		model.previousMode = browserSources
 	}
 }
 
@@ -694,7 +761,7 @@ func (model browserModel) selectedSummaryLines(mode browserMode) []string {
 		if problem, ok := model.problemByID(model.selectedProblem); ok {
 			return wrapGroups([]string{
 				fitLine("Selected problem: "+string(problem.Code), model.width),
-				fitLine("Problem selector: "+string(problem.ID), model.width),
+				"Problem ID: " + safeInline(string(problem.ID)),
 			}, model.width)
 		}
 		return []string{"Selected problem: unavailable"}
@@ -812,32 +879,20 @@ func (model browserModel) renderSourceDetail() []string {
 		header = append(header, "Selected source is unavailable")
 		return append(header, "Esc back | q quit")
 	}
-	body := model.detailBodyLines(source)
-	pageSize := model.detailPageSizeFor(len(body))
-	footer := make([]string, 0)
-	if model.feedback != "" {
-		footer = append(footer, fitLine(model.feedback, model.width))
+	return model.sourceDetailPage(header, source).layout().lines
+}
+
+func (model browserModel) sourceDetailPage(header []string, source collection.Source) pagedView {
+	return pagedView{
+		header:      header,
+		body:        model.detailBodyLines(source),
+		help:        model.detailHelpLines(),
+		statusLabel: "Read lines",
+		feedback:    model.feedback,
+		scroll:      model.detailScroll,
+		width:       model.width,
+		height:      model.height,
 	}
-	footer = append(footer, wrapLine(fmt.Sprintf(
-		"Read lines %d-%d of %d",
-		min(len(body), model.detailScroll+1),
-		min(len(body), model.detailScroll+pageSize),
-		len(body),
-	), model.width)...)
-	footer = append(footer, model.detailHelpLines()...)
-	footerCapacity := model.detailFooterCapacity(len(body))
-	available := max(1, model.height-len(header)-footerCapacity)
-	start := min(model.detailScroll, max(0, len(body)-available))
-	end := min(len(body), start+available)
-	lines := append([]string(nil), header...)
-	lines = append(lines, body[start:end]...)
-	for len(lines) < model.height-footerCapacity {
-		lines = append(lines, "")
-	}
-	for len(footer) < footerCapacity {
-		footer = append([]string{""}, footer...)
-	}
-	return append(lines, footer...)
 }
 
 func (model browserModel) detailBodyLines(source collection.Source) []string {
@@ -906,32 +961,20 @@ func (model browserModel) renderProblemDetail() []string {
 		header = append(header, "Selected problem is unavailable")
 		return append(header, "Esc back | q quit")
 	}
-	body := model.problemDetailLines(problem)
-	pageSize := model.problemPageSizeFor(len(body))
-	footer := make([]string, 0)
-	if model.feedback != "" {
-		footer = append(footer, fitLine(model.feedback, model.width))
+	return model.problemDetailPage(header, problem).layout().lines
+}
+
+func (model browserModel) problemDetailPage(header []string, problem collection.Problem) pagedView {
+	return pagedView{
+		header:      header,
+		body:        model.problemDetailLines(problem),
+		help:        model.detailHelpLines(),
+		statusLabel: "Problem lines",
+		feedback:    model.feedback,
+		scroll:      model.problemScroll,
+		width:       model.width,
+		height:      model.height,
 	}
-	footer = append(footer, wrapLine(fmt.Sprintf(
-		"Problem lines %d-%d of %d",
-		min(len(body), model.problemScroll+1),
-		min(len(body), model.problemScroll+pageSize),
-		len(body),
-	), model.width)...)
-	footer = append(footer, model.problemHelpLines()...)
-	footerCapacity := model.problemFooterCapacity(len(body))
-	available := max(1, model.height-len(header)-footerCapacity)
-	start := min(model.problemScroll, max(0, len(body)-available))
-	end := min(len(body), start+available)
-	lines := append([]string(nil), header...)
-	lines = append(lines, body[start:end]...)
-	for len(lines) < model.height-footerCapacity {
-		lines = append(lines, "")
-	}
-	for len(footer) < footerCapacity {
-		footer = append([]string{""}, footer...)
-	}
-	return append(lines, footer...)
 }
 
 func (model browserModel) problemDetailLines(problem collection.Problem) []string {
@@ -981,32 +1024,20 @@ func (model browserModel) problemByID(id collection.ProblemID) (collection.Probl
 
 func (model browserModel) renderScope() []string {
 	header := []string{fitLine("SKILLGLASS | Scope and filters", model.width)}
-	body := model.scopeBodyLines()
-	pageSize := model.scopePageSizeFor(len(body))
-	footer := make([]string, 0)
-	if model.feedback != "" {
-		footer = append(footer, fitLine(model.feedback, model.width))
+	return model.scopePage(header).layout().lines
+}
+
+func (model browserModel) scopePage(header []string) pagedView {
+	return pagedView{
+		header:      header,
+		body:        model.scopeBodyLines(),
+		help:        model.scopeHelpLines(),
+		statusLabel: "Scope lines",
+		feedback:    model.feedback,
+		scroll:      model.scopeScroll,
+		width:       model.width,
+		height:      model.height,
 	}
-	footer = append(footer, wrapLine(fmt.Sprintf(
-		"Scope lines %d-%d of %d",
-		min(len(body), model.scopeScroll+1),
-		min(len(body), model.scopeScroll+pageSize),
-		len(body),
-	), model.width)...)
-	footer = append(footer, model.scopeHelpLines()...)
-	footerCapacity := model.scopeFooterCapacity(len(body))
-	available := max(1, model.height-len(header)-footerCapacity)
-	start := min(model.scopeScroll, max(0, len(body)-available))
-	end := min(len(body), start+available)
-	lines := append([]string(nil), header...)
-	lines = append(lines, body[start:end]...)
-	for len(lines) < model.height-footerCapacity {
-		lines = append(lines, "")
-	}
-	for len(footer) < footerCapacity {
-		footer = append([]string{""}, footer...)
-	}
-	return append(lines, footer...)
 }
 
 func (model browserModel) scopeBodyLines() []string {
@@ -1046,20 +1077,7 @@ func (model browserModel) detailPageSize() int {
 	if !ok {
 		return 1
 	}
-	return model.detailPageSizeFor(len(model.detailBodyLines(source)))
-}
-
-func (model browserModel) detailPageSizeFor(bodyLength int) int {
-	return max(1, model.height-len(model.headerLines(browserSourceDetail))-model.detailFooterCapacity(bodyLength))
-}
-
-func (model browserModel) detailFooterCapacity(bodyLength int) int {
-	lastLine := max(1, bodyLength)
-	capacity := len(wrapLine(fmt.Sprintf("Read lines %d-%d of %d", lastLine, lastLine, bodyLength), model.width)) + len(model.detailHelpLines())
-	if model.feedback != "" {
-		capacity++
-	}
-	return capacity
+	return model.sourceDetailPage(model.headerLines(browserSourceDetail), source).layout().pageSize
 }
 
 func (model browserModel) detailHelpLines() []string {
@@ -1074,7 +1092,7 @@ func (model browserModel) maxDetailScroll() int {
 	if !ok {
 		return 0
 	}
-	return max(0, len(model.detailBodyLines(source))-model.detailPageSize())
+	return model.sourceDetailPage(model.headerLines(browserSourceDetail), source).layout().maxScroll
 }
 
 func (model browserModel) problemPageSize() int {
@@ -1082,27 +1100,7 @@ func (model browserModel) problemPageSize() int {
 	if !ok {
 		return 1
 	}
-	return model.problemPageSizeFor(len(model.problemDetailLines(problem)))
-}
-
-func (model browserModel) problemPageSizeFor(bodyLength int) int {
-	return max(1, model.height-len(model.headerLines(browserProblemDetail))-model.problemFooterCapacity(bodyLength))
-}
-
-func (model browserModel) problemFooterCapacity(bodyLength int) int {
-	lastLine := max(1, bodyLength)
-	capacity := len(wrapLine(fmt.Sprintf("Problem lines %d-%d of %d", lastLine, lastLine, bodyLength), model.width)) + len(model.problemHelpLines())
-	if model.feedback != "" {
-		capacity++
-	}
-	return capacity
-}
-
-func (model browserModel) problemHelpLines() []string {
-	return wrapGroups(
-		[]string{"↑/↓ or j/k scroll", "PgUp/PgDn", "g/G top/end", "r refresh", "s scope", "Esc back", "q quit"},
-		model.width,
-	)
+	return model.problemDetailPage(model.headerLines(browserProblemDetail), problem).layout().pageSize
 }
 
 func (model browserModel) maxProblemScroll() int {
@@ -1110,24 +1108,12 @@ func (model browserModel) maxProblemScroll() int {
 	if !ok {
 		return 0
 	}
-	return max(0, len(model.problemDetailLines(problem))-model.problemPageSize())
+	return model.problemDetailPage(model.headerLines(browserProblemDetail), problem).layout().maxScroll
 }
 
 func (model browserModel) scopePageSize() int {
-	return model.scopePageSizeFor(len(model.scopeBodyLines()))
-}
-
-func (model browserModel) scopePageSizeFor(bodyLength int) int {
-	return max(1, model.height-1-model.scopeFooterCapacity(bodyLength))
-}
-
-func (model browserModel) scopeFooterCapacity(bodyLength int) int {
-	lastLine := max(1, bodyLength)
-	capacity := len(wrapLine(fmt.Sprintf("Scope lines %d-%d of %d", lastLine, lastLine, bodyLength), model.width)) + len(model.scopeHelpLines())
-	if model.feedback != "" {
-		capacity++
-	}
-	return capacity
+	header := []string{fitLine("SKILLGLASS | Scope and filters", model.width)}
+	return model.scopePage(header).layout().pageSize
 }
 
 func (model browserModel) scopeHelpLines() []string {
@@ -1138,8 +1124,8 @@ func (model browserModel) scopeHelpLines() []string {
 }
 
 func (model browserModel) maxScopeScroll() int {
-	bodyLength := len(model.scopeBodyLines())
-	return max(0, bodyLength-model.scopePageSizeFor(bodyLength))
+	header := []string{fitLine("SKILLGLASS | Scope and filters", model.width)}
+	return model.scopePage(header).layout().maxScroll
 }
 
 func fitLine(line string, width int) string {

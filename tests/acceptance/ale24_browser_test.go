@@ -31,6 +31,10 @@ func TestALE24BrowserModesAndReferencesAtRequiredWidths(t *testing.T) {
 	var inventory publicList
 	decodeJSON(t, list.stdout, &inventory)
 	shared := sourceNamed(t, inventory.Sources, "shared-directory")
+	if len(inventory.Problems) == 0 {
+		t.Fatal("problem fixture did not report a problem")
+	}
+	firstProblem := inventory.Problems[0]
 
 	for _, width := range []int{48, 60, 80, 96, 120} {
 		width := width
@@ -97,10 +101,23 @@ func TestALE24BrowserModesAndReferencesAtRequiredWidths(t *testing.T) {
 			)
 			assertPaneCells(t, problems, width, 30)
 			writeEvidence(t, fmt.Sprintf("tmux/ale24-modes/%d/03-problems.txt", width), []byte(problems))
+
+			runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "Enter")
+			problemDetail := waitForPane(t, tmux, fx.fixture, socket, false,
+				"SKILLGLASS | Problem",
+				string(firstProblem.ID),
+				"Code: "+firstProblem.Code,
+				"Problem lines",
+				"Esc back",
+			)
+			assertPaneCells(t, problemDetail, width, 30)
+			writeEvidence(t, fmt.Sprintf("tmux/ale24-modes/%d/04-problem-detail.txt", width), []byte(problemDetail))
 			writeEvidence(t, fmt.Sprintf("tmux/ale24-modes/%d/keys.txt", width), []byte(
-				"/\nshared-directory\nEnter\nEnter\n<scroll>\nEsc\nTab\n/\nCtrl+U\nEnter\nq\n",
+				"/\nshared-directory\nEnter\nEnter\n<scroll>\nEsc\nTab\n/\nCtrl+U\nEnter\nEnter\nEsc\nq\n",
 			))
 			writeEvidence(t, fmt.Sprintf("tmux/ale24-modes/%d/command.txt", width), []byte(commandLine+"\n"))
+			runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "Escape")
+			_ = waitForPane(t, tmux, fx.fixture, socket, false, "SKILLGLASS | Problems", "Enter problem")
 			runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "q")
 		})
 	}

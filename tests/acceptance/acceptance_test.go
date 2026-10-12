@@ -165,6 +165,7 @@ type publicReference struct {
 }
 
 type publicProblem struct {
+	ID             string   `json:"id"`
 	Summary        string   `json:"summary"`
 	Code           string   `json:"code"`
 	Path           string   `json:"path"`
