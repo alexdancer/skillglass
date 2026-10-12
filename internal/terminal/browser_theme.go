@@ -18,8 +18,8 @@ const (
 )
 
 func resolveBrowserTheme(value string) (browserTheme, error) {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "none", "mono":
+	switch value {
+	case "none":
 		return themeNone, nil
 	case "dark":
 		if noColorRequested() {

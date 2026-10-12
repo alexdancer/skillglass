@@ -402,9 +402,10 @@ func TestBrowserActiveQueryStaysInChrome(t *testing.T) {
 		runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "-l", "normal-skill")
 		_ = waitForPaneAt(t, tmux, fx, socket, target, false, "normal-skill", "Enter keep")
 		runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "Enter")
-		_ = waitForPaneAt(t, tmux, fx, socket, target, false, "Filters: search normal-skill", "Focus: 1/1")
+		_ = waitForPaneAt(t, tmux, fx, socket, target, false, "Filters: s:normal-skill", "c:custom", "r:clean", "Focus: 1/1")
 		runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "Enter")
-		reader := waitForPaneAt(t, tmux, fx, socket, target, false, "Selected: normal-skill", "Filters: search normal-skill")
+		reader := waitForPaneAt(t, tmux, fx, socket, target, false, "Selected: normal-skill", "Filters: s:normal-skill", "c:custom", "r:clean")
+		assertActiveFilterDimensions(t, reader, false)
 		writeEvidence(t, "ale43-review/query-summary/narrow-reader-48x20.txt", []byte(reader))
 	})
 }

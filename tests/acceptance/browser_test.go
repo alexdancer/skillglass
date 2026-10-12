@@ -584,7 +584,8 @@ func TestBrowserManyRootsHasScrollableScopeAt60Columns(t *testing.T) {
 	}
 	bundle := filepath.Join(roots[0], "many-root-source")
 	writeFile(t, filepath.Join(bundle, "SKILL.md"), []byte(
-		"---\nname: many-root-source\ndescription: source remains visible\n---\nMANY_ROOT_INSTRUCTIONS\n",
+		"---\nname: many-root-source\ndescription: source remains visible\n---\nMANY_ROOT_START\n\n"+
+			strings.Repeat("A separate instruction paragraph.\n\n", 50)+"MANY_ROOT_INSTRUCTIONS\n",
 	), 0o644)
 
 	socket := fmt.Sprintf("skillglass-many-roots-%d", os.Getpid())
@@ -678,7 +679,7 @@ func TestBrowserManyRootsHasScrollableScopeAt60Columns(t *testing.T) {
 
 	detail := actForPaneAt(t, tmux, fx, socket, "many:0.0", false, func() {
 		runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "Enter")
-	}, "Selected: many-root-source", "Rendered instructions", "MANY_ROOT_INSTRUCTIONS")
+	}, "Selected: many-root-source", "Rendered instructions", "MANY_ROOT_START")
 	assertPaneCells(t, detail, 60, 30)
 	writeEvidence(t, "tmux/many-roots/04-detail.txt", []byte(detail))
 	detailLineCount := 0
@@ -697,9 +698,12 @@ func TestBrowserManyRootsHasScrollableScopeAt60Columns(t *testing.T) {
 		t.Fatalf("detail frame does not report its line count:\n%s", detail)
 	}
 	detailEndStatus := fmt.Sprintf("-%d of %d", detailLineCount, detailLineCount)
-	// Long fixture prefixes can push instructions below the first viewport.
-	// Prove they are reachable and that the scope round trip keeps that position.
-	detailEnd := detail
+	detailEnd := actForPaneAt(t, tmux, fx, socket, "many:0.0", false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "-l", "G")
+	}, "MANY_ROOT_INSTRUCTIONS", detailEndStatus)
+	if detailEnd == detail || paneContains(detailEnd, "MANY_ROOT_START") {
+		t.Fatalf("reader did not reach a distinct nonzero-scroll viewport:\n%s", detailEnd)
+	}
 	assertPaneCells(t, detailEnd, 60, 30)
 	writeEvidence(t, "tmux/many-roots/04-detail-end.txt", []byte(detailEnd))
 	_ = actForPaneAt(t, tmux, fx, socket, "many:0.0", false, func() {
@@ -713,7 +717,7 @@ func TestBrowserManyRootsHasScrollableScopeAt60Columns(t *testing.T) {
 		t.Fatalf("scope round trip changed detail viewport\nbefore:\n%s\nafter:\n%s", detailEnd, restoredDetail)
 	}
 	writeEvidence(t, "tmux/many-roots/05-detail-restored.txt", []byte(restoredDetail))
-	writeEvidence(t, "tmux/many-roots/keys.txt", []byte("/\ns\nEsc\ns\nG\nEsc\nEnter\ns\nEsc\nq\n"))
+	writeEvidence(t, "tmux/many-roots/keys.txt", []byte("/\ns\nEsc\ns\nG\nEsc\nEnter\nG\ns\nEsc\nq\n"))
 	writeEvidence(t, "tmux/many-roots/command.txt", []byte(commandLine+"\n"))
 	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "-l", "q")
 }

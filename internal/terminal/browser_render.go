@@ -288,7 +288,7 @@ func (model browserModel) sourceDetailLines(source collection.Source, width int)
 	}
 
 	lines = append(lines, "", "References")
-	references := model.snapshot.References(source.ID)
+	references := model.snapshot.ReferencesMatchingFilters(source.ID, model.filters)
 	if len(references) == 0 {
 		lines = append(lines, "  none")
 	}
@@ -537,18 +537,18 @@ func (model browserModel) chromeLines(mode browserMode) []string {
 		problems = palette.secondary(problems)
 	}
 	scopeLabel := "Scope: " + rootCountLabel(len(scope.Roots))
-	filters := model.filterSummary()
 	selection := model.focusSummary(mode)
 	var lines []string
 	if model.width >= wideBrowserMinimum {
-		second := sources + "   " + problems + "   " + palette.secondary(scopeLabel) + "   " + palette.secondary(filters)
+		prefix := sources + "   " + problems + "   " + palette.secondary(scopeLabel) + "   "
+		second := prefix + palette.secondary(model.filterSummary(model.width-ansi.StringWidth(prefix)))
 		lines = []string{fitLine(first, model.width), fitLine(second, model.width), fitLine(selection, model.width)}
 	} else {
 		second := sources + "   " + problems + "   " + palette.secondary(scopeLabel)
 		lines = []string{
 			fitLine(first, model.width),
 			fitLine(second, model.width),
-			fitLine(palette.secondary(filters), model.width),
+			palette.secondary(model.filterSummary(model.width)),
 			fitLine(selection, model.width),
 		}
 	}
@@ -658,24 +658,63 @@ func (model browserModel) sourceIdentitySummary(prefix string, source collection
 	return prefix + name + hint + compactProvenance
 }
 
-func (model browserModel) filterSummary() string {
-	parts := make([]string, 0, 4)
+func (model browserModel) filterSummary(width int) string {
+	type field struct {
+		name, compact, value string
+	}
+	fields := make([]field, 0, 4)
 	if model.filters.Search != "" {
-		parts = append(parts, "search "+safeInline(model.filters.Search))
+		fields = append(fields, field{"search ", "s:", safeInline(model.filters.Search)})
 	}
 	if model.filters.Context != collection.FilterAll {
-		parts = append(parts, "context "+string(model.filters.Context))
+		fields = append(fields, field{"context ", "c:", string(model.filters.Context)})
 	}
 	if model.filters.SourceRoot != "" {
-		parts = append(parts, "root "+model.rootFilterName())
+		fields = append(fields, field{"root ", "r:", model.rootFilterName()})
 	}
 	if model.filters.Problem != "" {
-		parts = append(parts, "problem "+string(model.filters.Problem))
+		fields = append(fields, field{"problem ", "p:", string(model.filters.Problem)})
 	}
-	if len(parts) == 0 {
+	if len(fields) == 0 {
 		return "Filters: all"
 	}
-	return "Filters: " + strings.Join(parts, " · ")
+	parts := make([]string, len(fields))
+	for index, field := range fields {
+		parts[index] = field.name + field.value
+	}
+	full := "Filters: " + strings.Join(parts, " · ")
+	if ansi.StringWidth(full) <= width {
+		return full
+	}
+
+	prefix := "Filters: "
+	overhead := ansi.StringWidth(prefix) + len(fields) - 1
+	for _, field := range fields {
+		overhead += ansi.StringWidth(field.compact)
+	}
+	if overhead+len(fields) > width {
+		overhead -= ansi.StringWidth(prefix)
+		prefix = ""
+	}
+	budgets := make([]int, len(fields))
+	remaining := max(0, width-overhead)
+	for remaining > 0 {
+		allocated := false
+		for index, field := range fields {
+			if remaining > 0 && budgets[index] < ansi.StringWidth(field.value) {
+				budgets[index]++
+				remaining--
+				allocated = true
+			}
+		}
+		if !allocated {
+			break
+		}
+	}
+	for index, field := range fields {
+		parts[index] = field.compact + ansi.Truncate(field.value, budgets[index], "…")
+	}
+	return prefix + strings.Join(parts, " ")
 }
 
 func (model browserModel) rootFilterName() string {

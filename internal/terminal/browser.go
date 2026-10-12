@@ -439,20 +439,19 @@ func (model *browserModel) rebuildSourceLabels() {
 	globalHints := uniqueSourceIDPrefixes(allSources)
 	groups := make(map[string][]collection.Source)
 	for _, source := range allSources {
-		key := sourceBaseName(source) + "\x00" + model.sourceLocation(source)
+		key := sourceBaseName(source)
 		groups[key] = append(groups[key], source)
 	}
 
 	model.sourceLabels = make(map[collection.SourceID]browserSourceLabel, len(allSources))
 	for _, group := range groups {
-		groupHints := uniqueSourceIDPrefixes(group)
 		for _, source := range group {
 			label := browserSourceLabel{
 				name:       sourceBaseName(source),
 				globalHint: globalHints[source.ID],
 			}
 			if len(group) > 1 {
-				label.hint = groupHints[source.ID]
+				label.hint = globalHints[source.ID]
 			}
 			model.sourceLabels[source.ID] = label
 		}

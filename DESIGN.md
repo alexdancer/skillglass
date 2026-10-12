@@ -28,13 +28,13 @@ Problems use the full content width because their summary and path need horizont
 
 Sources and Problems use the full width as inventories. `Enter` opens a full-width source or problem reader. `Esc` or the left arrow returns to the previous inventory. The same reader is used at 48, 60, and 80 columns, so resize does not change the selected identity or reading mode.
 
-Chrome uses three lines at wide widths and four below 96. Long values truncate within their row. Full project, root, source, and reference paths remain reachable in Scope or Details.
+Chrome uses three lines at wide widths and four below 96. Active filters reserve space for every dimension and truncate values individually. Compact summaries use `s:` for search, `c:` for context, `r:` for root, and `p:` for problem. Full project, root, source, and reference paths remain reachable in Scope or Details.
 
 ## Source inventory and identity
 
 A source row uses four terminal rows: name, description, provenance, and spacing. The focused source stays within the visible row window.
 
-Compact provenance combines reference contexts, root labels, and a reference count when more than one reference reaches the source. Equal root basenames receive stable scope ordinals such as `#1 skills` and `#2 skills`. If independent sources still have the same visible name and provenance, their names receive the shortest unique prefix of the stable source ID, such as `review [k4mz]`. The hint appears in the list, Focused or Selected line, and reader title. A retained selection hidden by filters always uses a shortest stable source-ID prefix that is unique across the complete snapshot because its compact line may omit provenance. Width-constrained labels reserve space for the hidden marker, identity hint, and compact provenance, then truncate only the human name. Details always shows the complete source ID and paths.
+Compact provenance combines reference contexts, root labels, and a reference count when more than one reference reaches the source. Equal root basenames receive stable scope ordinals such as `#1 skills` and `#2 skills`. Independent sources with the same name receive the shortest globally unique prefix of the stable source ID, such as `review [k4mz]`, even when their full provenance differs because compact provenance can truncate away that difference. The hint appears in the list, Focused or Selected line, and reader title. A retained selection hidden by filters always uses a shortest stable source-ID prefix that is unique across the complete snapshot because its compact line may omit provenance. Width-constrained labels reserve space for the hidden marker, identity hint, and compact provenance, then truncate only the human name. Details always shows the complete source ID and paths.
 
 This display rule never groups or re-identifies sources. It only derives labels from the authoritative snapshot.
 
@@ -104,7 +104,7 @@ Dark uses accent `#93C5FD`, body `#DCE5EF`, muted `#A8B3C3`, code background `#1
 
 The Markdown renderer uses these same roles. It does not load ambient Glamour configuration or a separate syntax-color theme. No-color mode emits structural text without SGR styling.
 
-`browse --theme auto|dark|light|none` selects presentation deterministically. `mono` is accepted as a no-color alias. `NO_COLOR` overrides dark or light to none. Auto selects light only from a light `COLORFGBG` background and otherwise uses dark. Theme selection reads environment values but writes no settings.
+`browse --theme auto|dark|light|none` selects presentation deterministically. `NO_COLOR` overrides dark or light to none. Auto selects light only from a light `COLORFGBG` background and otherwise uses dark. Theme selection reads environment values but writes no settings.
 
 ## Terminal safety
 
