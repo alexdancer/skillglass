@@ -12,11 +12,22 @@ import (
 )
 
 const usage = `Usage:
-  skillglass list --root ROOT [--root ROOT...] [--project PROJECT] [--search TEXT] [--json]
-  skillglass read --root ROOT [--root ROOT...] [--project PROJECT] [--json] SOURCE_ID
-  skillglass browse --root ROOT [--root ROOT...] [--project PROJECT]
+  skillglass list [SCOPE] [FILTERS] [--search TEXT] [--json]
+  skillglass problems [SCOPE] [FILTERS] [--search TEXT] [--json]
+  skillglass read [SCOPE] [--json] SOURCE_ID
+  skillglass browse [SCOPE]
 
-At least one explicit --root is required. Project context never adds an implicit root.
+Scope:
+  --root ROOT          custom discovery root; repeatable
+  --project PROJECT    selected project context
+  --project-root ROOT  discovery root associated with --project; repeatable
+
+Filters:
+  --source-root ROOT   one selected normalized root
+  --context VALUE      all, project, or custom (default all)
+  --problem CODE       one documented problem code
+
+At least one explicit --root or --project-root is required. Project context never adds an implicit root.
 `
 
 type stringList []string
@@ -33,6 +44,30 @@ func (values *stringList) Set(value string) error {
 type optionalString struct {
 	set   bool
 	value string
+}
+
+type commonOptions struct {
+	roots        stringList
+	projectRoots stringList
+	project      optionalString
+	sourceRoot   string
+	context      string
+	problem      string
+	jsonOutput   bool
+}
+
+func (options *commonOptions) bind(flags *flag.FlagSet, includeFilters, includeJSON bool) {
+	flags.Var(&options.roots, "root", "explicit custom discovery root; repeatable")
+	flags.Var(&options.projectRoots, "project-root", "explicit project-associated discovery root; repeatable")
+	flags.Var(&options.project, "project", "selected project context")
+	if includeFilters {
+		flags.StringVar(&options.sourceRoot, "source-root", "", "filter to one selected root")
+		flags.StringVar(&options.context, "context", "all", "filter by all, project, or custom context")
+		flags.StringVar(&options.problem, "problem", "", "filter by a documented problem code")
+	}
+	if includeJSON {
+		flags.BoolVar(&options.jsonOutput, "json", false, "emit machine-readable JSON")
+	}
 }
 
 func (value *optionalString) String() string {
@@ -58,6 +93,8 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "list":
 		return runList(args[1:], stdout, stderr)
+	case "problems":
+		return runProblems(args[1:], stdout, stderr)
 	case "read":
 		return runRead(args[1:], stdout, stderr)
 	case "browse":
@@ -70,7 +107,10 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 }
 
 func runList(args []string, stdout, stderr io.Writer) int {
-	flags, roots, project, jsonOutput := commonFlags("list")
+	flags := flag.NewFlagSet("list", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	var options commonOptions
+	options.bind(flags, true, true)
 	search := flags.String("search", "", "search names and descriptions")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -86,17 +126,22 @@ func runList(args []string, stdout, stderr io.Writer) int {
 		io.WriteString(stderr, usage)
 		return 2
 	}
-	snapshot, code := buildSnapshot(*roots, *project, stderr)
+	snapshot, code := buildSnapshot(options, stderr)
 	if snapshot == nil {
 		return code
 	}
+	filters, err := snapshot.NewFilters(*search, options.sourceRoot, options.context, options.problem)
+	if err != nil {
+		writeError(stderr, err)
+		io.WriteString(stderr, usage)
+		return 2
+	}
 
 	var output []byte
-	var err error
-	if *jsonOutput {
-		output, err = encodeListJSON(snapshot, *search)
+	if options.jsonOutput {
+		output, err = encodeListJSON(snapshot, filters)
 	} else {
-		output = []byte(renderList(snapshot, *search))
+		output = []byte(renderList(snapshot, filters))
 	}
 	if err != nil {
 		writeError(stderr, fmt.Errorf("render list: %w", err))
@@ -112,8 +157,61 @@ func runList(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func runProblems(args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("problems", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	var options commonOptions
+	options.bind(flags, true, true)
+	search := flags.String("search", "", "search problem codes, messages, and discovery paths")
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			io.WriteString(stdout, usage)
+			return 0
+		}
+		writeError(stderr, err)
+		io.WriteString(stderr, usage)
+		return 2
+	}
+	if flags.NArg() != 0 {
+		writeError(stderr, errors.New("problems does not accept positional arguments"))
+		io.WriteString(stderr, usage)
+		return 2
+	}
+	snapshot, code := buildSnapshot(options, stderr)
+	if snapshot == nil {
+		return code
+	}
+	filters, err := snapshot.NewFilters(*search, options.sourceRoot, options.context, options.problem)
+	if err != nil {
+		writeError(stderr, err)
+		io.WriteString(stderr, usage)
+		return 2
+	}
+	var output []byte
+	if options.jsonOutput {
+		output, err = encodeProblemsJSON(snapshot, filters)
+	} else {
+		output = []byte(renderProblemList(snapshot, filters))
+	}
+	if err != nil {
+		writeError(stderr, fmt.Errorf("render problems: %w", err))
+		return 1
+	}
+	if _, err := stdout.Write(output); err != nil {
+		writeError(stderr, fmt.Errorf("write output: %w", err))
+		return 1
+	}
+	if !snapshot.Complete() {
+		return 1
+	}
+	return 0
+}
+
 func runRead(args []string, stdout, stderr io.Writer) int {
-	flags, roots, project, jsonOutput := commonFlags("read")
+	flags := flag.NewFlagSet("read", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	var options commonOptions
+	options.bind(flags, false, true)
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			io.WriteString(stdout, usage)
@@ -128,7 +226,7 @@ func runRead(args []string, stdout, stderr io.Writer) int {
 		io.WriteString(stderr, usage)
 		return 2
 	}
-	snapshot, code := buildSnapshot(*roots, *project, stderr)
+	snapshot, code := buildSnapshot(options, stderr)
 	if snapshot == nil {
 		return code
 	}
@@ -137,7 +235,7 @@ func runRead(args []string, stdout, stderr io.Writer) int {
 	var output []byte
 	var found bool
 	var err error
-	if *jsonOutput {
+	if options.jsonOutput {
 		output, err = encodeReadJSON(snapshot, id)
 		_, found = snapshot.Source(id)
 	} else {
@@ -159,23 +257,12 @@ func runRead(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func commonFlags(name string) (*flag.FlagSet, *stringList, *optionalString, *bool) {
-	flags := flag.NewFlagSet(name, flag.ContinueOnError)
-	flags.SetOutput(io.Discard)
-	var roots stringList
-	var project optionalString
-	flags.Var(&roots, "root", "explicit discovery root; repeatable")
-	flags.Var(&project, "project", "selected project context")
-	jsonOutput := flags.Bool("json", false, "emit machine-readable JSON")
-	return flags, &roots, &project, jsonOutput
-}
-
-func buildSnapshot(roots stringList, project optionalString, stderr io.Writer) (*collection.Snapshot, int) {
+func buildSnapshot(options commonOptions, stderr io.Writer) (*collection.Snapshot, int) {
 	var projectValue *string
-	if project.set {
-		projectValue = &project.value
+	if options.project.set {
+		projectValue = &options.project.value
 	}
-	request, err := collection.NewRequest(roots, projectValue)
+	request, err := collection.NewRequest(options.roots, options.projectRoots, projectValue)
 	if err != nil {
 		writeError(stderr, err)
 		io.WriteString(stderr, usage)

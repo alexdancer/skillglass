@@ -37,6 +37,9 @@ func discover(ctx context.Context, request Request) (*Snapshot, error) {
 		}
 		rootReports = append(rootReports, builder.discoverRoot(ctx, root))
 	}
+	builder.addRelationshipProblems()
+	builder.finalizeProblemRelationships()
+	recountRootReports(rootReports, builder)
 
 	completeness := Complete
 	for _, problem := range builder.problems {
@@ -46,6 +49,7 @@ func discover(ctx context.Context, request Request) (*Snapshot, error) {
 		}
 	}
 	return &Snapshot{
+		request: cloneRequest(request),
 		scope: Scope{
 			Project:      request.Project,
 			Roots:        rootReports,
@@ -59,10 +63,45 @@ func discover(ctx context.Context, request Request) (*Snapshot, error) {
 	}, nil
 }
 
+func recountRootReports(reports []RootReport, builder discoveryBuilder) {
+	for index := range reports {
+		report := &reports[index]
+		sources := make(map[SourceID]struct{})
+		for _, reference := range builder.references {
+			if reference.Root == report.ID && reference.Source != "" {
+				sources[reference.Source] = struct{}{}
+			}
+		}
+		report.SourceCount = len(sources)
+		problems := make(map[ProblemID]Problem)
+		for _, problem := range builder.problems {
+			if containsRootID(problem.RootIDs, report.ID) {
+				problems[problem.ID] = problem
+			}
+		}
+		report.ProblemCount = len(problems)
+		if report.State == RootMissing || report.State == RootUnreadable {
+			continue
+		}
+		if report.SourceCount == 0 && len(problems) == 0 {
+			report.State = RootEmpty
+		} else {
+			report.State = RootSearched
+		}
+		for _, problem := range problems {
+			if problem.LimitsCoverage {
+				report.State = RootIncomplete
+				break
+			}
+		}
+	}
+}
+
 func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root DiscoveryRoot) RootReport {
 	report := RootReport{
 		ID:        root.ID,
 		Requested: root.Path,
+		Context:   root.Context,
 		State:     RootSearched,
 	}
 	problemStart := len(builder.problems)
@@ -72,11 +111,19 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 	if err != nil {
 		code := ProblemRootUnreadable
 		state := RootUnreadable
-		if errors.Is(err, os.ErrNotExist) {
+		rootInfo, lstatErr := os.Lstat(root.Path)
+		if lstatErr == nil && rootInfo.Mode()&os.ModeSymlink != 0 {
+			code = ProblemBrokenReference
+			state = RootIncomplete
+			if isSymlinkCycle(err) {
+				code = ProblemSymlinkCycle
+			}
+		} else if errors.Is(err, os.ErrNotExist) {
 			code = ProblemRootMissing
 			state = RootMissing
 		}
 		problem := makeProblem(code, root.Path, "selected root could not be opened", err, true)
+		problem.RootIDs = []RootID{root.ID}
 		builder.addProblem(problem)
 		report.State = state
 		report.ProblemCount = 1
@@ -93,6 +140,7 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 			err,
 			true,
 		)
+		problem.RootIDs = []RootID{root.ID}
 		builder.addProblem(problem)
 		report.State = RootUnreadable
 		report.ProblemCount = 1
@@ -107,6 +155,7 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 			err,
 			true,
 		)
+		problem.RootIDs = []RootID{root.ID}
 		builder.addProblem(problem)
 		report.State = RootUnreadable
 		report.ProblemCount = 1
@@ -128,13 +177,16 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 				readErr,
 				true,
 			)
+			problem.RootIDs = []RootID{root.ID}
 			builder.addProblem(problem)
 			report.State = RootUnreadable
 			report.ProblemCount = 1
 			return report
 		}
 		if manifestErr != nil {
-			builder.addProblem(manifestPresenceProblem(resolvedRoot, manifestErr))
+			problem := manifestPresenceProblem(resolvedRoot, manifestErr)
+			problem.RootIDs = []RootID{root.ID}
+			builder.addProblem(problem)
 		}
 		sort.Slice(entries, func(left, right int) bool {
 			return entries[left].Name() < entries[right].Name()
@@ -148,6 +200,7 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 					err,
 					true,
 				)
+				problem.RootIDs = []RootID{root.ID}
 				builder.addProblem(problem)
 				break
 			}
@@ -197,6 +250,7 @@ func (builder *discoveryBuilder) discoverCandidate(
 	reference := Reference{
 		ID:             id,
 		Root:           root.ID,
+		Context:        root.Context,
 		DiscoveredPath: discoveredPath,
 		Status:         "unresolved",
 	}
@@ -208,6 +262,8 @@ func (builder *discoveryBuilder) discoverCandidate(
 			code = ProblemSymlinkCycle
 		}
 		problem := makeProblem(code, discoveredPath, "bundle reference could not be resolved", err, true)
+		problem.RootIDs = []RootID{root.ID}
+		problem.ReferenceIDs = []ReferenceID{id}
 		reference.Problems = []Problem{problem}
 		builder.addReference(reference)
 		builder.addProblem(problem)
@@ -221,6 +277,8 @@ func (builder *discoveryBuilder) discoverCandidate(
 			err,
 			true,
 		)
+		problem.RootIDs = []RootID{root.ID}
+		problem.ReferenceIDs = []ReferenceID{id}
 		reference.Problems = []Problem{problem}
 		builder.addReference(reference)
 		builder.addProblem(problem)
@@ -236,6 +294,8 @@ func (builder *discoveryBuilder) discoverCandidate(
 			err,
 			true,
 		)
+		problem.RootIDs = []RootID{root.ID}
+		problem.ReferenceIDs = []ReferenceID{id}
 		reference.Problems = []Problem{problem}
 		builder.addReference(reference)
 		builder.addProblem(problem)
@@ -251,6 +311,8 @@ func (builder *discoveryBuilder) discoverCandidate(
 				err,
 				true,
 			)
+			problem.RootIDs = []RootID{root.ID}
+			problem.ReferenceIDs = []ReferenceID{id}
 			reference.Problems = []Problem{problem}
 			builder.addReference(reference)
 			builder.addProblem(problem)
@@ -261,6 +323,8 @@ func (builder *discoveryBuilder) discoverCandidate(
 	present, manifestErr := hasManifest(resolvedPath)
 	if manifestErr != nil {
 		problem := manifestPresenceProblem(resolvedPath, manifestErr)
+		problem.RootIDs = []RootID{root.ID}
+		problem.ReferenceIDs = []ReferenceID{id}
 		reference.Problems = []Problem{problem}
 		builder.addReference(reference)
 		builder.addProblem(problem)
@@ -341,6 +405,193 @@ func (builder *discoveryBuilder) addProblem(problem Problem) {
 	builder.problems = append(builder.problems, problem)
 }
 
+func (builder *discoveryBuilder) addRelationshipProblems() {
+	byName := make(map[string][]SourceID)
+	byManifest := make(map[string][]SourceID)
+	for id, source := range builder.sources {
+		if source.Name != "" {
+			byName[source.Name] = append(byName[source.Name], id)
+		}
+		if source.Manifest.ResolvedPath != "" {
+			byManifest[source.Manifest.ResolvedPath] = append(byManifest[source.Manifest.ResolvedPath], id)
+		}
+		for _, resource := range source.Resources {
+			if resource.Kind != "symlink" || resource.LinkScope != "external" {
+				continue
+			}
+			problem := makeProblem(
+				ProblemExternalResource,
+				filepath.Join(source.Directory, filepath.FromSlash(resource.Path)),
+				"resource link points outside the bundle",
+				fmt.Errorf("target %q is inventoried as a link and is not followed", resource.LinkTarget),
+				false,
+			)
+			problem.SourceIDs = []SourceID{id}
+			source.Problems = append(source.Problems, problem)
+			builder.addProblem(problem)
+		}
+		builder.sources[id] = source
+	}
+	for name, ids := range byName {
+		if len(ids) < 2 {
+			continue
+		}
+		sort.Slice(ids, func(left, right int) bool { return ids[left] < ids[right] })
+		selectors := make([]string, len(ids))
+		for index, id := range ids {
+			selectors[index] = string(id)
+		}
+		for _, id := range ids {
+			source := builder.sources[id]
+			problem := makeProblem(
+				ProblemDuplicateName,
+				source.Directory,
+				fmt.Sprintf("display name %q is used by independent sources", name),
+				errors.New("selectors: "+strings.Join(selectors, ", ")),
+				false,
+			)
+			problem.SourceIDs = []SourceID{id}
+			source.Problems = append(source.Problems, problem)
+			builder.sources[id] = source
+			builder.addProblem(problem)
+		}
+	}
+	for target, ids := range byManifest {
+		if len(ids) < 2 {
+			continue
+		}
+		sort.Slice(ids, func(left, right int) bool { return ids[left] < ids[right] })
+		selectors := make([]string, len(ids))
+		for index, id := range ids {
+			selectors[index] = string(id)
+		}
+		for _, id := range ids {
+			source := builder.sources[id]
+			problem := makeProblem(
+				ProblemSharedManifest,
+				source.Manifest.Path,
+				"independent bundle shares a manifest target",
+				fmt.Errorf("target %q is shared by selectors %s", target, strings.Join(selectors, ", ")),
+				false,
+			)
+			problem.SourceIDs = []SourceID{id}
+			source.Problems = append(source.Problems, problem)
+			builder.sources[id] = source
+			builder.addProblem(problem)
+		}
+	}
+}
+
+func (builder *discoveryBuilder) finalizeProblemRelationships() {
+	order := make([]ProblemID, 0, len(builder.problems))
+	merged := make(map[ProblemID]Problem, len(builder.problems))
+	merge := func(problem Problem, roots []RootID, references []ReferenceID, sources []SourceID) {
+		current, exists := merged[problem.ID]
+		if !exists {
+			current = problem
+			order = append(order, problem.ID)
+		}
+		current.RootIDs = appendUniqueRootIDs(current.RootIDs, problem.RootIDs...)
+		current.RootIDs = appendUniqueRootIDs(current.RootIDs, roots...)
+		current.ReferenceIDs = appendUniqueReferenceIDs(current.ReferenceIDs, problem.ReferenceIDs...)
+		current.ReferenceIDs = appendUniqueReferenceIDs(current.ReferenceIDs, references...)
+		current.SourceIDs = appendUniqueSourceIDs(current.SourceIDs, problem.SourceIDs...)
+		current.SourceIDs = appendUniqueSourceIDs(current.SourceIDs, sources...)
+		merged[problem.ID] = current
+	}
+	for _, problem := range builder.problems {
+		merge(problem, nil, nil, nil)
+	}
+	for id, reference := range builder.references {
+		for _, problem := range reference.Problems {
+			sources := []SourceID(nil)
+			if reference.Source != "" {
+				sources = []SourceID{reference.Source}
+			}
+			merge(problem, []RootID{reference.Root}, []ReferenceID{id}, sources)
+		}
+	}
+	for id, source := range builder.sources {
+		roots := make([]RootID, 0, len(source.References))
+		for _, referenceID := range source.References {
+			roots = append(roots, builder.references[referenceID].Root)
+		}
+		for _, problem := range source.Problems {
+			merge(problem, roots, source.References, []SourceID{id})
+		}
+	}
+	for id, reference := range builder.references {
+		for index, problem := range reference.Problems {
+			reference.Problems[index] = merged[problem.ID]
+		}
+		builder.references[id] = reference
+	}
+	for id, source := range builder.sources {
+		for index, problem := range source.Problems {
+			source.Problems[index] = merged[problem.ID]
+		}
+		builder.sources[id] = source
+	}
+	builder.problems = builder.problems[:0]
+	for _, id := range order {
+		problem := merged[id]
+		sort.Slice(problem.RootIDs, func(left, right int) bool { return problem.RootIDs[left] < problem.RootIDs[right] })
+		sort.Slice(problem.ReferenceIDs, func(left, right int) bool { return problem.ReferenceIDs[left] < problem.ReferenceIDs[right] })
+		sort.Slice(problem.SourceIDs, func(left, right int) bool { return problem.SourceIDs[left] < problem.SourceIDs[right] })
+		builder.problems = append(builder.problems, problem)
+	}
+}
+
+func appendUniqueRootIDs(values []RootID, additions ...RootID) []RootID {
+	for _, addition := range additions {
+		if addition != "" && !containsRootID(values, addition) {
+			values = append(values, addition)
+		}
+	}
+	return values
+}
+
+func containsRootID(values []RootID, target RootID) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func appendUniqueReferenceIDs(values []ReferenceID, additions ...ReferenceID) []ReferenceID {
+	for _, addition := range additions {
+		found := false
+		for _, value := range values {
+			if value == addition {
+				found = true
+				break
+			}
+		}
+		if addition != "" && !found {
+			values = append(values, addition)
+		}
+	}
+	return values
+}
+
+func appendUniqueSourceIDs(values []SourceID, additions ...SourceID) []SourceID {
+	for _, addition := range additions {
+		found := false
+		for _, value := range values {
+			if value == addition {
+				found = true
+				break
+			}
+		}
+		if addition != "" && !found {
+			values = append(values, addition)
+		}
+	}
+	return values
+}
+
 func manifestPresenceProblem(directory string, err error) Problem {
 	return makeProblem(
 		ProblemUnreadableManifest,
@@ -368,8 +619,10 @@ func isSymlink(path string) bool {
 }
 
 func isSymlinkCycle(err error) bool {
+	message := strings.ToLower(err.Error())
 	return errors.Is(err, syscall.ELOOP) ||
-		strings.Contains(strings.ToLower(err.Error()), "too many levels of symbolic links")
+		strings.Contains(message, "too many levels of symbolic links") ||
+		strings.Contains(message, "too many links")
 }
 
 func inventoryResources(ctx context.Context, bundleDirectory string) ([]Resource, []Problem) {

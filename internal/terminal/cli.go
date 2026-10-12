@@ -12,7 +12,7 @@ import (
 
 type listEnvelope struct {
 	Operation  string                 `json:"operation"`
-	Query      string                 `json:"query,omitempty"`
+	Filters    collection.Filters     `json:"filters"`
 	Scope      collection.Scope       `json:"scope"`
 	Sources    []collection.Source    `json:"sources"`
 	References []collection.Reference `json:"references"`
@@ -28,11 +28,23 @@ type readEnvelope struct {
 	Error      string                 `json:"error,omitempty"`
 }
 
-func encodeListJSON(snapshot *collection.Snapshot, query string) ([]byte, error) {
-	view := snapshot.Query(query)
+func encodeListJSON(snapshot *collection.Snapshot, filters collection.Filters) ([]byte, error) {
+	view := snapshot.Query(filters, collection.QuerySources)
 	return encodeJSON(listEnvelope{
 		Operation:  "list",
-		Query:      query,
+		Filters:    view.Filters,
+		Scope:      view.Scope,
+		Sources:    view.Sources,
+		References: view.References,
+		Problems:   view.Problems,
+	})
+}
+
+func encodeProblemsJSON(snapshot *collection.Snapshot, filters collection.Filters) ([]byte, error) {
+	view := snapshot.Query(filters, collection.QueryProblems)
+	return encodeJSON(listEnvelope{
+		Operation:  "problems",
+		Filters:    view.Filters,
 		Scope:      view.Scope,
 		Sources:    view.Sources,
 		References: view.References,
@@ -67,18 +79,16 @@ func encodeJSON(value any) ([]byte, error) {
 	return output.Bytes(), nil
 }
 
-func renderList(snapshot *collection.Snapshot, query string) string {
-	view := snapshot.Query(query)
+func renderList(snapshot *collection.Snapshot, filters collection.Filters) string {
+	view := snapshot.Query(filters, collection.QuerySources)
 	var output strings.Builder
 	output.WriteString("Skillglass collection\n")
 	renderScope(&output, view.Scope)
-	if query != "" {
-		fmt.Fprintf(&output, "Search: %s\n", safeInline(query))
-	}
+	renderFilters(&output, view.Filters)
 	output.WriteString("\n")
 	renderProblems(&output, view.Problems)
 	if len(view.Sources) == 0 {
-		if query == "" {
+		if filters.Search == "" && filters.SourceRoot == "" && filters.Context == collection.FilterAll && filters.Problem == "" {
 			output.WriteString("Sources: none found\n")
 		} else {
 			output.WriteString("Sources: no matches\n")
@@ -104,12 +114,37 @@ func renderList(snapshot *collection.Snapshot, query string) string {
 		fmt.Fprintf(&output, "  Availability: %s\n", source.Availability.State)
 		fmt.Fprintf(&output, "  Resources: %d\n", len(source.Resources))
 		for _, reference := range referencesBySource[source.ID] {
-			fmt.Fprintf(&output, "  Discovered: %s\n", safeInline(reference.DiscoveredPath))
+			matching := ""
+			if reference.MatchesFilters {
+				matching = " [matches filters]"
+			}
+			fmt.Fprintf(
+				&output,
+				"  Discovered (%s): %s%s\n",
+				reference.Context,
+				safeInline(reference.DiscoveredPath),
+				matching,
+			)
 		}
 		if source.Manifest.Status == collection.ManifestParsed {
 			fmt.Fprintf(&output, "  Metadata: %s\n", safeInline(compactMetadata(source.Manifest.Metadata)))
 		}
 	}
+	return output.String()
+}
+
+func renderProblemList(snapshot *collection.Snapshot, filters collection.Filters) string {
+	view := snapshot.Query(filters, collection.QueryProblems)
+	var output strings.Builder
+	output.WriteString("Skillglass problems\n")
+	renderScope(&output, view.Scope)
+	renderFilters(&output, view.Filters)
+	output.WriteString("\n")
+	if len(view.Problems) == 0 {
+		output.WriteString("Problems: none found\n")
+		return output.String()
+	}
+	renderProblems(&output, view.Problems)
 	return output.String()
 }
 
@@ -135,7 +170,10 @@ func renderRead(snapshot *collection.Snapshot, id collection.SourceID) (string, 
 	fmt.Fprintf(&output, "Description: %s\n", displayOptional(source.Description))
 	fmt.Fprintf(&output, "Source: %s\n", safeInline(source.Directory))
 	for _, reference := range snapshot.References(id) {
-		fmt.Fprintf(&output, "Discovered: %s\n", safeInline(reference.DiscoveredPath))
+		fmt.Fprintf(&output, "Discovered (%s): %s\n", reference.Context, safeInline(reference.DiscoveredPath))
+		if reference.ResolvedPath != "" && reference.ResolvedPath != reference.DiscoveredPath {
+			fmt.Fprintf(&output, "Resolved reference: %s\n", safeInline(reference.ResolvedPath))
+		}
 	}
 	fmt.Fprintf(&output, "Identity: %s (%s)\n", source.Identity.Method, source.Identity.Certainty)
 	fmt.Fprintf(
@@ -213,11 +251,26 @@ func renderScope(output *strings.Builder, scope collection.Scope) {
 	for _, root := range scope.Roots {
 		fmt.Fprintf(
 			output,
-			"  [%s] %s\n",
+			"  [%s/%s] %s\n",
+			root.Context,
 			root.State,
 			safeInline(root.Requested),
 		)
 	}
+}
+
+func renderFilters(output *strings.Builder, filters collection.Filters) {
+	search := displayOptional(filters.Search)
+	sourceRoot := displayOptional(filters.SourceRoot)
+	problem := displayOptional(string(filters.Problem))
+	fmt.Fprintf(
+		output,
+		"Filters: search=%s | source-root=%s | context=%s | problem=%s\n",
+		search,
+		sourceRoot,
+		filters.Context,
+		problem,
+	)
 }
 
 func renderProblems(output *strings.Builder, problems []collection.Problem) {
@@ -235,6 +288,13 @@ func renderProblems(output *strings.Builder, problems []collection.Problem) {
 		)
 		if problem.Detail != "" {
 			fmt.Fprintf(output, " (%s)", safeInline(problem.Detail))
+		}
+		if len(problem.SourceIDs) > 0 {
+			selectors := make([]string, len(problem.SourceIDs))
+			for index, id := range problem.SourceIDs {
+				selectors[index] = safeInline(string(id))
+			}
+			fmt.Fprintf(output, " [sources: %s]", strings.Join(selectors, ", "))
 		}
 		output.WriteString("\n")
 	}
