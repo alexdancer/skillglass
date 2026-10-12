@@ -2,9 +2,9 @@
 
 Parent: [Build Skill Viewer v1: browse, explain, compare, and control local skills](https://linear.app/alex-dancer/issue/ALE-21/build-skill-viewer-v1-browse-explain-compare-and-control-local-skills)
 
-Status: approved and published. All 21 Linear sub-issues and 39 native blocking links were verified. Each issue is in Backlog with the ready-for-agent label. This document is a local reference; Linear holds live status.
+Status: approved and published. All 21 Linear sub-issues and 39 native blocking links were verified. At publication, each issue was in Backlog with the ready-for-agent label. This document is a local reference; Linear holds live status.
 
-Each production ticket includes an end-to-end CLI and interactive-terminal journey plus public-executable tests in isolated temporary homes/projects. Native writers also require version-specific validation. The prototype ticket is deliberately throwaway. No prefactoring is needed because application code does not exist.
+Each production ticket includes an end-to-end CLI and interactive-terminal journey plus public-executable tests in isolated temporary homes/projects. Native writers also require version-specific validation. The prototype ticket is deliberately throwaway. No prefactoring was needed at publication because application code did not yet exist; the [README](../../README.md#status) owns current implementation status.
 
 Numbers below preserve the approved review order. Follow the linked Linear issues for current status and native dependencies. Publication left the parent specification content and status unchanged.
 

@@ -12,7 +12,6 @@ The project was planned as **Skill Viewer**. Existing Linear titles and historic
 
 ## Planned capabilities
 
-- Browse and read skill bundles through an interactive terminal browser and ordinary CLI commands.
 - Explain availability by agent application and project, including precedence and unsupported controls.
 - Compare independent copies while distinguishing them from shared references.
 - Preview and apply validated enable/disable controls, or permanently delete explicitly selected content after confirmation.
@@ -30,17 +29,18 @@ Planned integrations cover Codex, Claude Code, Hermes, Pi, OpenCode, Gemini CLI,
 - [Agent instructions](AGENTS.md)
 - [ALE-23 verification](docs/verification/ale-23.md)
 
-[Linear](https://linear.app/alex-dancer/project/skill-viewer-58706f175bed) holds live ticket requirements, status, and dependencies. The local copies are references. Start by checking [Prototype the terminal journeys (ALE-22)](https://linear.app/alex-dancer/issue/ALE-22/prototype-the-terminal-journeys) and its current blockers.
+[Linear](https://linear.app/alex-dancer/project/skill-viewer-58706f175bed) holds live ticket requirements, status, and dependencies. The local copies are references.
 
 ## Build and use
 
-Build with Go 1.27.1:
+Build on macOS with Go 1.27.1. Download the pinned dependencies once with network access; the product runs offline:
 
 ```sh
-/opt/homebrew/bin/go build -trimpath -o bin/skillglass ./cmd/skillglass
+/opt/homebrew/bin/go mod download
+/opt/homebrew/bin/go build -mod=readonly -trimpath -o bin/skillglass ./cmd/skillglass
 ```
 
-Every command requires an explicit discovery root. Project context is optional and never selects a root implicitly.
+Every operation requires an explicit discovery root; help does not. Repeat `--root` to select multiple locations. Project context is optional, visibly reports `none selected` when absent, and never selects a root implicitly. A root containing `SKILL.md` selects that bundle; otherwise only direct child bundle candidates are inspected, not nested collections. Explicit directory and manifest symlinks may resolve outside the root, but their siblings are not scanned.
 
 ```sh
 bin/skillglass list --root /path/to/skills
@@ -49,7 +49,13 @@ bin/skillglass read --root /path/to/skills SOURCE_ID
 bin/skillglass browse --root /path/to/skills --project /path/to/project
 ```
 
-In the browser, press `s` from the inventory or source detail to inspect the full selected project and every discovery root. The scope view scrolls with the arrow keys or `j`/`k`, `PgUp`/`PgDn`, and `g`/`G`; press `Esc` or the left arrow to return. While search input is active, `s` remains ordinary query text. Long searches retain the complete query for filtering and show its current tail on one row with a leading ellipsis.
+Use a source ID from `list` as the final `read` argument, after all flags. Search matches names and descriptions case-insensitively. Supporting resources are inventoried recursively inside each bundle without following resource symlinks or opening resource contents. Browsing and reading never execute bundled instructions or scripts or change sources or agent settings. Human output escapes terminal controls; JSON preserves the text for programmatic use.
+
+In the browser, move with the arrow keys or `j`/`k`, press `/` to search, `Enter` to keep a search or open the focused source, `Esc` to cancel a search or return from detail, and `q` to quit outside search. Search supports bracketed paste as query data and `Ctrl+U` to clear. Source detail scrolls with the same movement keys, `PgUp`/`PgDn`, and `g`/`G` for top/end.
+
+Press `s` from the inventory or source detail to inspect the full selected project and every discovery root. The scope view scrolls with the arrow keys or `j`/`k`, `PgUp`/`PgDn`, and `g`/`G`; press `Esc` or the left arrow to return. While search input is active, `s` remains ordinary query text. Long searches retain the complete query for filtering and show its current tail on one row with a leading ellipsis.
+
+Manifests require YAML mapping frontmatter with a non-empty string `name` and an optional string `description`. Mapping keys must decode to unique UTF-8 strings within each mapping; non-string keys and invalid decoded strings are rejected. Ordinary aliases and merge overrides remain supported. A malformed readable UTF-8 manifest stays selectable with exact `manifest.raw_text` and diagnostics, without fabricated valid metadata. Manifest reads are limited to 4 MiB and resource inventories to 10,000 entries; exceeding either bound reports incomplete coverage rather than silent truncation.
 
 JSON output preserves YAML non-finite floats with an explicit, portable representation instead of failing serialization:
 
@@ -63,7 +69,7 @@ Each affected manifest also reports one `metadata-non-finite-float` diagnostic. 
 
 A manifest that is not valid UTF-8 reports `manifest-invalid-encoding`, remains selectable with its paths and resources, and makes coverage incomplete with exit status 1. JSON preserves the complete file as standard padded base64 in `manifest.raw_bytes_base64` instead of replacing invalid bytes. Content-derived text and metadata fields are omitted for that manifest. Human output and browser detail show a recovery hint directing you to `list` or `read` with `--json`; they do not display an altered body. Valid UTF-8 output is unchanged, including a literal U+FFFD character.
 
-Exit status 0 means the requested result is complete, including an empty collection. Status 1 means discovery, reading, or selection was incomplete and useful partial output is preserved. Status 2 reports command usage errors.
+Exit status 0 means the requested result is complete, including an empty collection and help. Status 1 means incomplete coverage, an operational failure, or an unknown selection; useful partial output is preserved when available. A browser opened with incomplete coverage also returns 1 on normal quit. Status 2 reports command usage errors.
 
 ## Development workflow
 
@@ -71,17 +77,7 @@ Follow the Matt Pocock skill sequence in the [coding workflow](docs/agents/codin
 
 The active Codex chat drives the loop through native agents. The scheduler persists leases and evidence across interruptions. It does not launch models or keep running after the coordinating chat ends.
 
-Run the scheduler checks with Python 3.10 or later.
-
-```sh
-python3 -m unittest discover -s tests/agent_loop -v
-```
-
-Run the executable acceptance suite with Go module downloads disabled:
-
-```sh
-./tests/acceptance/run.sh
-```
+For scheduler checks, executable acceptance, terminal evidence, static checks, and containment limits, follow the [ALE-23 verification guide](docs/verification/ale-23.md#reproduce-the-acceptance-evidence).
 
 Skill links in the workflow point to the maintainer's installed local skills; those external skill files are not bundled in this repository.
 

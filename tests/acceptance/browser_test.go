@@ -390,19 +390,30 @@ func TestBrowserManyRootsHasScrollableScopeAt60Columns(t *testing.T) {
 
 	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "Enter")
 	detail := waitForPaneAt(
-		t, tmux, fx, socket, "many:0.0", false, "Manifest: parsed", "MANY_ROOT_INSTRUCTIONS", "s scope",
+		t, tmux, fx, socket, "many:0.0", false, "Selected: many-root-source", "Read lines", "s scope",
 	)
 	assertPaneCells(t, detail, 60, 30)
 	writeEvidence(t, "tmux/many-roots/04-detail.txt", []byte(detail))
+	// Long fixture prefixes can push instructions below the first viewport.
+	// Prove they are reachable and that the scope round trip keeps that position.
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "-l", "G")
+	detailEnd := waitForPaneAt(
+		t, tmux, fx, socket, "many:0.0", false, "MANY_ROOT_INSTRUCTIONS", "Read lines", "s scope",
+	)
+	assertPaneCells(t, detailEnd, 60, 30)
+	writeEvidence(t, "tmux/many-roots/04-detail-end.txt", []byte(detailEnd))
 	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "-l", "s")
 	_ = waitForPaneAt(t, tmux, fx, socket, "many:0.0", false, "SKILLGLASS | Scope", longProject)
 	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "Escape")
 	restoredDetail := waitForPaneAt(
-		t, tmux, fx, socket, "many:0.0", false, "Manifest: parsed", "MANY_ROOT_INSTRUCTIONS", "s scope",
+		t, tmux, fx, socket, "many:0.0", false, "MANY_ROOT_INSTRUCTIONS", "Read lines", "s scope",
 	)
 	assertPaneCells(t, restoredDetail, 60, 30)
+	if restoredDetail != detailEnd {
+		t.Fatalf("scope round trip changed detail viewport\nbefore:\n%s\nafter:\n%s", detailEnd, restoredDetail)
+	}
 	writeEvidence(t, "tmux/many-roots/05-detail-restored.txt", []byte(restoredDetail))
-	writeEvidence(t, "tmux/many-roots/keys.txt", []byte("/\ns\nEsc\ns\nG\nEsc\nEnter\ns\nEsc\nq\n"))
+	writeEvidence(t, "tmux/many-roots/keys.txt", []byte("/\ns\nEsc\ns\nG\nEsc\nEnter\nG\ns\nEsc\nq\n"))
 	writeEvidence(t, "tmux/many-roots/command.txt", []byte(commandLine+"\n"))
 	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "-l", "q")
 }
@@ -669,12 +680,22 @@ func waitForPaneAt(
 				break
 			}
 		}
+		if found && !strings.Contains(capture, "Pane is dead") {
+			// A matching frame can still be from before the last resize. The
+			// browser anchors its footer on the current grid's bottom row.
+			cells := capture
+			if joinWrapped {
+				cells = capturePaneAt(t, tmux, fx, socket, target, false)
+			}
+			rows := strings.Split(strings.TrimSuffix(cells, "\n"), "\n")
+			found = strings.TrimSpace(rows[len(rows)-1]) != ""
+		}
 		if found {
 			return capture
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
-	t.Fatalf("pane did not show %q:\n%s", needles, capture)
+	t.Fatalf("pane did not show %q on the current grid:\n%s", needles, capture)
 	return ""
 }
 
