@@ -161,12 +161,22 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 	}
 
 	report.ProblemCount = len(builder.problems) - problemStart
-	if report.ProblemCount > 0 {
+	rootProblems := builder.problems[problemStart:]
+	if problemsLimitCoverage(rootProblems) {
 		report.State = RootIncomplete
 	} else if report.SourceCount == 0 {
 		report.State = RootEmpty
 	}
 	return report
+}
+
+func problemsLimitCoverage(problems []Problem) bool {
+	for _, problem := range problems {
+		if problem.LimitsCoverage {
+			return true
+		}
+	}
+	return false
 }
 
 func (builder *discoveryBuilder) discoverCandidate(
@@ -358,6 +368,20 @@ func inventoryResources(ctx context.Context, bundleDirectory string) ([]Resource
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		if walkErr != nil {
+			problem := makeProblem(
+				ProblemUnreadableResource,
+				path,
+				"resource could not be inspected",
+				walkErr,
+				true,
+			)
+			problems = append(problems, problem)
+			if entry != nil && entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		if path == bundleDirectory {
 			return nil
 		}
@@ -374,20 +398,6 @@ func inventoryResources(ctx context.Context, bundleDirectory string) ([]Resource
 			return nil
 		}
 		if filepath.Clean(relative) == "SKILL.md" {
-			return nil
-		}
-		if walkErr != nil {
-			problem := makeProblem(
-				ProblemUnreadableResource,
-				path,
-				"resource could not be inspected",
-				walkErr,
-				true,
-			)
-			problems = append(problems, problem)
-			if entry != nil && entry.IsDir() {
-				return filepath.SkipDir
-			}
 			return nil
 		}
 		if len(resources) >= maxResourceEntries {

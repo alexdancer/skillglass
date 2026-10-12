@@ -88,6 +88,7 @@ const (
 	ProblemSymlinkCycle       ProblemCode = "symlink-cycle"
 	ProblemUnreadableManifest ProblemCode = "unreadable-manifest"
 	ProblemMalformedManifest  ProblemCode = "malformed-manifest"
+	ProblemMetadataNonFinite  ProblemCode = "metadata-non-finite-float"
 	ProblemManifestTooLarge   ProblemCode = "manifest-too-large"
 	ProblemUnreadableResource ProblemCode = "unreadable-resource"
 	ProblemResourceLimit      ProblemCode = "resource-limit"

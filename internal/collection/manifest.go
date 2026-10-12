@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -184,11 +186,82 @@ func inspectManifest(bundleDirectory string) (Manifest, []Problem) {
 		}
 	}
 
+	normalizedMetadata, nonFiniteValues := normalizeNonFiniteMetadata(metadata)
 	manifest.Status = ManifestParsed
 	manifest.Name = name
 	manifest.Description = description
-	manifest.Metadata = metadata
-	return manifest, nil
+	manifest.Metadata = normalizedMetadata
+	if len(nonFiniteValues) == 0 {
+		return manifest, nil
+	}
+	problem := makeProblem(
+		ProblemMetadataNonFinite,
+		lexicalPath,
+		"non-finite metadata values use tagged JSON representations",
+		errors.New(strings.Join(nonFiniteValues, ", ")),
+		false,
+	)
+	return manifest, []Problem{problem}
+}
+
+func normalizeNonFiniteMetadata(metadata map[string]any) (map[string]any, []string) {
+	normalized, values := normalizeNonFiniteValue(metadata, "$")
+	return normalized.(map[string]any), values
+}
+
+func normalizeNonFiniteValue(value any, path string) (any, []string) {
+	switch typed := value.(type) {
+	case map[string]any:
+		keys := make([]string, 0, len(typed))
+		for key := range typed {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		normalized := make(map[string]any, len(typed))
+		var values []string
+		for _, key := range keys {
+			item, nested := normalizeNonFiniteValue(typed[key], path+"."+key)
+			normalized[key] = item
+			values = append(values, nested...)
+		}
+		return normalized, values
+	case []any:
+		normalized := make([]any, len(typed))
+		var values []string
+		for index, item := range typed {
+			normalizedItem, nested := normalizeNonFiniteValue(
+				item,
+				fmt.Sprintf("%s[%d]", path, index),
+			)
+			normalized[index] = normalizedItem
+			values = append(values, nested...)
+		}
+		return normalized, values
+	case float64:
+		return normalizeFloat(typed, path)
+	case float32:
+		return normalizeFloat(float64(typed), path)
+	default:
+		return value, nil
+	}
+}
+
+func normalizeFloat(value float64, path string) (any, []string) {
+	label := ""
+	switch {
+	case math.IsNaN(value):
+		label = "nan"
+	case math.IsInf(value, 1):
+		label = "positive-infinity"
+	case math.IsInf(value, -1):
+		label = "negative-infinity"
+	default:
+		return value, nil
+	}
+	return map[string]any{
+		"kind":  "non-finite-float",
+		"value": label,
+	}, []string{path + "=" + label}
 }
 
 func splitManifest(raw []byte) ([]byte, []byte, error) {

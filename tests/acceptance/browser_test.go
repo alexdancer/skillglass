@@ -168,6 +168,24 @@ func TestBrowserTmuxCellsAtRequiredWidths(t *testing.T) {
 			initial := waitForPane(t, tmux, fx, socket, false, "Selected: none", "normal-skill")
 			assertPaneCells(t, initial, width, 30)
 			writeEvidence(t, fmt.Sprintf("tmux/%d/00-inventory.txt", width), []byte(initial))
+			if width == 80 {
+				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "s")
+				scope := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Scope", "Root 1 [searched]", "Esc back")
+				assertPaneCells(t, scope, 80, 30)
+				writeEvidence(t, "tmux/80/00-scope.txt", []byte(scope))
+				runTmux(t, tmux, fx, socket,
+					"resize-window", "-t", "browser:0", "-x", "63", "-y", "20",
+				)
+				resizedScope := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Scope", "Root 1 [searched]", "Esc back")
+				assertPaneCells(t, resizedScope, 63, 20)
+				writeEvidence(t, "tmux/80/00-scope-resized-63x20.txt", []byte(resizedScope))
+				runTmux(t, tmux, fx, socket,
+					"resize-window", "-t", "browser:0", "-x", "80", "-y", "30",
+				)
+				_ = waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Scope", "Root 1 [searched]", "Esc back")
+				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Escape")
+				_ = waitForPane(t, tmux, fx, socket, false, "Selected: none", "normal-skill")
+			}
 
 			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "/")
 			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "normal-skill")
@@ -218,6 +236,20 @@ func TestBrowserTmuxCellsAtRequiredWidths(t *testing.T) {
 			}
 			writeEvidence(t, fmt.Sprintf("tmux/%d/title.txt", width), []byte(title+"\n"))
 			writeEvidence(t, fmt.Sprintf("tmux/%d/cursor.txt", width), []byte(cursor+" hidden\n"))
+			if width == 80 {
+				runTmux(t, tmux, fx, socket,
+					"resize-window", "-t", "browser:0", "-x", "63", "-y", "20",
+				)
+				resized := waitForPane(t, tmux, fx, socket, false, "scripts/never-run.sh", "q quit")
+				assertPaneCells(t, resized, 63, 20)
+				writeEvidence(t, "tmux/80/04-resized-63x20.txt", []byte(resized))
+				runTmux(t, tmux, fx, socket,
+					"resize-window", "-t", "browser:0", "-x", "80", "-y", "30",
+				)
+				restored := waitForPane(t, tmux, fx, socket, false, "scripts/never-run.sh", "q quit")
+				assertPaneCells(t, restored, 80, 30)
+				writeEvidence(t, "tmux/80/05-resized-restored.txt", []byte(restored))
+			}
 
 			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "q")
 		})
@@ -228,6 +260,147 @@ func TestBrowserTmuxCellsAtRequiredWidths(t *testing.T) {
 	if _, err := os.Stat(fx.marker); !os.IsNotExist(err) {
 		t.Fatalf("browser executed fixture script: %v", err)
 	}
+}
+
+func TestBrowserManyRootsHasScrollableScopeAt60Columns(t *testing.T) {
+	tmux, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skip("tmux is unavailable")
+	}
+	fx := newFixture(t)
+	longProject := filepath.Join(
+		fx.base,
+		"allowed",
+		"projects",
+		"project-context-with-a-deliberately-long-name-and-more-context-for-terminal-proof",
+	)
+	if err := os.MkdirAll(longProject, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	roots := make([]string, 0, 8)
+	for index := 1; index <= 8; index++ {
+		root := filepath.Join(
+			fx.base,
+			"allowed",
+			"roots",
+			fmt.Sprintf("selected-root-%02d-with-a-deliberately-long-name-for-scope-proof", index),
+		)
+		if err := os.MkdirAll(root, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		roots = append(roots, root)
+	}
+	bundle := filepath.Join(roots[0], "many-root-source")
+	writeFile(t, filepath.Join(bundle, "SKILL.md"), []byte(
+		"---\nname: many-root-source\ndescription: source remains visible\n---\nMANY_ROOT_INSTRUCTIONS\n",
+	), 0o644)
+
+	socket := fmt.Sprintf("skillglass-many-roots-%d", os.Getpid())
+	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
+	parts := []string{
+		"exec",
+		shellQuote(skillglassBinary),
+		"browse",
+		"--project",
+		shellQuote(longProject),
+	}
+	for _, root := range roots {
+		parts = append(parts, "--root", shellQuote(root))
+	}
+	commandLine := strings.Join(parts, " ")
+	runTmux(t, tmux, fx, socket,
+		"new-session", "-d", "-x", "60", "-y", "30", "-s", "many", commandLine,
+	)
+	runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
+	runTmux(t, tmux, fx, socket, "resize-window", "-t", "many:0", "-x", "60", "-y", "30")
+
+	initial := waitForPaneAt(
+		t,
+		tmux,
+		fx,
+		socket,
+		"many:0.0",
+		false,
+		"many-root-source",
+		"Focus: 1/1",
+		"s scope",
+		"q quit",
+	)
+	assertPaneCells(t, initial, 60, 30)
+	writeEvidence(t, "tmux/many-roots/00-inventory.txt", []byte(initial))
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "/")
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "-l", "s")
+	searchS := waitForPaneAt(t, tmux, fx, socket, "many:0.0", false, "Search: s", "type to search")
+	if strings.Contains(searchS, "SKILLGLASS | Scope") {
+		t.Fatal("s opened scope while search input was active")
+	}
+	writeEvidence(t, "tmux/many-roots/00-search-s.txt", []byte(searchS))
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "Escape")
+	_ = waitForPaneAt(
+		t, tmux, fx, socket, "many:0.0", false, "many-root-source", "Focus: 1/1", "s scope",
+	)
+
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "-l", "s")
+	canonicalFirst := canonicalPath(t, roots[0])
+	scopeTop := waitForPaneAt(
+		t,
+		tmux,
+		fx,
+		socket,
+		"many:0.0",
+		false,
+		"SKILLGLASS | Scope",
+		longProject,
+		roots[0],
+		canonicalFirst,
+		"Root 1 [searched]",
+		"Esc back",
+	)
+	assertPaneCells(t, scopeTop, 60, 30)
+	writeEvidence(t, "tmux/many-roots/01-scope-top.txt", []byte(scopeTop))
+
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "-l", "G")
+	canonicalLast := canonicalPath(t, roots[len(roots)-1])
+	scopeEnd := waitForPaneAt(
+		t,
+		tmux,
+		fx,
+		socket,
+		"many:0.0",
+		false,
+		"Root 8 [empty]",
+		roots[len(roots)-1],
+		canonicalLast,
+		"Esc back",
+		"q quit",
+	)
+	assertPaneCells(t, scopeEnd, 60, 30)
+	writeEvidence(t, "tmux/many-roots/02-scope-end.txt", []byte(scopeEnd))
+
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "Escape")
+	restoredInventory := waitForPaneAt(
+		t, tmux, fx, socket, "many:0.0", false, "many-root-source", "Focus: 1/1", "s scope",
+	)
+	assertPaneCells(t, restoredInventory, 60, 30)
+	writeEvidence(t, "tmux/many-roots/03-inventory-restored.txt", []byte(restoredInventory))
+
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "Enter")
+	detail := waitForPaneAt(
+		t, tmux, fx, socket, "many:0.0", false, "Manifest: parsed", "MANY_ROOT_INSTRUCTIONS", "s scope",
+	)
+	assertPaneCells(t, detail, 60, 30)
+	writeEvidence(t, "tmux/many-roots/04-detail.txt", []byte(detail))
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "-l", "s")
+	_ = waitForPaneAt(t, tmux, fx, socket, "many:0.0", false, "SKILLGLASS | Scope", longProject)
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "Escape")
+	restoredDetail := waitForPaneAt(
+		t, tmux, fx, socket, "many:0.0", false, "Manifest: parsed", "MANY_ROOT_INSTRUCTIONS", "s scope",
+	)
+	assertPaneCells(t, restoredDetail, 60, 30)
+	writeEvidence(t, "tmux/many-roots/05-detail-restored.txt", []byte(restoredDetail))
+	writeEvidence(t, "tmux/many-roots/keys.txt", []byte("/\ns\nEsc\ns\nG\nEsc\nEnter\ns\nEsc\nq\n"))
+	writeEvidence(t, "tmux/many-roots/command.txt", []byte(commandLine+"\n"))
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "-l", "q")
 }
 
 func TestBrowserHostileTerminalDataUsesSafeCells(t *testing.T) {

@@ -129,17 +129,22 @@ type publicList struct {
 			Path     string `json:"path"`
 		} `json:"project"`
 		Roots []struct {
-			Requested   string `json:"requested_path"`
-			State       string `json:"state"`
-			SourceCount int    `json:"source_count"`
+			Requested    string `json:"requested_path"`
+			State        string `json:"state"`
+			SourceCount  int    `json:"source_count"`
+			ProblemCount int    `json:"problem_count"`
 		} `json:"roots"`
 		Completeness string `json:"completeness"`
 	} `json:"scope"`
-	Sources  []publicSource `json:"sources"`
-	Problems []struct {
-		Code string `json:"code"`
-		Path string `json:"path"`
-	} `json:"problems"`
+	Sources  []publicSource  `json:"sources"`
+	Problems []publicProblem `json:"problems"`
+}
+
+type publicProblem struct {
+	Code           string `json:"code"`
+	Path           string `json:"path"`
+	Detail         string `json:"detail"`
+	LimitsCoverage bool   `json:"limits_coverage"`
 }
 
 type publicRead struct {
@@ -159,10 +164,11 @@ type publicSource struct {
 		State string `json:"state"`
 	} `json:"availability"`
 	Manifest struct {
-		Status       string         `json:"status"`
-		Metadata     map[string]any `json:"metadata"`
-		Instructions string         `json:"instructions"`
-		RawText      string         `json:"raw_text"`
+		Status         string         `json:"status"`
+		Metadata       map[string]any `json:"metadata"`
+		RawFrontmatter string         `json:"raw_frontmatter"`
+		Instructions   string         `json:"instructions"`
+		RawText        string         `json:"raw_text"`
 	} `json:"manifest"`
 	Resources []struct {
 		Path       string `json:"path"`
@@ -170,6 +176,7 @@ type publicSource struct {
 		Executable bool   `json:"executable"`
 		LinkScope  string `json:"link_scope"`
 	} `json:"resources"`
+	Problems []publicProblem `json:"problems"`
 }
 
 func TestListReadSearchAndScope(t *testing.T) {
@@ -382,6 +389,152 @@ func TestUnreadableEmptyRootDoesNotFabricateSource(t *testing.T) {
 		mixedInventory.Scope.Completeness != "incomplete" ||
 		len(mixedInventory.Scope.Roots) != 3 {
 		t.Fatalf("mixed missing/unreadable inventory = %#v", mixedInventory)
+	}
+}
+
+func TestUnreadableBundleResourcesRemainUseful(t *testing.T) {
+	fx := newFixture(t)
+	bundle := filepath.Join(fx.base, "allowed", "roots", "unlistable-bundle")
+	writeFile(t, filepath.Join(bundle, "SKILL.md"), []byte(
+		"---\nname: unlistable-bundle\ndescription: readable manifest\n---\nUNLISTABLE_MANIFEST_SENTINEL\n",
+	), 0o644)
+	writeFile(t, filepath.Join(bundle, "resource.txt"), []byte("HIDDEN_RESOURCE_SENTINEL\n"), 0o644)
+	if err := os.Chmod(bundle, 0o111); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chmod(bundle, 0o755)
+	})
+	manifestBytes, err := os.ReadFile(filepath.Join(bundle, "SKILL.md"))
+	if err != nil || !bytes.Contains(manifestBytes, []byte("UNLISTABLE_MANIFEST_SENTINEL")) {
+		t.Fatalf("permission control cannot read known manifest path: %v", err)
+	}
+	if entries, err := os.ReadDir(bundle); err == nil {
+		t.Fatalf("permission control unexpectedly listed bundle: %#v", entries)
+	} else if !errors.Is(err, fs.ErrPermission) {
+		t.Fatalf("permission control list error = %v, want permission denied", err)
+	}
+
+	result := fx.run(t, "list", "--root", bundle, "--json")
+	assertExit(t, result, 1)
+	var inventory publicList
+	decodeJSON(t, result.stdout, &inventory)
+	if inventory.Scope.Completeness != "incomplete" ||
+		len(inventory.Scope.Roots) != 1 ||
+		inventory.Scope.Roots[0].State != "incomplete" ||
+		inventory.Scope.Roots[0].ProblemCount != 1 {
+		t.Fatalf("unlistable scope = %#v", inventory.Scope)
+	}
+	if len(inventory.Sources) != 1 {
+		t.Fatalf("unlistable source count = %d", len(inventory.Sources))
+	}
+	source := sourceNamed(t, inventory.Sources, "unlistable-bundle")
+	if source.Manifest.Status != "parsed" ||
+		!strings.Contains(source.Manifest.RawText, "UNLISTABLE_MANIFEST_SENTINEL") ||
+		len(source.Resources) != 0 {
+		t.Fatalf("retained source = %#v", source)
+	}
+	canonicalBundle := canonicalPath(t, bundle)
+	assertProblem(t, inventory.Problems, "unreadable-resource", canonicalBundle, true)
+	assertProblem(t, source.Problems, "unreadable-resource", canonicalBundle, true)
+}
+
+func TestNonFiniteMetadataHasTaggedJSONRepresentation(t *testing.T) {
+	fx := newFixture(t)
+	nonFiniteRoot := filepath.Join(fx.base, "allowed", "roots", "non-finite")
+	healthyRoot := filepath.Join(fx.base, "allowed", "roots", "healthy-sibling")
+	nonFiniteManifest := "---\n" +
+		"name: non-finite-skill\n" +
+		"description: tagged floats\n" +
+		"top_nan: .nan\n" +
+		"top_positive: .inf\n" +
+		"top_negative: -.inf\n" +
+		"nested:\n" +
+		"  values: [.nan, .inf, -.inf, 7]\n" +
+		"  mapping:\n" +
+		"    value: .nan\n" +
+		"---\n" +
+		"NON_FINITE_INSTRUCTIONS\n"
+	writeFile(t, filepath.Join(nonFiniteRoot, "SKILL.md"), []byte(nonFiniteManifest), 0o644)
+	writeFile(t, filepath.Join(healthyRoot, "SKILL.md"), []byte(
+		"---\nname: healthy-sibling\ndescription: retained healthy source\n---\nHEALTHY_INSTRUCTIONS\n",
+	), 0o644)
+
+	list := fx.run(
+		t,
+		"list",
+		"--root",
+		nonFiniteRoot,
+		"--root",
+		healthyRoot,
+		"--json",
+	)
+	assertExit(t, list, 0)
+	var inventory publicList
+	decodeJSON(t, list.stdout, &inventory)
+	if inventory.Scope.Completeness != "complete" || len(inventory.Sources) != 2 {
+		t.Fatalf("non-finite inventory = %#v", inventory)
+	}
+	if inventory.Scope.Roots[0].State != "searched" ||
+		inventory.Scope.Roots[0].ProblemCount != 1 ||
+		inventory.Scope.Roots[1].State != "searched" {
+		t.Fatalf("non-finite root reports = %#v", inventory.Scope.Roots)
+	}
+	source := sourceNamed(t, inventory.Sources, "non-finite-skill")
+	_ = sourceNamed(t, inventory.Sources, "healthy-sibling")
+	assertNonFiniteTag(t, source.Manifest.Metadata["top_nan"], "nan")
+	assertNonFiniteTag(t, source.Manifest.Metadata["top_positive"], "positive-infinity")
+	assertNonFiniteTag(t, source.Manifest.Metadata["top_negative"], "negative-infinity")
+	nested, ok := source.Manifest.Metadata["nested"].(map[string]any)
+	if !ok {
+		t.Fatalf("nested metadata = %#v", source.Manifest.Metadata["nested"])
+	}
+	values, ok := nested["values"].([]any)
+	if !ok || len(values) != 4 {
+		t.Fatalf("nested values = %#v", nested["values"])
+	}
+	assertNonFiniteTag(t, values[0], "nan")
+	assertNonFiniteTag(t, values[1], "positive-infinity")
+	assertNonFiniteTag(t, values[2], "negative-infinity")
+	if values[3] != float64(7) {
+		t.Fatalf("finite nested value = %#v", values[3])
+	}
+	nestedMapping, ok := nested["mapping"].(map[string]any)
+	if !ok {
+		t.Fatalf("nested mapping = %#v", nested["mapping"])
+	}
+	assertNonFiniteTag(t, nestedMapping["value"], "nan")
+	if source.Manifest.RawText != nonFiniteManifest ||
+		!strings.Contains(source.Manifest.RawFrontmatter, "top_nan: .nan") {
+		t.Fatalf("raw non-finite manifest was not preserved: %#v", source.Manifest)
+	}
+	nonFiniteManifestPath := filepath.Join(canonicalPath(t, nonFiniteRoot), "SKILL.md")
+	assertProblem(t, inventory.Problems, "metadata-non-finite-float", nonFiniteManifestPath, false)
+	assertProblem(t, source.Problems, "metadata-non-finite-float", filepath.Join(canonicalPath(t, nonFiniteRoot), "SKILL.md"), false)
+
+	read := fx.run(
+		t,
+		"read",
+		"--root",
+		nonFiniteRoot,
+		"--root",
+		healthyRoot,
+		"--json",
+		source.ID,
+	)
+	assertExit(t, read, 0)
+	var detail publicRead
+	decodeJSON(t, read.stdout, &detail)
+	if detail.Source == nil || detail.Source.Manifest.RawText != nonFiniteManifest {
+		t.Fatalf("non-finite read = %s", read.stdout)
+	}
+	assertNonFiniteTag(t, detail.Source.Manifest.Metadata["top_nan"], "nan")
+
+	human := fx.run(t, "list", "--root", nonFiniteRoot, "--root", healthyRoot)
+	assertExit(t, human, 0)
+	if bytes.Contains(human.stdout, []byte("{unavailable}")) ||
+		!bytes.Contains(human.stdout, []byte(`"kind":"non-finite-float"`)) {
+		t.Fatalf("human non-finite metadata = %s", human.stdout)
 	}
 }
 
@@ -681,6 +834,30 @@ func assertExit(t *testing.T, result commandResult, want int) {
 			result.stdout,
 			result.stderr,
 		)
+	}
+}
+
+func assertProblem(
+	t *testing.T,
+	problems []publicProblem,
+	code string,
+	path string,
+	limitsCoverage bool,
+) {
+	t.Helper()
+	for _, problem := range problems {
+		if problem.Code == code && problem.Path == path && problem.LimitsCoverage == limitsCoverage {
+			return
+		}
+	}
+	t.Fatalf("problem %q at %q (limits=%t) not found in %#v", code, path, limitsCoverage, problems)
+}
+
+func assertNonFiniteTag(t *testing.T, value any, want string) {
+	t.Helper()
+	tag, ok := value.(map[string]any)
+	if !ok || tag["kind"] != "non-finite-float" || tag["value"] != want || len(tag) != 2 {
+		t.Fatalf("non-finite tag = %#v, want %q", value, want)
 	}
 }
 

@@ -21,6 +21,7 @@ const (
 	browserList browserMode = iota
 	browserSearch
 	browserDetail
+	browserScope
 )
 
 type browserModel struct {
@@ -32,6 +33,8 @@ type browserModel struct {
 	focus        int
 	selected     collection.SourceID
 	detailScroll int
+	scopeScroll  int
+	previousMode browserMode
 	width        int
 	height       int
 }
@@ -95,9 +98,20 @@ func (model browserModel) Init() tea.Cmd {
 func (model browserModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := message.(type) {
 	case tea.WindowSizeMsg:
+		detailAtEnd := model.mode == browserDetail && model.detailScroll == model.maxDetailScroll()
+		scopeAtEnd := model.mode == browserScope && model.scopeScroll == model.maxScopeScroll()
 		model.width = max(message.Width, 20)
 		model.height = max(message.Height, 8)
-		model.detailScroll = min(model.detailScroll, model.maxDetailScroll())
+		if detailAtEnd {
+			model.detailScroll = model.maxDetailScroll()
+		} else {
+			model.detailScroll = min(model.detailScroll, model.maxDetailScroll())
+		}
+		if scopeAtEnd {
+			model.scopeScroll = model.maxScopeScroll()
+		} else {
+			model.scopeScroll = min(model.scopeScroll, model.maxScopeScroll())
+		}
 		return model, nil
 	case tea.KeyPressMsg:
 		if message.String() == "ctrl+c" {
@@ -108,6 +122,9 @@ func (model browserModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if message.String() == "q" {
 			return model, tea.Quit
+		}
+		if model.mode == browserScope {
+			return model.updateScope(message)
 		}
 		if model.mode == browserDetail {
 			return model.updateDetail(message)
@@ -151,6 +168,10 @@ func (model browserModel) updateList(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "/":
 		model.queryBefore = model.query
 		model.mode = browserSearch
+	case "s":
+		model.previousMode = browserList
+		model.scopeScroll = 0
+		model.mode = browserScope
 	case "up", "k":
 		if model.focus > 0 {
 			model.focus--
@@ -179,6 +200,10 @@ func (model browserModel) updateDetail(key tea.KeyPressMsg) (tea.Model, tea.Cmd)
 	switch key.String() {
 	case "esc", "left":
 		model.mode = browserList
+	case "s":
+		model.previousMode = browserDetail
+		model.scopeScroll = 0
+		model.mode = browserScope
 	case "up", "k":
 		model.detailScroll = max(0, model.detailScroll-1)
 	case "down", "j":
@@ -194,6 +219,29 @@ func (model browserModel) updateDetail(key tea.KeyPressMsg) (tea.Model, tea.Cmd)
 		model.detailScroll = 0
 	case "end", "G":
 		model.detailScroll = model.maxDetailScroll()
+	}
+	return model, nil
+}
+
+func (model browserModel) updateScope(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch key.String() {
+	case "esc", "left":
+		model.mode = model.previousMode
+	case "up", "k":
+		model.scopeScroll = max(0, model.scopeScroll-1)
+	case "down", "j":
+		model.scopeScroll = min(model.maxScopeScroll(), model.scopeScroll+1)
+	case "pgup":
+		model.scopeScroll = max(0, model.scopeScroll-model.scopePageSize())
+	case "pgdown":
+		model.scopeScroll = min(
+			model.maxScopeScroll(),
+			model.scopeScroll+model.scopePageSize(),
+		)
+	case "home", "g":
+		model.scopeScroll = 0
+	case "end", "G":
+		model.scopeScroll = model.maxScopeScroll()
 	}
 	return model, nil
 }
@@ -215,9 +263,12 @@ func (model *browserModel) applyQuery() {
 
 func (model browserModel) View() tea.View {
 	var lines []string
-	if model.mode == browserDetail {
+	switch model.mode {
+	case browserDetail:
 		lines = model.renderDetail()
-	} else {
+	case browserScope:
+		lines = model.renderScope()
+	default:
 		lines = model.renderInventory()
 	}
 	if len(lines) > model.height {
@@ -237,7 +288,7 @@ func (model browserModel) renderInventory() []string {
 	header = append(header, wrapLine(searchLabel, model.width)...)
 
 	body, focusLines := model.inventoryBodyLines()
-	helpGroups := []string{"↑/↓ or j/k move", "/ search", "Enter read", "q quit"}
+	helpGroups := []string{"↑/↓ or j/k move", "/ search", "Enter read", "s scope", "q quit"}
 	if model.mode == browserSearch {
 		helpGroups = []string{"type to search", "Enter keep", "Esc cancel", "Ctrl+U clear"}
 	}
@@ -293,37 +344,87 @@ func (model browserModel) renderDetail() []string {
 }
 
 func (model browserModel) headerLines() []string {
-	lines := []string{"SKILLGLASS | Browse"}
 	scope := model.snapshot.Scope()
+	project := "Project: none selected"
 	if scope.Project.Selected {
-		lines = append(lines, wrapLine("Project: "+safeInline(scope.Project.Path), model.width)...)
+		project = "Project: " + safeInline(scope.Project.Path)
+	}
+	scopeSummary := fmt.Sprintf(
+		"Scope: %d roots | Coverage: %s | Problems: %d | s view",
+		len(scope.Roots),
+		scope.Completeness,
+		len(model.snapshot.Problems()),
+	)
+	selected := "Selected: none"
+	if model.selected != "" {
+		if source, ok := model.snapshot.Source(model.selected); ok {
+			name := source.Name
+			if name == "" {
+				name = "<metadata unavailable>"
+			}
+			selected = fmt.Sprintf("Selected: %s [%s]", safeInline(name), safeInline(string(source.ID)))
+		} else {
+			selected = "Selected: unavailable"
+		}
+	}
+	return []string{
+		fitLine("SKILLGLASS | Browse", model.width),
+		fitLine(project, model.width),
+		fitLine(scopeSummary, model.width),
+		fitLine(selected, model.width),
+	}
+}
+
+func (model browserModel) renderScope() []string {
+	header := []string{fitLine("SKILLGLASS | Scope", model.width)}
+	body := model.scopeBodyLines()
+	pageSize := model.scopePageSizeFor(len(body))
+	footer := append(
+		wrapLine(fmt.Sprintf(
+			"Scope lines %d-%d of %d",
+			min(len(body), model.scopeScroll+1),
+			min(len(body), model.scopeScroll+pageSize),
+			len(body),
+		), model.width),
+		model.scopeHelpLines()...,
+	)
+	footerCapacity := model.scopeFooterCapacity(len(body))
+	available := max(1, model.height-len(header)-footerCapacity)
+	start := min(model.scopeScroll, max(0, len(body)-available))
+	end := min(len(body), start+available)
+	lines := append([]string(nil), header...)
+	lines = append(lines, body[start:end]...)
+	for len(lines) < model.height-footerCapacity {
+		lines = append(lines, "")
+	}
+	for len(footer) < footerCapacity {
+		footer = append([]string{""}, footer...)
+	}
+	return append(lines, footer...)
+}
+
+func (model browserModel) scopeBodyLines() []string {
+	scope := model.snapshot.Scope()
+	lines := make([]string, 0, 2+len(scope.Roots)*4)
+	if scope.Project.Selected {
+		lines = append(lines, "Project:")
+		lines = append(lines, wrapLine("  "+safeInline(scope.Project.Path), model.width)...)
 	} else {
 		lines = append(lines, "Project: none selected")
 	}
-	lines = append(lines, fmt.Sprintf(
-		"Coverage: %s | Problems: %d",
-		scope.Completeness,
-		len(model.snapshot.Problems()),
-	))
 	for index, root := range scope.Roots {
-		lines = append(lines, wrapLine(
-			fmt.Sprintf("Root %d [%s]: %s", index+1, root.State, safeInline(root.Requested)),
-			model.width,
-		)...)
-	}
-	if model.selected == "" {
-		lines = append(lines, "Selected: none")
-	} else if source, ok := model.snapshot.Source(model.selected); ok {
-		name := source.Name
-		if name == "" {
-			name = "<metadata unavailable>"
+		lines = append(lines, "")
+		lines = append(lines, wrapLine(fmt.Sprintf(
+			"Root %d [%s] | Sources: %d | Problems: %d",
+			index+1,
+			root.State,
+			root.SourceCount,
+			root.ProblemCount,
+		), model.width)...)
+		lines = append(lines, wrapLine("  Requested: "+safeInline(root.Requested), model.width)...)
+		if root.Resolved != "" && root.Resolved != root.Requested {
+			lines = append(lines, wrapLine("  Resolved: "+safeInline(root.Resolved), model.width)...)
 		}
-		lines = append(lines, wrapLine(
-			fmt.Sprintf("Selected: %s [%s]", safeInline(name), safeInline(string(source.ID))),
-			model.width,
-		)...)
-	} else {
-		lines = append(lines, "Selected: unavailable")
 	}
 	return lines
 }
@@ -457,7 +558,7 @@ func (model browserModel) detailFooterCapacity(bodyLength int) int {
 
 func (model browserModel) detailHelpLines() []string {
 	return wrapGroups(
-		[]string{"↑/↓ or j/k scroll", "PgUp/PgDn", "g/G top/end", "Esc back", "q quit"},
+		[]string{"↑/↓ or j/k scroll", "PgUp/PgDn", "g/G top/end", "s scope", "Esc back", "q quit"},
 		model.width,
 	)
 }
@@ -470,12 +571,36 @@ func (model browserModel) maxDetailScroll() int {
 	return max(0, len(model.detailBodyLines(source))-model.detailPageSize())
 }
 
-func wrapLines(lines []string, width int) []string {
-	var output []string
-	for _, line := range lines {
-		output = append(output, wrapLine(line, width)...)
-	}
-	return output
+func (model browserModel) scopePageSize() int {
+	return model.scopePageSizeFor(len(model.scopeBodyLines()))
+}
+
+func (model browserModel) scopePageSizeFor(bodyLength int) int {
+	return max(1, model.height-1-model.scopeFooterCapacity(bodyLength))
+}
+
+func (model browserModel) scopeFooterCapacity(bodyLength int) int {
+	lastLine := max(1, bodyLength)
+	return len(wrapLine(
+		fmt.Sprintf("Scope lines %d-%d of %d", lastLine, lastLine, bodyLength),
+		model.width,
+	)) + len(model.scopeHelpLines())
+}
+
+func (model browserModel) scopeHelpLines() []string {
+	return wrapGroups(
+		[]string{"↑/↓ or j/k scroll", "PgUp/PgDn", "g/G top/end", "Esc back", "q quit"},
+		model.width,
+	)
+}
+
+func (model browserModel) maxScopeScroll() int {
+	bodyLength := len(model.scopeBodyLines())
+	return max(0, bodyLength-model.scopePageSizeFor(bodyLength))
+}
+
+func fitLine(line string, width int) string {
+	return ansi.Truncate(line, max(width, 1), "…")
 }
 
 func wrapGroups(groups []string, width int) []string {

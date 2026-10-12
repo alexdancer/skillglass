@@ -49,6 +49,18 @@ bin/skillglass read --root /path/to/skills SOURCE_ID
 bin/skillglass browse --root /path/to/skills --project /path/to/project
 ```
 
+In the browser, press `s` from the inventory or source detail to inspect the full selected project and every discovery root. The scope view scrolls with the arrow keys or `j`/`k`, `PgUp`/`PgDn`, and `g`/`G`; press `Esc` or the left arrow to return. While search input is active, `s` remains ordinary query text.
+
+JSON output preserves YAML non-finite floats with an explicit, portable representation instead of failing serialization:
+
+```json
+{"kind":"non-finite-float","value":"nan"}
+{"kind":"non-finite-float","value":"positive-infinity"}
+{"kind":"non-finite-float","value":"negative-infinity"}
+```
+
+Each affected manifest also reports one `metadata-non-finite-float` diagnostic. The diagnostic does not limit discovery coverage, so an otherwise complete request still exits with status 0.
+
 Exit status 0 means the requested result is complete, including an empty collection. Status 1 means discovery, reading, or selection was incomplete and useful partial output is preserved. Status 2 reports command usage errors.
 
 ## Development workflow

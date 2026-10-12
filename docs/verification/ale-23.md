@@ -9,6 +9,9 @@ ALE-23 adds the first production `skillglass` executable. Its immutable collecti
 - The first browser frame repeated the selected-source header. The duplicate row was removed.
 - The original end-of-document calculation could leave the last wrapped resource field beyond the reachable viewport. Detail pagination now reserves the actual wrapped footer height, and `G` exposes the complete last resource.
 - Key help originally split words at narrow widths. Help wraps whole key-action groups at separators.
+- A readable manifest inside a mode `0111` bundle was retained, but failure to enumerate its resources was initially missed. Resource discovery now handles a root `WalkDir` error before skipping the bundle directory, reports `unreadable-resource`, preserves the useful source, and exits with status 1 because coverage is incomplete.
+- YAML non-finite floats initially made JSON encoding fail after discovery. Metadata normalization now recursively represents `.nan`, `.inf`, and `-.inf` as tagged JSON objects while preserving the exact raw manifest. Each affected manifest gets one non-coverage-limiting `metadata-non-finite-float` diagnostic, and otherwise complete `list` and `read` requests exit with status 0.
+- Long project paths and many discovery roots could consume the entire browser viewport. The normal header is now four bounded rows. Pressing `s` opens a scrollable scope view containing the full project and every requested root, plus the resolved path when it differs; `Esc` or left returns to the prior inventory or detail view. Search input continues to treat `s` as query text.
 
 ## Reproduce the acceptance evidence
 
@@ -18,9 +21,17 @@ The harness builds with the checked-in module graph while Go network access is d
 ./tests/acceptance/run.sh /tmp/skillglass-ale-23-evidence
 ```
 
-It covers complete, empty, missing, unreadable, mixed, malformed, hostile-control, and renamed-directory cases. It checks exit codes 0, 1, and 2; exact JSON data; safe human rendering; full instructions and nested resources; fixture immutability; no script execution; and nonblocking FIFO discovery.
+It covers complete, empty, missing, unreadable, mixed, malformed, hostile-control, non-finite metadata, unlistable bundle resources, and renamed-directory cases. It checks exit codes 0, 1, and 2; exact JSON data; safe human rendering; full instructions and nested resources; fixture immutability; no script execution; and nonblocking FIFO discovery.
 
-The browser coverage includes a public PTY journey and real tmux cell captures at 48, 60, 80, 96, and 120 columns by 30 rows. The journey searches, selects, opens, scrolls to the end, checks the complete final resource and footer, and exits with `q`.
+The browser coverage includes a public PTY journey and real tmux cell captures at 48, 60, 80, 96, and 120 columns by 30 rows. The journey searches, selects, opens, scrolls to the end, checks the complete final resource and footer, and exits with `q`. A separate 60 by 30 journey uses a long project and eight long roots to prove the bounded normal header, full scope top and end, search handling of `s`, and restoration of both inventory and detail. The single-root journey also exercises a live resize from 80 by 30 to 63 by 20 and back.
+
+The portable metadata tags are:
+
+```json
+{"kind":"non-finite-float","value":"nan"}
+{"kind":"non-finite-float","value":"positive-infinity"}
+{"kind":"non-finite-float","value":"negative-infinity"}
+```
 
 Run the repository checks separately:
 
@@ -30,6 +41,8 @@ find cmd internal tests/acceptance -name '*.go' -type f -exec /opt/homebrew/bin/
 /opt/homebrew/bin/go test ./...
 python3 -m unittest discover -s tests/agent_loop -v
 ```
+
+The repair verification reran these commands after the final source and documentation changes. The executable acceptance suite, Go tests, vet, formatting check, and all 20 scheduler tests passed.
 
 ## Runtime containment boundary
 
