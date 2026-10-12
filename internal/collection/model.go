@@ -16,6 +16,28 @@ type ReferenceID string
 type SourceID string
 type ProblemID string
 
+type ReferenceContext string
+
+const (
+	ContextCustom  ReferenceContext = "custom"
+	ContextProject ReferenceContext = "project"
+)
+
+type ContextFilter string
+
+const (
+	FilterAll     ContextFilter = "all"
+	FilterCustom  ContextFilter = "custom"
+	FilterProject ContextFilter = "project"
+)
+
+type QueryTarget string
+
+const (
+	QuerySources  QueryTarget = "sources"
+	QueryProblems QueryTarget = "problems"
+)
+
 type Completeness string
 
 const (
@@ -39,8 +61,9 @@ type ProjectContext struct {
 }
 
 type DiscoveryRoot struct {
-	ID   RootID `json:"id"`
-	Path string `json:"path"`
+	ID      RootID           `json:"id"`
+	Path    string           `json:"path"`
+	Context ReferenceContext `json:"context"`
 }
 
 type Request struct {
@@ -48,26 +71,8 @@ type Request struct {
 	Roots   []DiscoveryRoot
 }
 
-func NewRequest(rawRoots []string, rawProject *string) (Request, error) {
-	if len(rawRoots) == 0 {
-		return Request{}, errors.New("at least one --root is required")
-	}
-
-	request := Request{Roots: make([]DiscoveryRoot, 0, len(rawRoots))}
-	for index, raw := range rawRoots {
-		if raw == "" {
-			return Request{}, fmt.Errorf("--root %d is empty", index+1)
-		}
-		path, err := filepath.Abs(raw)
-		if err != nil {
-			return Request{}, fmt.Errorf("normalize root %d: %w", index+1, err)
-		}
-		request.Roots = append(request.Roots, DiscoveryRoot{
-			ID:   RootID(fmt.Sprintf("root-%d", index+1)),
-			Path: filepath.Clean(path),
-		})
-	}
-
+func NewRequest(rawRoots, rawProjectRoots []string, rawProject *string) (Request, error) {
+	request := Request{Roots: make([]DiscoveryRoot, 0, len(rawRoots)+len(rawProjectRoots))}
 	if rawProject != nil {
 		if *rawProject == "" {
 			return Request{}, errors.New("--project cannot be empty")
@@ -77,6 +82,35 @@ func NewRequest(rawRoots []string, rawProject *string) (Request, error) {
 			return Request{}, fmt.Errorf("normalize project: %w", err)
 		}
 		request.Project = ProjectContext{Selected: true, Path: filepath.Clean(path)}
+	}
+	if len(rawProjectRoots) > 0 && !request.Project.Selected {
+		return Request{}, errors.New("--project-root requires --project")
+	}
+	if len(rawRoots)+len(rawProjectRoots) == 0 {
+		return Request{}, errors.New("at least one --root or --project-root is required")
+	}
+	appendRoots := func(rawValues []string, context ReferenceContext, flag string) error {
+		for index, raw := range rawValues {
+			if raw == "" {
+				return fmt.Errorf("--%s %d is empty", flag, index+1)
+			}
+			path, err := filepath.Abs(raw)
+			if err != nil {
+				return fmt.Errorf("normalize %s %d: %w", flag, index+1, err)
+			}
+			request.Roots = append(request.Roots, DiscoveryRoot{
+				ID:      RootID(fmt.Sprintf("root-%s-%d", context, index+1)),
+				Path:    filepath.Clean(path),
+				Context: context,
+			})
+		}
+		return nil
+	}
+	if err := appendRoots(rawRoots, ContextCustom, "root"); err != nil {
+		return Request{}, err
+	}
+	if err := appendRoots(rawProjectRoots, ContextProject, "project-root"); err != nil {
+		return Request{}, err
 	}
 	return request, nil
 }
@@ -96,24 +130,63 @@ const (
 	ProblemUnreadableResource      ProblemCode = "unreadable-resource"
 	ProblemResourceLimit           ProblemCode = "resource-limit"
 	ProblemIdentityUncertain       ProblemCode = "identity-uncertain"
+	ProblemDuplicateName           ProblemCode = "duplicate-name"
+	ProblemSharedManifest          ProblemCode = "shared-manifest"
 )
 
+var documentedProblemCodes = []ProblemCode{
+	ProblemRootMissing,
+	ProblemRootUnreadable,
+	ProblemBrokenReference,
+	ProblemSymlinkCycle,
+	ProblemUnreadableManifest,
+	ProblemMalformedManifest,
+	ProblemMetadataNonFinite,
+	ProblemManifestTooLarge,
+	ProblemManifestInvalidEncoding,
+	ProblemUnreadableResource,
+	ProblemResourceLimit,
+	ProblemIdentityUncertain,
+	ProblemDuplicateName,
+	ProblemSharedManifest,
+}
+
+func ProblemCodes() []ProblemCode {
+	return append([]ProblemCode(nil), documentedProblemCodes...)
+}
+
+func ParseProblemCode(value string) (ProblemCode, error) {
+	if value == "" {
+		return "", nil
+	}
+	for _, code := range documentedProblemCodes {
+		if string(code) == value {
+			return code, nil
+		}
+	}
+	return "", fmt.Errorf("unknown problem code %q", value)
+}
+
 type Problem struct {
-	ID             ProblemID   `json:"id"`
-	Code           ProblemCode `json:"code"`
-	Path           string      `json:"path"`
-	Summary        string      `json:"summary"`
-	Detail         string      `json:"detail,omitempty"`
-	LimitsCoverage bool        `json:"limits_coverage"`
+	ID             ProblemID     `json:"id"`
+	Code           ProblemCode   `json:"code"`
+	Path           string        `json:"path"`
+	Summary        string        `json:"summary"`
+	Detail         string        `json:"detail,omitempty"`
+	LimitsCoverage bool          `json:"limits_coverage"`
+	RootIDs        []RootID      `json:"root_ids,omitempty"`
+	ReferenceIDs   []ReferenceID `json:"reference_ids,omitempty"`
+	SourceIDs      []SourceID    `json:"source_ids,omitempty"`
 }
 
 type RootReport struct {
-	ID           RootID    `json:"id"`
-	Requested    string    `json:"requested_path"`
-	Resolved     string    `json:"resolved_path,omitempty"`
-	State        RootState `json:"state"`
-	SourceCount  int       `json:"source_count"`
-	ProblemCount int       `json:"problem_count"`
+	ID           RootID           `json:"id"`
+	Requested    string           `json:"requested_path"`
+	Context      ReferenceContext `json:"context"`
+	Resolved     string           `json:"resolved_path,omitempty"`
+	State        RootState        `json:"state"`
+	SourceCount  int              `json:"source_count"`
+	ProblemCount int              `json:"problem_count"`
 }
 
 type Scope struct {
@@ -123,13 +196,15 @@ type Scope struct {
 }
 
 type Reference struct {
-	ID             ReferenceID `json:"id"`
-	Root           RootID      `json:"root_id"`
-	DiscoveredPath string      `json:"discovered_path"`
-	ResolvedPath   string      `json:"resolved_path,omitempty"`
-	Status         string      `json:"status"`
-	Source         SourceID    `json:"source_id,omitempty"`
-	Problems       []Problem   `json:"problems"`
+	ID             ReferenceID      `json:"id"`
+	Root           RootID           `json:"root_id"`
+	Context        ReferenceContext `json:"context"`
+	DiscoveredPath string           `json:"discovered_path"`
+	ResolvedPath   string           `json:"resolved_path,omitempty"`
+	Status         string           `json:"status"`
+	Source         SourceID         `json:"source_id,omitempty"`
+	Problems       []Problem        `json:"problems"`
+	MatchesFilters bool             `json:"matches_filters"`
 }
 
 type Identity struct {
@@ -208,13 +283,35 @@ type Source struct {
 }
 
 type View struct {
+	Filters    Filters     `json:"filters"`
 	Scope      Scope       `json:"scope"`
 	Sources    []Source    `json:"sources"`
 	References []Reference `json:"references"`
 	Problems   []Problem   `json:"problems"`
 }
 
+type Filters struct {
+	Search     string        `json:"search,omitempty"`
+	SourceRoot string        `json:"source_root,omitempty"`
+	Context    ContextFilter `json:"context"`
+	Problem    ProblemCode   `json:"problem,omitempty"`
+}
+
+type SelectionChangeState string
+
+const (
+	SelectionChangeNone     SelectionChangeState = "none"
+	SelectionChangeRetained SelectionChangeState = "retained"
+	SelectionChangeCleared  SelectionChangeState = "cleared"
+)
+
+type SelectionChange struct {
+	State  SelectionChangeState `json:"state"`
+	Reason string               `json:"reason,omitempty"`
+}
+
 type Snapshot struct {
+	request        Request
 	scope          Scope
 	sources        map[SourceID]Source
 	order          []SourceID
@@ -247,41 +344,114 @@ func (snapshot *Snapshot) Complete() bool {
 }
 
 func (snapshot *Snapshot) Problems() []Problem {
-	return append([]Problem(nil), snapshot.problems...)
+	return cloneProblems(snapshot.problems)
 }
 
-func (snapshot *Snapshot) Query(text string) View {
-	needle := strings.ToLower(strings.TrimSpace(text))
+func (snapshot *Snapshot) NewFilters(search, rawSourceRoot, rawContext, rawProblem string) (Filters, error) {
+	filters := Filters{Search: search, Context: FilterAll}
+	if rawContext != "" {
+		filters.Context = ContextFilter(rawContext)
+	}
+	switch filters.Context {
+	case FilterAll, FilterCustom, FilterProject:
+	default:
+		return Filters{}, fmt.Errorf("unknown context %q; use all, project, or custom", rawContext)
+	}
+	problem, err := ParseProblemCode(rawProblem)
+	if err != nil {
+		return Filters{}, err
+	}
+	filters.Problem = problem
+	if rawSourceRoot == "" {
+		return filters, nil
+	}
+	path, err := filepath.Abs(rawSourceRoot)
+	if err != nil {
+		return Filters{}, fmt.Errorf("normalize source root: %w", err)
+	}
+	filters.SourceRoot = filepath.Clean(path)
+	for _, root := range snapshot.scope.Roots {
+		if root.Requested == filters.SourceRoot {
+			return filters, nil
+		}
+	}
+	return Filters{}, fmt.Errorf("--source-root %q is not one of the selected roots", filters.SourceRoot)
+}
+
+func (snapshot *Snapshot) Query(filters Filters, target QueryTarget) View {
+	needle := strings.ToLower(strings.TrimSpace(filters.Search))
+	matchingReferences := make(map[ReferenceID]bool, len(snapshot.referenceOrder))
+	for _, id := range snapshot.referenceOrder {
+		matchingReferences[id] = snapshot.referenceMatches(snapshot.references[id], filters)
+	}
 	sources := make([]Source, 0, len(snapshot.order))
 	selected := make(map[SourceID]struct{}, len(snapshot.order))
 	for _, id := range snapshot.order {
 		source := snapshot.sources[id]
-		if needle != "" &&
+		if !sourceHasMatchingReference(source, matchingReferences) {
+			continue
+		}
+		if target == QuerySources && needle != "" &&
 			!strings.Contains(strings.ToLower(source.Name), needle) &&
 			!strings.Contains(strings.ToLower(source.Description), needle) {
+			continue
+		}
+		if filters.Problem != "" && !sourceHasProblem(source, filters.Problem) {
 			continue
 		}
 		sources = append(sources, cloneSource(source))
 		selected[id] = struct{}{}
 	}
+	problems := make([]Problem, 0, len(snapshot.problems))
+	problemReferences := make(map[ReferenceID]struct{})
+	for _, problem := range snapshot.problems {
+		if !snapshot.problemMatches(problem, filters, matchingReferences) {
+			continue
+		}
+		if target == QueryProblems && needle != "" && !snapshot.problemContains(problem, needle) {
+			continue
+		}
+		problems = append(problems, cloneProblem(problem))
+		for _, id := range problem.ReferenceIDs {
+			problemReferences[id] = struct{}{}
+		}
+	}
 	references := make([]Reference, 0, len(snapshot.referenceOrder))
 	for _, id := range snapshot.referenceOrder {
 		reference := snapshot.references[id]
-		if reference.Source != "" {
-			if _, ok := selected[reference.Source]; !ok {
-				continue
-			}
-		} else if needle != "" {
+		_, selectedSource := selected[reference.Source]
+		_, selectedProblem := problemReferences[id]
+		if !selectedSource && !selectedProblem {
 			continue
 		}
-		references = append(references, cloneReference(reference))
+		cloned := cloneReference(reference)
+		cloned.MatchesFilters = matchingReferences[id]
+		references = append(references, cloned)
 	}
 	return View{
+		Filters:    filters,
 		Scope:      cloneScope(snapshot.scope),
 		Sources:    sources,
 		References: references,
-		Problems:   append([]Problem(nil), snapshot.problems...),
+		Problems:   problems,
 	}
+}
+
+func (snapshot *Snapshot) Refresh(ctx context.Context, selected SourceID) (*Snapshot, SelectionChange, error) {
+	refreshed, err := Build(ctx, cloneRequest(snapshot.request))
+	if err != nil {
+		return nil, SelectionChange{}, err
+	}
+	if selected == "" {
+		return refreshed, SelectionChange{State: SelectionChangeNone}, nil
+	}
+	previous, previousOK := snapshot.sources[selected]
+	current, currentOK := refreshed.sources[selected]
+	if previousOK && currentOK &&
+		previous.Identity.Certainty == "proven" && current.Identity.Certainty == "proven" {
+		return refreshed, SelectionChange{State: SelectionChangeRetained, Reason: "same proven directory object remains reachable"}, nil
+	}
+	return refreshed, SelectionChange{State: SelectionChangeCleared, Reason: "selected directory object is no longer provably reachable"}, nil
 }
 
 func (snapshot *Snapshot) Source(id SourceID) (Source, bool) {
@@ -299,7 +469,9 @@ func (snapshot *Snapshot) References(id SourceID) []Reference {
 	}
 	references := make([]Reference, 0, len(source.References))
 	for _, referenceID := range source.References {
-		references = append(references, cloneReference(snapshot.references[referenceID]))
+		reference := cloneReference(snapshot.references[referenceID])
+		reference.MatchesFilters = true
+		references = append(references, reference)
 	}
 	return references
 }
@@ -330,14 +502,122 @@ func cloneScope(scope Scope) Scope {
 func cloneSource(source Source) Source {
 	source.References = append([]ReferenceID(nil), source.References...)
 	source.Resources = append([]Resource(nil), source.Resources...)
-	source.Problems = append([]Problem(nil), source.Problems...)
+	source.Problems = cloneProblems(source.Problems)
 	source.Manifest.Metadata = cloneMap(source.Manifest.Metadata)
 	return source
 }
 
 func cloneReference(reference Reference) Reference {
-	reference.Problems = append([]Problem(nil), reference.Problems...)
+	reference.Problems = cloneProblems(reference.Problems)
 	return reference
+}
+
+func cloneProblem(problem Problem) Problem {
+	problem.RootIDs = append([]RootID(nil), problem.RootIDs...)
+	problem.ReferenceIDs = append([]ReferenceID(nil), problem.ReferenceIDs...)
+	problem.SourceIDs = append([]SourceID(nil), problem.SourceIDs...)
+	return problem
+}
+
+func cloneProblems(problems []Problem) []Problem {
+	cloned := make([]Problem, len(problems))
+	for index, problem := range problems {
+		cloned[index] = cloneProblem(problem)
+	}
+	return cloned
+}
+
+func cloneRequest(request Request) Request {
+	request.Roots = append([]DiscoveryRoot(nil), request.Roots...)
+	return request
+}
+
+func (snapshot *Snapshot) referenceMatches(reference Reference, filters Filters) bool {
+	if filters.Context != FilterAll && string(reference.Context) != string(filters.Context) {
+		return false
+	}
+	if filters.SourceRoot == "" {
+		return true
+	}
+	for _, root := range snapshot.scope.Roots {
+		if root.ID == reference.Root {
+			return root.Requested == filters.SourceRoot
+		}
+	}
+	return false
+}
+
+func sourceHasMatchingReference(source Source, matching map[ReferenceID]bool) bool {
+	for _, id := range source.References {
+		if matching[id] {
+			return true
+		}
+	}
+	return false
+}
+
+func sourceHasProblem(source Source, code ProblemCode) bool {
+	for _, problem := range source.Problems {
+		if problem.Code == code {
+			return true
+		}
+	}
+	return false
+}
+
+func (snapshot *Snapshot) problemMatches(
+	problem Problem,
+	filters Filters,
+	matchingReferences map[ReferenceID]bool,
+) bool {
+	if filters.Problem != "" && problem.Code != filters.Problem {
+		return false
+	}
+	if filters.Context == FilterAll && filters.SourceRoot == "" {
+		return true
+	}
+	for _, id := range problem.ReferenceIDs {
+		if matchingReferences[id] {
+			return true
+		}
+	}
+	for _, rootID := range problem.RootIDs {
+		for _, root := range snapshot.scope.Roots {
+			if root.ID != rootID {
+				continue
+			}
+			if filters.SourceRoot != "" && root.Requested != filters.SourceRoot {
+				continue
+			}
+			if filters.Context != FilterAll && string(root.Context) != string(filters.Context) {
+				continue
+			}
+			return true
+		}
+	}
+	return false
+}
+
+func (snapshot *Snapshot) problemContains(problem Problem, needle string) bool {
+	if strings.Contains(strings.ToLower(string(problem.Code)), needle) ||
+		strings.Contains(strings.ToLower(problem.Path), needle) ||
+		strings.Contains(strings.ToLower(problem.Summary), needle) ||
+		strings.Contains(strings.ToLower(problem.Detail), needle) {
+		return true
+	}
+	for _, id := range problem.ReferenceIDs {
+		if strings.Contains(strings.ToLower(snapshot.references[id].DiscoveredPath), needle) {
+			return true
+		}
+	}
+	for _, id := range problem.RootIDs {
+		for _, root := range snapshot.scope.Roots {
+			if root.ID == id && strings.Contains(strings.ToLower(root.Requested), needle) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func cloneMap(input map[string]any) map[string]any {

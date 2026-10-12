@@ -278,19 +278,19 @@ func runSandboxBrowser(t *testing.T, fx fixture, profile, executable string) []b
 	if err != nil {
 		t.Fatal(err)
 	}
-	var raw bytes.Buffer
+	var raw terminalTranscript
 	copyDone := make(chan struct{})
 	go func() {
 		_, _ = io.Copy(&raw, terminal)
 		close(copyDone)
 	}()
-	time.Sleep(150 * time.Millisecond)
+	raw.wait(t, 0, "Selected: none", "Enter read")
 	if _, err := io.WriteString(terminal, "q"); err != nil {
 		t.Fatal(err)
 	}
 	err = command.Wait()
-	_ = terminal.Close()
 	<-copyDone
+	_ = terminal.Close()
 	if ctx.Err() != nil {
 		t.Fatal("sandboxed browser timed out")
 	}

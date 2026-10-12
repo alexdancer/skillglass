@@ -52,7 +52,7 @@ func TestBrowserPTYJourney(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var raw bytes.Buffer
+	var raw terminalTranscript
 	copyDone := make(chan struct{})
 	go func() {
 		_, _ = io.Copy(&raw, terminal)
@@ -60,9 +60,6 @@ func TestBrowserPTYJourney(t *testing.T) {
 	}()
 
 	keys := []string{
-		"/",
-		"description-only-literal",
-		"enter",
 		"enter",
 		"G",
 		"esc",
@@ -71,8 +68,10 @@ func TestBrowserPTYJourney(t *testing.T) {
 		"enter",
 		"q",
 	}
-	time.Sleep(150 * time.Millisecond)
-	for _, key := range keys {
+	raw.wait(t, 0, "Selected: none", "Focus: 1/2", "normal-skill", "Enter read")
+	postconditions := []string{"Read lines", "LAST_INSTRUCTION_SENTINEL", "Enter read", "type to search", "0 matches | selected source unchanged", "Enter read", ""}
+	for index, key := range keys {
+		checkpoint := len(raw.Bytes())
 		payload := key
 		if key == "enter" {
 			payload = "\r"
@@ -83,16 +82,23 @@ func TestBrowserPTYJourney(t *testing.T) {
 		if _, err := io.WriteString(terminal, payload); err != nil {
 			t.Fatalf("write %q: %v", key, err)
 		}
-		time.Sleep(120 * time.Millisecond)
+		if postconditions[index] != "" {
+			raw.wait(t, checkpoint, postconditions[index])
+		}
 	}
 	err = command.Wait()
-	_ = terminal.Close()
 	<-copyDone
+	_ = terminal.Close()
 	if ctx.Err() != nil {
 		t.Fatal("browser PTY journey timed out")
 	}
 	if err != nil {
 		t.Fatalf("browser exit: %v\nraw:\n%q", err, raw.Bytes())
+	}
+	for _, restored := range []string{"\x1b[?1049l", "\x1b[?25h"} {
+		if !bytes.Contains(raw.Bytes(), []byte(restored)) {
+			t.Fatalf("PTY did not restore terminal mode %q", restored)
+		}
 	}
 	for _, expected := range []string{
 		"Project:",
@@ -143,6 +149,15 @@ func TestBrowserTmuxCellsAtRequiredWidths(t *testing.T) {
 	}
 	fx := newFixture(t)
 	before := treeManifest(t, fx.base)
+	list := fx.run(t, "list", "--root", fx.cleanRoot, "--project", fx.project, "--search", "description-only-literal", "--json")
+	assertExit(t, list, 0)
+	var inventory publicList
+	decodeJSON(t, list.stdout, &inventory)
+	normal := sourceNamed(t, inventory.Sources, "normal-skill")
+	if len(inventory.Sources) != 1 {
+		t.Fatalf("description search returned %d sources, want 1", len(inventory.Sources))
+	}
+	writeEvidence(t, "tmux/description-search-list.json", list.stdout)
 	for _, width := range []int{48, 60, 80, 96, 120} {
 		width := width
 		t.Run(strconv.Itoa(width), func(t *testing.T) {
@@ -167,44 +182,51 @@ func TestBrowserTmuxCellsAtRequiredWidths(t *testing.T) {
 			)
 
 			initial := waitForPane(
-				t, tmux, fx, socket, false, "Selected: none", "normal-skill", "Scope: 1 root |",
+				t, tmux, fx, socket, false, "Selected: none", "normal-skill", "Focus: 1/2", "Scope: 1 root |",
 			)
 			assertPaneCells(t, initial, width, 30)
 			writeEvidence(t, fmt.Sprintf("tmux/%d/00-inventory.txt", width), []byte(initial))
 			if width == 80 {
-				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "s")
-				scope := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Scope", "Root 1 [searched]", "Esc back")
+				if !strings.Contains(initial, "description-only-literal") {
+					t.Fatalf("initial inventory did not expose the pre-satisfied description predicate:\n%s", initial)
+				}
+				scope := actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() {
+					runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "s")
+				}, "SKILLGLASS | Scope", "Root 1 [searched]", "Esc back")
 				assertPaneCells(t, scope, 80, 30)
 				writeEvidence(t, "tmux/80/00-scope.txt", []byte(scope))
-				runTmux(t, tmux, fx, socket,
-					"resize-window", "-t", "browser:0", "-x", "63", "-y", "20",
-				)
-				resizedScope := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Scope", "Root 1 [searched]", "Esc back")
+				resizedScope := resizePaneAt(t, tmux, fx, socket, "browser:0.0", 63, 20, "SKILLGLASS | Scope", "Root 1 [searched]", "Esc back")
 				assertPaneCells(t, resizedScope, 63, 20)
 				writeEvidence(t, "tmux/80/00-scope-resized-63x20.txt", []byte(resizedScope))
-				runTmux(t, tmux, fx, socket,
-					"resize-window", "-t", "browser:0", "-x", "80", "-y", "30",
-				)
-				_ = waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Scope", "Root 1 [searched]", "Esc back")
-				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Escape")
-				_ = waitForPane(t, tmux, fx, socket, false, "Selected: none", "normal-skill")
+				restoredScope := resizePaneAt(t, tmux, fx, socket, "browser:0.0", 80, 30, "SKILLGLASS | Scope", "Root 1 [searched]", "Esc back")
+				writeEvidence(t, "tmux/80/00-scope-restored-80x30.txt", []byte(restoredScope))
+				_ = actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() {
+					runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Escape")
+				}, "Selected: none", "normal-skill")
 			}
 
-			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "/")
-			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "normal-skill")
-			search := waitForPane(t, tmux, fx, socket, false, "Search: normal-skill", "1/1")
-			assertPaneCells(t, search, width, 30)
+			search := actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() {
+				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "/")
+				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "description-only-literal")
+			}, "Search: description-only-literal█", "Focus: 1/1", normal.Name, "type to search")
+			assertSearchViewport(t, search, width, 30, "description-only-literal", true, false)
+			if strings.Contains(search, "second-skill") {
+				t.Fatalf("description search retained a nonmatching inventory row:\n%s", search)
+			}
 			writeEvidence(t, fmt.Sprintf("tmux/%d/01-search.txt", width), []byte(search))
 
-			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter")
-			time.Sleep(50 * time.Millisecond)
-			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter")
-			detail := waitForPane(t, tmux, fx, socket, false, "Manifest: parsed", "Read lines")
+			_ = actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() {
+				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter")
+			}, "Search: description-only-literal", "Focus: 1/1", normal.Name, "Enter read")
+			detail := actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() {
+				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter")
+			}, "Manifest: parsed", "Read lines", "Selector: "+normal.ID)
 			assertPaneCells(t, detail, width, 30)
 			writeEvidence(t, fmt.Sprintf("tmux/%d/02-detail.txt", width), []byte(detail))
 
-			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "G")
-			endJoined := waitForPane(t, tmux, fx, socket, true, "scripts/never-run.sh", "executable", "q quit")
+			endJoined := actForPaneAt(t, tmux, fx, socket, "browser:0.0", true, func() {
+				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "G")
+			}, "scripts/never-run.sh", "executable", "q quit")
 			end := capturePane(t, tmux, fx, socket, false)
 			assertPaneCells(t, end, width, 30)
 			if !strings.Contains(endJoined, "Esc back") {
@@ -220,7 +242,7 @@ func TestBrowserTmuxCellsAtRequiredWidths(t *testing.T) {
 				t.Fatalf("pane dimensions = %q", dimensions)
 			}
 			writeEvidence(t, fmt.Sprintf("tmux/%d/dimensions.txt", width), []byte(dimensions+"\n"))
-			writeEvidence(t, fmt.Sprintf("tmux/%d/keys.txt", width), []byte("/\nnormal-skill\nEnter\nEnter\nG\nq\n"))
+			writeEvidence(t, fmt.Sprintf("tmux/%d/keys.txt", width), []byte("/\ndescription-only-literal\nEnter\nEnter\nG\nq\n"))
 			writeEvidence(t, fmt.Sprintf("tmux/%d/command.txt", width), []byte(commandLine+"\n"))
 			title := strings.TrimSpace(runTmux(
 				t, tmux, fx, socket,
@@ -240,16 +262,10 @@ func TestBrowserTmuxCellsAtRequiredWidths(t *testing.T) {
 			writeEvidence(t, fmt.Sprintf("tmux/%d/title.txt", width), []byte(title+"\n"))
 			writeEvidence(t, fmt.Sprintf("tmux/%d/cursor.txt", width), []byte(cursor+" hidden\n"))
 			if width == 80 {
-				runTmux(t, tmux, fx, socket,
-					"resize-window", "-t", "browser:0", "-x", "63", "-y", "20",
-				)
-				resized := waitForPane(t, tmux, fx, socket, false, "scripts/never-run.sh", "q quit")
+				resized := resizePaneAt(t, tmux, fx, socket, "browser:0.0", 63, 20, "SKILLGLASS | Source", "Read lines", "scripts/never-run.sh", "q quit")
 				assertPaneCells(t, resized, 63, 20)
 				writeEvidence(t, "tmux/80/04-resized-63x20.txt", []byte(resized))
-				runTmux(t, tmux, fx, socket,
-					"resize-window", "-t", "browser:0", "-x", "80", "-y", "30",
-				)
-				restored := waitForPane(t, tmux, fx, socket, false, "scripts/never-run.sh", "q quit")
+				restored := resizePaneAt(t, tmux, fx, socket, "browser:0.0", 80, 30, "SKILLGLASS | Source", "Read lines", "scripts/never-run.sh", "q quit")
 				assertPaneCells(t, restored, 80, 30)
 				writeEvidence(t, "tmux/80/05-resized-restored.txt", []byte(restored))
 			}
@@ -332,27 +348,27 @@ func TestBrowserManyRootsHasScrollableScopeAt60Columns(t *testing.T) {
 	)
 	assertPaneCells(t, initial, 60, 30)
 	writeEvidence(t, "tmux/many-roots/00-inventory.txt", []byte(initial))
-	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "/")
-	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "-l", "s")
-	searchS := waitForPaneAt(t, tmux, fx, socket, "many:0.0", false, "Search: s", "type to search")
+	searchS := actForPaneAt(t, tmux, fx, socket, "many:0.0", false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "/")
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "-l", "s")
+	}, "Search: s", "type to search")
 	if strings.Contains(searchS, "SKILLGLASS | Scope") {
 		t.Fatal("s opened scope while search input was active")
 	}
 	writeEvidence(t, "tmux/many-roots/00-search-s.txt", []byte(searchS))
-	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "Escape")
-	_ = waitForPaneAt(
-		t, tmux, fx, socket, "many:0.0", false, "many-root-source", "Focus: 1/1", "s scope",
-	)
+	_ = actForPaneAt(t, tmux, fx, socket, "many:0.0", false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "Escape")
+	}, "many-root-source", "Focus: 1/1", "s scope")
 
-	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "-l", "s")
 	canonicalFirst := canonicalPath(t, roots[0])
-	scopeTop := waitForPaneAt(
+	scopeTop := actForPaneAt(
 		t,
 		tmux,
 		fx,
 		socket,
 		"many:0.0",
 		false,
+		func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "-l", "s") },
 		"SKILLGLASS | Scope",
 		longProject,
 		roots[0],
@@ -363,15 +379,15 @@ func TestBrowserManyRootsHasScrollableScopeAt60Columns(t *testing.T) {
 	assertPaneCells(t, scopeTop, 60, 30)
 	writeEvidence(t, "tmux/many-roots/01-scope-top.txt", []byte(scopeTop))
 
-	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "-l", "G")
 	canonicalLast := canonicalPath(t, roots[len(roots)-1])
-	scopeEnd := waitForPaneAt(
+	scopeEnd := actForPaneAt(
 		t,
 		tmux,
 		fx,
 		socket,
 		"many:0.0",
 		false,
+		func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "-l", "G") },
 		"Root 8 [empty]",
 		roots[len(roots)-1],
 		canonicalLast,
@@ -381,17 +397,15 @@ func TestBrowserManyRootsHasScrollableScopeAt60Columns(t *testing.T) {
 	assertPaneCells(t, scopeEnd, 60, 30)
 	writeEvidence(t, "tmux/many-roots/02-scope-end.txt", []byte(scopeEnd))
 
-	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "Escape")
-	restoredInventory := waitForPaneAt(
-		t, tmux, fx, socket, "many:0.0", false, "many-root-source", "Focus: 1/1", "s scope",
-	)
+	restoredInventory := actForPaneAt(t, tmux, fx, socket, "many:0.0", false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "Escape")
+	}, "many-root-source", "Focus: 1/1", "s scope")
 	assertPaneCells(t, restoredInventory, 60, 30)
 	writeEvidence(t, "tmux/many-roots/03-inventory-restored.txt", []byte(restoredInventory))
 
-	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "Enter")
-	detail := waitForPaneAt(
-		t, tmux, fx, socket, "many:0.0", false, "Selected: many-root-source", "Read lines", "s scope",
-	)
+	detail := actForPaneAt(t, tmux, fx, socket, "many:0.0", false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "Enter")
+	}, "Selected: many-root-source", "Read lines", "s scope")
 	assertPaneCells(t, detail, 60, 30)
 	writeEvidence(t, "tmux/many-roots/04-detail.txt", []byte(detail))
 	detailLineCount := 0
@@ -408,18 +422,17 @@ func TestBrowserManyRootsHasScrollableScopeAt60Columns(t *testing.T) {
 	detailEndStatus := fmt.Sprintf("-%d of %d", detailLineCount, detailLineCount)
 	// Long fixture prefixes can push instructions below the first viewport.
 	// Prove they are reachable and that the scope round trip keeps that position.
-	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "-l", "G")
-	detailEnd := waitForPaneAt(
-		t, tmux, fx, socket, "many:0.0", false, "MANY_ROOT_INSTRUCTIONS", detailEndStatus, "s scope",
-	)
+	detailEnd := actForPaneAt(t, tmux, fx, socket, "many:0.0", false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "-l", "G")
+	}, "MANY_ROOT_INSTRUCTIONS", detailEndStatus, "s scope")
 	assertPaneCells(t, detailEnd, 60, 30)
 	writeEvidence(t, "tmux/many-roots/04-detail-end.txt", []byte(detailEnd))
-	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "-l", "s")
-	_ = waitForPaneAt(t, tmux, fx, socket, "many:0.0", false, "SKILLGLASS | Scope", longProject)
-	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "Escape")
-	restoredDetail := waitForPaneAt(
-		t, tmux, fx, socket, "many:0.0", false, "MANY_ROOT_INSTRUCTIONS", "Read lines", "s scope",
-	)
+	_ = actForPaneAt(t, tmux, fx, socket, "many:0.0", false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "-l", "s")
+	}, "SKILLGLASS | Scope", longProject)
+	restoredDetail := actForPaneAt(t, tmux, fx, socket, "many:0.0", false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "Escape")
+	}, "MANY_ROOT_INSTRUCTIONS", detailEndStatus, "s scope")
 	assertPaneCells(t, restoredDetail, 60, 30)
 	if restoredDetail != detailEnd {
 		t.Fatalf("scope round trip changed detail viewport\nbefore:\n%s\nafter:\n%s", detailEnd, restoredDetail)
@@ -474,10 +487,12 @@ func TestBrowserLongSearchUsesSingleRowTailViewport(t *testing.T) {
 	_ = waitForPaneAt(t, tmux, fx, socket, "long:0.0", false, "Focus: 1/2", "/ search")
 	writeEvidence(t, "tmux/long-search/command.txt", []byte(commandLine+"\n"))
 
-	runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "/")
-	runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "-l", longQuery)
-	longEditing := waitForPaneCaptureAt(
+	longEditing := actForPaneAt(
 		t, tmux, fx, socket, "long:0.0", false,
+		func() {
+			runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "/")
+			runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "-l", longQuery)
+		},
 		asciiTail+"█", "No matching sources.", "0 matches | selected source unchanged",
 		"type to search", "Enter keep", "Esc cancel", "Ctrl+U clear",
 	)
@@ -485,11 +500,8 @@ func TestBrowserLongSearchUsesSingleRowTailViewport(t *testing.T) {
 	longRow := assertSearchViewport(t, longEditing, 60, 30, asciiTail, true, true)
 	assertSearchChrome(t, longEditing)
 
-	runTmux(t, tmux, fx, socket,
-		"resize-window", "-t", "long:0", "-x", "48", "-y", "20",
-	)
-	narrow := waitForPaneCaptureAt(
-		t, tmux, fx, socket, "long:0.0", false,
+	narrow := resizePaneAt(
+		t, tmux, fx, socket, "long:0.0", 48, 20,
 		asciiTail+"█", "No matching sources.", "0 matches | selected source unchanged",
 		"type to search", "Enter keep", "Esc cancel", "Ctrl+U clear",
 	)
@@ -500,11 +512,8 @@ func TestBrowserLongSearchUsesSingleRowTailViewport(t *testing.T) {
 		t.Fatalf("search viewport did not change after resize: %q", narrowRow)
 	}
 
-	runTmux(t, tmux, fx, socket,
-		"resize-window", "-t", "long:0", "-x", "60", "-y", "30",
-	)
-	restored := waitForPaneCaptureAt(
-		t, tmux, fx, socket, "long:0.0", false,
+	restored := resizePaneAt(
+		t, tmux, fx, socket, "long:0.0", 60, 30,
 		longRow, "No matching sources.", "0 matches | selected source unchanged",
 		"type to search", "Enter keep", "Esc cancel", "Ctrl+U clear",
 	)
@@ -514,22 +523,24 @@ func TestBrowserLongSearchUsesSingleRowTailViewport(t *testing.T) {
 	}
 	assertSearchChrome(t, restored)
 
-	runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "Enter")
-	kept := waitForPaneAt(
+	kept := actForPaneAt(
 		t, tmux, fx, socket, "long:0.0", false,
+		func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "Enter") },
 		asciiTail, "No matching sources.", "0 matches | selected source unchanged", "Enter read", "s scope",
 	)
 	writeEvidence(t, "tmux/long-search/04-long-kept.txt", []byte(kept))
 	assertSearchViewport(t, kept, 60, 30, asciiTail, false, true)
 
-	runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "/")
-	_ = waitForPaneAt(t, tmux, fx, socket, "long:0.0", false, asciiTail+"█", "type to search")
+	_ = actForPaneAt(t, tmux, fx, socket, "long:0.0", false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "/")
+	}, asciiTail+"█", "type to search")
 	cancelTail := "CANCEL_TAIL"
-	runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "-l", cancelTail)
-	_ = waitForPaneAt(t, tmux, fx, socket, "long:0.0", false, cancelTail+"█", "type to search")
-	runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "Escape")
-	cancelled := waitForPaneAt(
+	_ = actForPaneAt(t, tmux, fx, socket, "long:0.0", false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "-l", cancelTail)
+	}, cancelTail+"█", "type to search")
+	cancelled := actForPaneAt(
 		t, tmux, fx, socket, "long:0.0", false,
+		func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "Escape") },
 		asciiTail, "No matching sources.", "0 matches | selected source unchanged", "Enter read", "s scope",
 	)
 	writeEvidence(t, "tmux/long-search/05-long-cancelled.txt", []byte(cancelled))
@@ -538,11 +549,12 @@ func TestBrowserLongSearchUsesSingleRowTailViewport(t *testing.T) {
 		t.Fatal("Escape retained text appended after queryBefore")
 	}
 
-	runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "/")
-	_ = waitForPaneAt(t, tmux, fx, socket, "long:0.0", false, asciiTail+"█", "type to search")
-	runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "C-u")
-	cleared := waitForPaneAt(
+	_ = actForPaneAt(t, tmux, fx, socket, "long:0.0", false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "/")
+	}, asciiTail+"█", "type to search")
+	cleared := actForPaneAt(
 		t, tmux, fx, socket, "long:0.0", false,
+		func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "C-u") },
 		"Search: █", "Focus: 1/2", "tail-only-source", "other-source", "Ctrl+U clear",
 	)
 	writeEvidence(t, "tmux/long-search/06-cleared.txt", []byte(cleared))
@@ -550,26 +562,30 @@ func TestBrowserLongSearchUsesSingleRowTailViewport(t *testing.T) {
 
 	wideTail := "終端尾"
 	wideQuery := strings.Repeat("界", 120) + wideTail
-	runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "-l", wideQuery)
-	wide := waitForPaneCaptureAt(
+	wide := actForPaneAt(
 		t, tmux, fx, socket, "long:0.0", false,
+		func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "-l", wideQuery) },
 		wideTail+"█", "No matching sources.", "0 matches | selected source unchanged", "Ctrl+U clear",
 	)
 	writeEvidence(t, "tmux/long-search/07-wide-editing.txt", []byte(wide))
 	assertSearchViewport(t, wide, 60, 30, wideTail, true, true)
 	assertSearchChrome(t, wide)
 
-	runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "-l", "Z")
-	_ = waitForPaneAt(t, tmux, fx, socket, "long:0.0", false, wideTail+"Z█")
-	runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "BSpace")
-	backspaced := waitForPaneAt(t, tmux, fx, socket, "long:0.0", false, wideTail+"█")
+	_ = actForPaneAt(t, tmux, fx, socket, "long:0.0", false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "-l", "Z")
+	}, wideTail+"Z█")
+	backspaced := actForPaneAt(t, tmux, fx, socket, "long:0.0", false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "BSpace")
+	}, wideTail+"█")
 	writeEvidence(t, "tmux/long-search/08-wide-backspaced.txt", []byte(backspaced))
 	assertSearchViewport(t, backspaced, 60, 30, wideTail, true, true)
 
-	runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "C-u")
-	_ = waitForPaneAt(t, tmux, fx, socket, "long:0.0", false, "Search: █", "Focus: 1/2")
-	runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "Enter")
-	clearKept := waitForPaneAt(t, tmux, fx, socket, "long:0.0", false, "Search:", "Focus: 1/2", "Enter read")
+	_ = actForPaneAt(t, tmux, fx, socket, "long:0.0", false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "C-u")
+	}, "Search: █", "Focus: 1/2")
+	clearKept := actForPaneAt(t, tmux, fx, socket, "long:0.0", false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "Enter")
+	}, "Search:", "Focus: 1/2", "Enter read")
 	writeEvidence(t, "tmux/long-search/09-clear-kept.txt", []byte(clearKept))
 	assertSearchViewport(t, clearKept, 60, 30, "", false, false)
 	writeEvidence(t, "tmux/long-search/keys.txt", []byte(
@@ -601,17 +617,21 @@ func TestBrowserHostileTerminalDataUsesSafeCells(t *testing.T) {
 
 	initial := waitForPaneAt(t, tmux, fx, socket, "hostile:0.0", false, `hostile-name-START\x1b[2J-END`)
 	assertPaneCells(t, initial, 80, 24)
-	runTmux(t, tmux, fx, socket, "send-keys", "-t", "hostile:0.0", "Enter")
-	detail := waitForPaneAt(t, tmux, fx, socket, "hostile:0.0", false, `description-START\x1b]0;HOSTILE_TITLE\a-END`)
+	detail := actForPaneAt(t, tmux, fx, socket, "hostile:0.0", false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", "hostile:0.0", "Enter")
+	}, "SKILLGLASS | Source", "Read lines", `description-START\x1b]0;HOSTILE_TITLE\a-END`)
+	if detail == initial {
+		t.Fatal("hostile Source detail equals inventory")
+	}
 	assertPaneCells(t, detail, 80, 24)
-	runTmux(t, tmux, fx, socket, "send-keys", "-t", "hostile:0.0", "-l", "G")
-	end := waitForPaneAt(
+	end := actForPaneAt(
 		t,
 		tmux,
 		fx,
 		socket,
 		"hostile:0.0",
 		false,
+		func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "hostile:0.0", "-l", "G") },
 		`BODY_START\x1b[31mBODY_END\rCR_END\aBELL_END`,
 		"LAST_HOSTILE_SENTINEL",
 	)
@@ -682,32 +702,19 @@ func waitForPaneAt(
 ) string {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
-	var capture string
+	var frame paneSnapshot
 	for time.Now().Before(deadline) {
-		capture = capturePaneAt(t, tmux, fx, socket, target, joinWrapped)
-		found := true
-		for _, needle := range needles {
-			if !paneContains(capture, needle) {
-				found = false
-				break
-			}
-		}
-		if found && !strings.Contains(capture, "Pane is dead") {
-			// A matching frame can still be from before the last resize. The
-			// browser anchors its footer on the current grid's bottom row.
-			cells := capture
+		frame = snapshotPane(t, tmux, fx, socket, target)
+		rows := strings.Split(strings.TrimSuffix(frame.cells, "\n"), "\n")
+		if paneHas(frame, joinWrapped, needles...) && len(rows) == frame.height && strings.TrimSpace(rows[len(rows)-1]) != "" {
 			if joinWrapped {
-				cells = capturePaneAt(t, tmux, fx, socket, target, false)
+				return frame.joined
 			}
-			rows := strings.Split(strings.TrimSuffix(cells, "\n"), "\n")
-			found = strings.TrimSpace(rows[len(rows)-1]) != ""
-		}
-		if found {
-			return capture
+			return frame.cells
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
-	t.Fatalf("pane did not show %q on the current grid:\n%s", needles, capture)
+	t.Fatalf("pane did not show %q on the current grid:\n%s", needles, frame.cells)
 	return ""
 }
 
@@ -719,35 +726,6 @@ func paneContains(capture, needle string) bool {
 		return strings.Join(strings.Fields(value), "")
 	}
 	return strings.Contains(compact(capture), compact(needle))
-}
-
-func waitForPaneCaptureAt(
-	t *testing.T,
-	tmux string,
-	fx fixture,
-	socket string,
-	target string,
-	joinWrapped bool,
-	needles ...string,
-) string {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	var capture string
-	for time.Now().Before(deadline) {
-		capture = capturePaneAt(t, tmux, fx, socket, target, joinWrapped)
-		found := true
-		for _, needle := range needles {
-			if !paneContains(capture, needle) {
-				found = false
-				break
-			}
-		}
-		if found {
-			return capture
-		}
-		time.Sleep(25 * time.Millisecond)
-	}
-	return capture
 }
 
 func assertSearchViewport(

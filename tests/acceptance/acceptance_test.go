@@ -123,29 +123,57 @@ type commandResult struct {
 }
 
 type publicList struct {
-	Scope struct {
+	Operation string        `json:"operation"`
+	Filters   publicFilters `json:"filters"`
+	Scope     struct {
 		Project struct {
 			Selected bool   `json:"selected"`
 			Path     string `json:"path"`
 		} `json:"project"`
 		Roots []struct {
+			ID           string `json:"id"`
 			Requested    string `json:"requested_path"`
+			Context      string `json:"context"`
 			State        string `json:"state"`
 			SourceCount  int    `json:"source_count"`
 			ProblemCount int    `json:"problem_count"`
 		} `json:"roots"`
 		Completeness string `json:"completeness"`
 	} `json:"scope"`
-	Sources  []publicSource  `json:"sources"`
-	Problems []publicProblem `json:"problems"`
+	Sources    []publicSource    `json:"sources"`
+	References []publicReference `json:"references"`
+	Problems   []publicProblem   `json:"problems"`
+}
+
+type publicFilters struct {
+	Search     string `json:"search"`
+	SourceRoot string `json:"source_root"`
+	Context    string `json:"context"`
+	Problem    string `json:"problem"`
+}
+
+type publicReference struct {
+	ID             string          `json:"id"`
+	RootID         string          `json:"root_id"`
+	Context        string          `json:"context"`
+	DiscoveredPath string          `json:"discovered_path"`
+	ResolvedPath   string          `json:"resolved_path"`
+	Status         string          `json:"status"`
+	SourceID       string          `json:"source_id"`
+	MatchesFilters bool            `json:"matches_filters"`
+	Problems       []publicProblem `json:"problems"`
 }
 
 type publicProblem struct {
-	Summary        string `json:"summary"`
-	Code           string `json:"code"`
-	Path           string `json:"path"`
-	Detail         string `json:"detail"`
-	LimitsCoverage bool   `json:"limits_coverage"`
+	ID             string   `json:"id"`
+	Summary        string   `json:"summary"`
+	Code           string   `json:"code"`
+	Path           string   `json:"path"`
+	Detail         string   `json:"detail"`
+	LimitsCoverage bool     `json:"limits_coverage"`
+	RootIDs        []string `json:"root_ids"`
+	ReferenceIDs   []string `json:"reference_ids"`
+	SourceIDs      []string `json:"source_ids"`
 }
 
 type publicRead struct {
@@ -157,11 +185,12 @@ type publicSource struct {
 	Identity struct {
 		Certainty string `json:"certainty"`
 	} `json:"identity"`
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	SourcePath  string `json:"source_path"`
-	Ownership   struct {
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Description  string   `json:"description"`
+	SourcePath   string   `json:"source_path"`
+	ReferenceIDs []string `json:"reference_ids"`
+	Ownership    struct {
 		State string `json:"state"`
 	} `json:"ownership"`
 	Availability struct {
@@ -169,6 +198,9 @@ type publicSource struct {
 	} `json:"availability"`
 	Manifest struct {
 		Status         string         `json:"status"`
+		Path           string         `json:"path"`
+		ResolvedPath   string         `json:"resolved_path"`
+		IsSymlink      bool           `json:"is_symlink"`
 		Metadata       map[string]any `json:"metadata"`
 		RawFrontmatter string         `json:"raw_frontmatter"`
 		Instructions   string         `json:"instructions"`
@@ -287,8 +319,15 @@ func TestEmptyMissingMixedAndNoImplicitRoots(t *testing.T) {
 	fx := newFixture(t)
 	help := fx.run(t, "--help")
 	assertExit(t, help, 0)
-	if !bytes.Contains(help.stdout, []byte("skillglass list --root ROOT")) {
-		t.Fatalf("help output = %s", help.stdout)
+	for _, expected := range []string{
+		"skillglass list [SCOPE] [FILTERS] [--search TEXT] [--json]",
+		"skillglass problems [SCOPE] [FILTERS] [--search TEXT] [--json]",
+		"--project-root ROOT",
+		"--source-root ROOT",
+	} {
+		if !bytes.Contains(help.stdout, []byte(expected)) {
+			t.Fatalf("help output missing %q: %s", expected, help.stdout)
+		}
 	}
 	empty := fx.run(t, "list", "--root", fx.emptyRoot, "--json")
 	assertExit(t, empty, 0)

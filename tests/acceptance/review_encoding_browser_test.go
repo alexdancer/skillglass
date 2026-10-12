@@ -37,8 +37,9 @@ func TestBrowserInvalidManifestEncodingHasRecoveryHint(t *testing.T) {
 		}
 	}()
 	_ = waitForPaneAt(t, tmux, fx, socket, "encoding:0.0", false, "Selected: none", "Focus: 1/1")
-	runTmux(t, tmux, fx, socket, "send-keys", "-t", "encoding:0.0", "Enter")
-	joined := waitForPaneCaptureAt(t, tmux, fx, socket, "encoding:0.0", true, "manifest-invalid-encoding", "manifest.raw_bytes_base64", "Manifest: malformed")
+	joined := actForPaneAt(t, tmux, fx, socket, "encoding:0.0", true, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", "encoding:0.0", "Enter")
+	}, "manifest-invalid-encoding", "manifest.raw_bytes_base64", "Manifest: malformed")
 	cells := capturePaneAt(t, tmux, fx, socket, "encoding:0.0", false)
 	writeEvidence(t, "tmux/encoding/detail.txt", []byte(cells))
 	writeEvidence(t, "tmux/encoding/detail-joined.txt", []byte(joined))
@@ -56,8 +57,9 @@ func TestBrowserInvalidManifestEncodingHasRecoveryHint(t *testing.T) {
 			t.Fatalf("invalid body displayed %q:\n%s", forbidden, joined)
 		}
 	}
-	runTmux(t, tmux, fx, socket, "send-keys", "-t", "encoding:0.0", "q")
-	_ = waitForPaneAt(t, tmux, fx, socket, "encoding:0.0", false, "Pane is dead")
+	_ = actForPaneAt(t, tmux, fx, socket, "encoding:0.0", false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", "encoding:0.0", "q")
+	}, "Pane is dead")
 	status := strings.TrimSpace(runTmux(t, tmux, fx, socket, "display-message", "-p", "-t", "encoding:0.0", "#{pane_dead}:#{pane_dead_status}"))
 	writeEvidence(t, "tmux/encoding/exit.txt", []byte(status+"\n"))
 	if status != "1:1" {
