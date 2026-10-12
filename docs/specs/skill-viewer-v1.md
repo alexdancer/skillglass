@@ -67,7 +67,7 @@ The distinguishing workflows are availability explanations and comparison of dup
 
 ## Implementation Decisions
 
-- **Language and delivery.** Implement the production tool in Go for the user's current macOS environment. Keep application-specific rules behind adapters so additional environments can be supported later. A public open-source release is a possible future direction, not a requirement to select a license or publish now. No terminal framework, command spelling, packaging tool, or database has been selected.
+- **Language and delivery.** Implement the production tool in Go for the user's current macOS environment. Keep application-specific rules behind adapters so additional environments can be supported later. A public open-source release is a possible future direction, not a requirement to select a license or publish now. At specification publication, no terminal framework, command spelling, packaging tool, or database had been selected. The [README](../../README.md#build-and-use) owns the implemented interface.
 
 - **One behavior core, two terminal interfaces.** The CLI and interactive browser use the same inventory, availability, comparison, and mutation operations. Build logical components for discovery and inventory, agent adapters, availability explanations, bundle comparison, and scoped changes. The public terminal interface is the primary test boundary; private component layout is an implementation choice. Read operations produce no changes to agent settings or skill contents.
 
@@ -106,7 +106,7 @@ The distinguishing workflows are availability explanations and comparison of dup
 - **Agent claims need independent validation.** Viewer fixture tests alone do not prove an agent enforces a setting. Before advertising a writer, validate the relevant operation and scope with the recorded agent version in a disposable home/project and inspect its effective discovery or native state. Check fresh-session versus reload requirements without running skill workloads. Where validation is unavailable, report that capability as unverified and do not enable its writer. The supported-version evidence accompanies the integration.
 - **Terminal interaction tests stay focused.** Verify search and selection, reading, visible project context, an availability explanation, comparison, a scoped disable, an unsupported action, and delete confirmation/cancellation. Use semantic output and key sequences rather than extensive snapshots of decorative layout. Manually inspect the actual terminal rendering, including narrow windows and long paths, before considering the interface complete.
 - **Offline verification is explicit.** Run core acceptance journeys without network access and without credentials. Establish that browsing and comparison never execute bundled scripts or alter the collection.
-- **There is no existing application test prior art.** The repository has no Skillglass production application or application test suite; the agent scheduler's tests cover separate workflow tooling. Reuse the high-level fixture and executable harness across journeys as it is built. No implementation tests were run while writing this specification.
+- **Reuse the public-executable harness.** At specification publication, no Skillglass production application or application test suite existed; the agent scheduler's tests covered separate workflow tooling. ALE-23 establishes the high-level fixture and executable harness for subsequent journeys; see its [verification guide](../verification/ale-23.md). No implementation tests were run while writing this specification.
 
 The following outcomes are required acceptance coverage:
 
@@ -140,7 +140,7 @@ The following outcomes are required acceptance coverage:
 
 ## Further Notes
 
-This specification synthesizes the user's accepted direction and the October 10, 2026 planning evidence. The testing boundary was explicitly confirmed for this spec. Implementation safeguards and observable acceptance criteria make those choices actionable; exact command names, terminal layout, and library choices have not been approved as fixed designs.
+This specification synthesizes the user's accepted direction and the October 10, 2026 planning evidence. The testing boundary was explicitly confirmed for this spec. Implementation safeguards and observable acceptance criteria make those choices actionable; exact command names, terminal layout, and library choices were not fixed at specification publication.
 
 The earlier terminal-workflow prototype and release-boundary planning tickets were still open when this spec was requested. This document does not claim that a prototype was built or reviewed. The implementation can begin with the interaction prototype and adapter validation described above. Findings that would remove an agreed capability or broaden a mutation's scope require an explicit scope decision rather than silently weakening this contract.
 
