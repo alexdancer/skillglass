@@ -71,7 +71,8 @@ Help is a scrollable view. It documents movement, open and return, Sources and P
 |---|---|
 | `↑` `↓` or `j` `k` | Move focus or scroll |
 | `Enter` | Keep search or open the focused item |
-| `Esc` or `←` | Return from search, reader, problem, scope, or help |
+| `Esc` | Cancel active search and restore its pre-edit query; otherwise return from a reader, Scope, or Help |
+| `←` | Return from a reader, Scope, or Help; remain in active search without changing its query |
 | `Tab` | Switch Sources and Problems |
 | `/` | Edit search for the active inventory |
 | `Ctrl+U` | Clear search while editing |
@@ -88,7 +89,7 @@ Help is a scrollable view. It documents movement, open and return, Sources and P
 | `?` | Toggle complete help |
 | `q` | Quit outside search |
 
-While search input is active, filter and navigation letters are ordinary query text. Search keeps the complete query for filtering and shows its visible tail with a leading ellipsis when necessary.
+While search input is active, filter and navigation letters are ordinary query text. `Esc` cancels the edit and restores the query that was active before `/`; `←` does not cancel or edit search. Search keeps the complete query for filtering and shows its visible tail with a leading ellipsis when necessary.
 
 ## Visual system
 

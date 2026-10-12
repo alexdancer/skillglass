@@ -561,15 +561,17 @@ func (model browserModel) chromeLines(mode browserMode) []string {
 }
 
 func (model browserModel) chromeTarget(mode browserMode) browserMode {
-	switch mode {
-	case browserSearch:
-		return model.searchReturn
-	case browserScope:
-		return model.previousMode
-	case browserHelp:
-		return model.helpReturn
-	default:
-		return mode
+	for {
+		switch mode {
+		case browserSearch:
+			mode = model.searchReturn
+		case browserScope:
+			mode = model.previousMode
+		case browserHelp:
+			mode = model.helpReturn
+		default:
+			return mode
+		}
 	}
 }
 
