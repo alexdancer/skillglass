@@ -35,6 +35,13 @@ func TestFixtureLaunchBoundary(t *testing.T) {
 }
 
 func fixtureRuntimeProfile(executable, fixtureRoot string) string {
+	var ancestors strings.Builder
+	for path := filepath.Dir(fixtureRoot); ; path = filepath.Dir(path) {
+		fmt.Fprintf(&ancestors, " (literal %s)\n", sandboxString(path))
+		if path == "/" {
+			break
+		}
+	}
 	return fmt.Sprintf(`(version 1)
 (allow default)
 (deny network*)
@@ -42,8 +49,7 @@ func fixtureRuntimeProfile(executable, fixtureRoot string) string {
 (deny process-exec (require-not (literal %s)))
 (deny file-read-data (require-not (require-any
  (literal %s)
- (literal "/")
- (subpath %s)
+%s (subpath %s)
  (subpath "/System")
  (subpath "/usr/lib")
  (subpath "/dev"))))
@@ -51,7 +57,7 @@ func fixtureRuntimeProfile(executable, fixtureRoot string) string {
  (subpath "/etc/codex")
  (subpath "/private/etc/codex")
  (subpath %s)))
-`, sandboxString(executable), sandboxString(executable), sandboxString(fixtureRoot), sandboxString(filepath.Join(fixtureRoot, "excluded")))
+`, sandboxString(executable), sandboxString(executable), ancestors.String(), sandboxString(fixtureRoot), sandboxString(filepath.Join(fixtureRoot, "excluded")))
 }
 
 func fixtureLauncherScript(executable string) string {
