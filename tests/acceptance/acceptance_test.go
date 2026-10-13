@@ -22,6 +22,7 @@ import (
 )
 
 var (
+	tmuxSocketDirectory  string
 	skillglassBinary     string
 	isolationProbeBinary string
 	repositoryRoot       string
@@ -47,6 +48,11 @@ func TestMain(testMain *testing.M) {
 	repositoryRoot = filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", ".."))
 	var err error
 	builtBinaryDir, err = os.MkdirTemp("", "skillglass-acceptance-binary-")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	tmuxSocketDirectory, err = os.MkdirTemp("/private/tmp", "sgtmux-")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -89,6 +95,7 @@ func TestMain(testMain *testing.M) {
 		}
 	}
 	code := testMain.Run()
+	os.RemoveAll(tmuxSocketDirectory)
 	if err := writeEvidenceCaseIndex(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		code = 1
@@ -98,6 +105,7 @@ func TestMain(testMain *testing.M) {
 }
 
 type fixture struct {
+	policy         string
 	base           string
 	home           string
 	xdgConfig      string
@@ -678,6 +686,7 @@ func newFixture(t *testing.T) fixture {
 	base := t.TempDir()
 	fx := fixture{
 		base:           base,
+		policy:         filepath.Join(base, "allowed", "fixture-policy.sb"),
 		home:           filepath.Join(base, "allowed", "home"),
 		xdgConfig:      filepath.Join(base, "allowed", "xdg-config"),
 		xdgData:        filepath.Join(base, "allowed", "xdg-data"),
@@ -791,6 +800,7 @@ func newFixture(t *testing.T) fixture {
 	writeFile(t, filepath.Join(malformed, "SKILL.md"), []byte(
 		"---\nname: [unterminated\nMALFORMED_RAW_SENTINEL\n",
 	), 0o644)
+	fx.seal(t)
 	return fx
 }
 
@@ -798,7 +808,7 @@ func (fx fixture) run(t *testing.T, args ...string) commandResult {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, skillglassBinary, args...)
+	command := fx.command(t, ctx, args...)
 	command.Dir = fx.project
 	command.Env = fx.environment()
 	command.Stdin = bytes.NewReader(nil)
@@ -821,7 +831,8 @@ func (fx fixture) run(t *testing.T, args ...string) commandResult {
 		code = exitError.ExitCode()
 	}
 	result := commandResult{code: code, stdout: stdout.Bytes(), stderr: stderr.Bytes(), duration: duration}
-	recordEvidenceCommand(t, "public-cli", skillglassBinary, args, fx.project, result)
+	argv := fx.invocation(t, skillglassBinary, args...)
+	recordEvidenceCommand(t, "public-cli-contained", argv[0], argv[1:], fx.project, result)
 	return result
 }
 

@@ -36,9 +36,8 @@ func TestBrowserPTYJourney(t *testing.T) {
 	normal := sourceNamed(t, inventory.Sources, "normal-skill")
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	command := exec.CommandContext(
-		ctx,
-		skillglassBinary,
+	command := fx.command(
+		t, ctx,
 		"browse",
 		"--root",
 		fx.cleanRoot,
@@ -132,11 +131,12 @@ func TestBrowserPTYJourney(t *testing.T) {
 			"search miss preserves selection: pass\n"+
 			"fixture unchanged and script inert: pass\n",
 	))
+	launch := fx.invocation(t, skillglassBinary, "browse", "--root", fx.cleanRoot, "--project", fx.project)
 	recordEvidenceCommand(
 		t,
-		"browser-pty",
-		skillglassBinary,
-		[]string{"browse", "--root", fx.cleanRoot, "--project", fx.project},
+		"browser-pty-contained",
+		launch[0],
+		launch[1:],
 		fx.project,
 		commandResult{stdout: raw.Bytes(), duration: time.Since(started)},
 	)
@@ -165,7 +165,7 @@ func TestBrowserTmuxCellsAtRequiredWidths(t *testing.T) {
 			defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
 			commandLine := strings.Join([]string{
 				"exec",
-				shellQuote(skillglassBinary),
+				fx.productShell(t),
 				"browse",
 				"--root",
 				shellQuote(fx.cleanRoot),
@@ -318,7 +318,7 @@ func TestBrowserManyRootsHasScrollableScopeAt60Columns(t *testing.T) {
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
 	parts := []string{
 		"exec",
-		shellQuote(skillglassBinary),
+		fx.productShell(t),
 		"browse",
 		"--project",
 		shellQuote(longProject),
@@ -472,7 +472,7 @@ func TestBrowserLongSearchUsesSingleRowTailViewport(t *testing.T) {
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
 	commandLine := strings.Join([]string{
 		"exec",
-		shellQuote(skillglassBinary),
+		fx.productShell(t),
 		"browse",
 		"--root",
 		shellQuote(root),
@@ -604,7 +604,7 @@ func TestBrowserHostileTerminalDataUsesSafeCells(t *testing.T) {
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
 	commandLine := strings.Join([]string{
 		"exec",
-		shellQuote(skillglassBinary),
+		fx.productShell(t),
 		"browse",
 		"--root",
 		shellQuote(fx.hostileRoot),
@@ -661,11 +661,19 @@ func TestBrowserHostileTerminalDataUsesSafeCells(t *testing.T) {
 
 func runTmux(t *testing.T, tmux string, fx fixture, socket string, args ...string) string {
 	t.Helper()
-	commandArgs := append([]string{"-L", socket, "-f", "/dev/null"}, args...)
+	commandArgs := append([]string{"-S", fx.tmuxSocket(socket), "-f", "/dev/null"}, args...)
 	command := exec.Command(tmux, commandArgs...)
 	command.Dir = fx.project
 	command.Env = fx.environment()
+	started := time.Now()
 	output, err := command.CombinedOutput()
+	if len(args) > 0 && args[0] == "new-session" {
+		code := 0
+		if err != nil {
+			code = 1
+		}
+		recordEvidenceCommand(t, "tmux-contained-product-start", tmux, commandArgs, fx.project, commandResult{code: code, stdout: output, duration: time.Since(started)})
+	}
 	if err != nil {
 		t.Fatalf("tmux %s: %v\n%s", strings.Join(args, " "), err, output)
 	}
@@ -673,7 +681,7 @@ func runTmux(t *testing.T, tmux string, fx fixture, socket string, args ...strin
 }
 
 func runTmuxIgnoringError(tmux string, fx fixture, socket string, args ...string) {
-	commandArgs := append([]string{"-L", socket, "-f", "/dev/null"}, args...)
+	commandArgs := append([]string{"-S", fx.tmuxSocket(socket), "-f", "/dev/null"}, args...)
 	command := exec.Command(tmux, commandArgs...)
 	command.Dir = fx.project
 	command.Env = fx.environment()

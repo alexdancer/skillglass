@@ -211,3 +211,51 @@ func TestALE29ClaudeRootPluginKeepsIndependentCacheAndSharedReferences(t *testin
 	}
 	assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 }
+
+func TestALE29PluginManifestActivationLimits(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		fields            map[string]any
+		state, diagnostic string
+	}{
+		{"absent", nil, "available", "local-marketplace-plugin"},
+		{"valid", map[string]any{"homepage": "https://example.invalid/docs"}, "available", "local-marketplace-plugin"},
+		{"invalid", map[string]any{"homepage": "not-an-absolute-url"}, "unknown", "homepage"},
+		{"invalid-type", map[string]any{"homepage": 17}, "unknown", "homepage"},
+		{"invalid-null", map[string]any{"homepage": nil}, "unknown", "homepage"},
+		{"repository", map[string]any{"repository": "not-an-absolute-url"}, "available", "local-marketplace-plugin"},
+		{"author-unmodeled", map[string]any{"author": map[string]string{"name": "Fixture"}}, "unknown", "unmodeled native activation constraints"},
+		{"dependencies-unmodeled", map[string]any{"dependencies": []string{"other"}}, "unknown", "unmodeled native activation constraints"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fx, _ := codexFixture(t)
+			path := claudeRootPluginFixture(t, fx, nil, false)
+			plugin := filepath.Dir(path)
+			fields := map[string]any{"name": "demo", "version": "1.0.0"}
+			for key, value := range tc.fields {
+				fields[key] = value
+			}
+			claudeSettings(t, filepath.Join(plugin, ".claude-plugin/plugin.json"), fields)
+			before := treeManifest(t, fx.base)
+			source := claudeAt(t, claudeListResult(t, fx, 0), plugin)
+			if source.Availability.State != tc.state || source.Ownership.State != "managed" {
+				t.Fatalf("activation/provenance: %+v", source)
+			}
+			if tc.state == "unknown" {
+				for _, ref := range source.Availability.References {
+					if ref.Participation == "eligible" {
+						t.Fatal("unvalidated manifest granted eligibility")
+					}
+				}
+			}
+			detail := fx.run(t, "explain", "--agent", "claude-code", "--project", fx.project, source.ID)
+			assertExit(t, detail, 0)
+			for _, needle := range []string{tc.diagnostic, "Plugin: demo@market", "Capability: disable | plugin", "unsupported"} {
+				if !strings.Contains(string(detail.stdout), needle) {
+					t.Fatalf("explain lacks %q: %s", needle, detail.stdout)
+				}
+			}
+			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+		})
+	}
+}

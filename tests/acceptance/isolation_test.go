@@ -324,13 +324,15 @@ func runtimeProfile(executable, allowedRoot string) string {
 (deny file-write*)
 (deny file-read-data (require-not (require-any
  (literal %s)
- (literal "/")
+ (literal "/") %s
  (subpath %s)
+ (subpath "/Library/Application Support/ClaudeCode") (subpath "/Library/Managed Preferences")
+ (literal "/Library/Preferences/com.anthropic.claudecode.plist") (subpath "/etc/codex")
  (subpath "/System")
  (subpath "/usr/lib")
  (subpath "/dev"))))
 (deny process-exec (require-not (literal %s)))
-`, sandboxString(executable), sandboxString(allowedRoot), sandboxString(executable))
+`, sandboxString(executable), ancestorReadLiterals(allowedRoot), sandboxString(allowedRoot), sandboxString(executable)) + absentSystemPolicy()
 }
 
 func sandboxString(value string) string {

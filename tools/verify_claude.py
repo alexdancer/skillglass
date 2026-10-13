@@ -150,21 +150,7 @@ def main():
     }
     write(root / "empty-git-config", "")
     containment = NativeContainment(root, cwd, environment, options.claude, output)
-    git_template = root / "git-template"
-    git_template.mkdir()
-    utility_profile = root / "git-setup.sb"
-    write(utility_profile, containment.profile.read_text() + '(allow file-write* (literal "/dev/null"))\n')
-    git_command = ["/usr/bin/sandbox-exec", "-f", str(utility_profile),
-                   "/Library/Developer/CommandLineTools/usr/bin/git", "init", "-q",
-                   "--template=" + str(git_template), str(repo)]
-    setup = subprocess.run(git_command, cwd=cwd, env=environment,
-                           capture_output=True, text=True, timeout=10)
-    write(output / "git-setup.stdout", setup.stdout)
-    write(output / "git-setup.stderr", setup.stderr)
-    write(output / "git-setup.json", json.dumps({"argv": git_command,
-          "cwd": str(cwd), "environment": environment, "exit_code": setup.returncode,
-          "profile": utility_profile.read_text(), "limit": "Preparatory Git utility only; Claude profile has no device write exception."}, indent=2) + "\n")
-    setup.check_returncode()
+    containment.initialize_git(repo)
     args = ["--print", "--input-format", "stream-json",
             "--output-format", "stream-json", "--verbose", "--strict-mcp-config",
             "--mcp-config", '{"mcpServers":{}}', "--no-session-persistence"]

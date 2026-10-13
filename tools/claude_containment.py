@@ -105,6 +105,25 @@ class NativeContainment:
             raise RuntimeError("native containment controls failed; native launch refused")
         self.ready = True
 
+    def initialize_git(self, repo):
+        """Prepare a real fixture repository with a separate utility policy."""
+        template = self.root / "git-template"
+        template.mkdir()
+        utility_profile = self.root / "git-setup.sb"
+        utility_profile.write_text(self.profile.read_text() + '(allow file-write* (literal "/dev/null"))\n')
+        command = ["/usr/bin/sandbox-exec", "-f", str(utility_profile),
+                   "/Library/Developer/CommandLineTools/usr/bin/git", "init", "-q",
+                   "--template=" + str(template), str(repo)]
+        setup = subprocess.run(command, cwd=self.cwd, env=self.environment,
+                               capture_output=True, text=True, timeout=10)
+        (self.output / "git-setup.stdout").write_text(setup.stdout)
+        (self.output / "git-setup.stderr").write_text(setup.stderr)
+        receipt = {"argv": command, "cwd": str(self.cwd), "environment": self.environment,
+                   "exit_code": setup.returncode, "profile": utility_profile.read_text(),
+                   "limit": "Preparatory Git utility only; Claude profile has no device write exception."}
+        (self.output / "git-setup.json").write_text(json.dumps(receipt, indent=2) + "\n")
+        setup.check_returncode()
+
     def command(self, arguments):
         if not self.ready:
             raise RuntimeError("native containment was not validated")

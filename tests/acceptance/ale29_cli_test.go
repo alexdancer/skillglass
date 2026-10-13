@@ -1,9 +1,9 @@
 package acceptance_test
 
 import (
+	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -262,7 +262,7 @@ func TestALE29ClaudeConfiguredHomeReservedNamesAndUnknownManagedInputs(t *testin
 	claudeSkill(t, filepath.Join(configured, "skills"), "anthropic-skills-guide", "anthropic-skills-guide", "")
 	before := treeManifest(t, fx.base)
 	args := []string{"list", "--agent", "claude-code", "--project", fx.project, "--json"}
-	command := exec.Command(skillglassBinary, args...)
+	command := fx.command(t, context.Background(), args...)
 	command.Env = append(fx.environment(), "CLAUDE_CONFIG_DIR="+configured)
 	command.Dir = fx.project
 	raw, err := command.Output()

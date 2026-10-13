@@ -2,6 +2,7 @@ package collection
 
 import (
 	"encoding/json"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -97,10 +98,14 @@ func discoverClaudePlugins(request *Request, inputs *claudeInputs) map[string]cl
 		}
 		manifestPath := filepath.Join(directory, ".claude-plugin", "plugin.json")
 		manifestRaw, manifestErr := nativeBytes(manifestPath)
-		valid := manifestErr == nil && json.Unmarshal(manifestRaw, &manifest) == nil && manifest.Name == name
+		topologyMatches := manifestErr == nil && json.Unmarshal(manifestRaw, &manifest) == nil && manifest.Name == name
+		manifestLimitation := ""
+		if topologyMatches {
+			manifestLimitation = claudePluginManifestLimitation(manifestRaw)
+		}
 		fact.directory, _ = filepath.EvalSymlinks(directory)
 		fact.provenance = Provenance{Kind: "plugin", PluginID: id, Version: manifest.Version, Evidence: claudeEvidence(EvidenceObserved, "managed-plugin-content", manifestPath, "", "plugin manifest and manager cache/registry locate managed content; ownership is separate from activation")}
-		if !valid {
+		if !topologyMatches {
 			fact.provenance.Evidence.Kind = EvidenceUnknown
 			fact.provenance.Evidence.Reason = "cache or registry indicates managed provenance; matching plugin manifest is not established"
 		}
@@ -115,14 +120,14 @@ func discoverClaudePlugins(request *Request, inputs *claudeInputs) map[string]cl
 					applicable = true
 					if sameClaudePath(entry.InstallPath, directory) {
 						active = true
-						if valid && entry.Version != "" && manifest.Version != "" && entry.Version != manifest.Version {
+						if topologyMatches && entry.Version != "" && manifest.Version != "" && entry.Version != manifest.Version {
 							active = false
 						}
 					}
 				}
 			}
 			localSource := localSources[id]
-			if localSource != "" && sameClaudePath(localSource, directory) && valid && applicable && !inputs.uncertain {
+			if localSource != "" && sameClaudePath(localSource, directory) && topologyMatches && manifestLimitation == "" && applicable && !inputs.uncertain {
 				setting, enabled := inputs.plugins[id]
 				if enabled && setting.value == "true" {
 					fact.participation = ParticipationEligible
@@ -136,16 +141,19 @@ func discoverClaudePlugins(request *Request, inputs *claudeInputs) map[string]cl
 				fact.activation = claudeEvidence(EvidenceInferred, "inactive-plugin-installation", registry, "installPath / projectPath", "this cached version or project-scoped installation is not the applicable registered installation")
 			}
 		}
+		if fact.participation == ParticipationUnknown && manifestLimitation != "" {
+			fact.activation = claudeEvidence(EvidenceUnknown, "plugin-manifest-unverified", manifestPath, "", manifestLimitation)
+		}
 		skillsDirectory := filepath.Join(directory, "skills")
 		roots := []string{skillsDirectory}
-		if valid && len(manifest.Skills) == 0 {
+		if topologyMatches && len(manifest.Skills) == 0 {
 			if _, err := os.Stat(skillsDirectory); os.IsNotExist(err) {
 				if info, err := os.Stat(filepath.Join(directory, "SKILL.md")); err == nil && info.Mode().IsRegular() {
 					roots = append(roots, directory)
 				}
 			}
 		}
-		if valid && len(manifest.Skills) > 0 {
+		if topologyMatches && len(manifest.Skills) > 0 {
 			var one string
 			var extras []string
 			if json.Unmarshal(manifest.Skills, &one) == nil {
@@ -264,4 +272,34 @@ func claudeLocalPluginSources(request *Request, inputs *claudeInputs) map[string
 		}
 	}
 	return result
+}
+
+func claudePluginManifestLimitation(raw []byte) string {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return "plugin manifest cannot be decoded"
+	}
+	if value, present := fields["homepage"]; present {
+		var homepage string
+		if json.Unmarshal(value, &homepage) != nil || string(value) == "null" {
+			return "homepage must be a URL string; this manifest cannot establish native plugin activation"
+		}
+		parsed, err := url.Parse(homepage)
+		if err != nil || !parsed.IsAbs() {
+			return "homepage is not an absolute URL; Claude 2.1.282 rejects the recorded invalid form"
+		}
+	}
+	names := make([]string, 0, len(fields))
+	for name := range fields {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		switch name {
+		case "name", "version", "skills", "homepage", "repository":
+		default:
+			return "manifest field " + name + " has unmodeled native activation constraints; partial manifest decoding is not full native schema validation"
+		}
+	}
+	return ""
 }

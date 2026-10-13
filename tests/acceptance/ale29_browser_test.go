@@ -28,7 +28,7 @@ func TestALE29ClaudeBrowserExplainsFiltersAndRefreshesWithoutWrites(t *testing.T
 			before := treeManifest(t, fx.base)
 			socket := fmt.Sprintf("ale29-%d-%d", os.Getpid(), size.width)
 			defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-			command := "exec " + shellQuote(skillglassBinary) + " browse --agent claude-code --project " + shellQuote(fx.project) + " --availability explicit-only"
+			command := "exec " + fx.productShell(t) + " browse --agent claude-code --project " + shellQuote(fx.project) + " --availability explicit-only"
 			runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser", command)
 			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height))
@@ -93,6 +93,12 @@ func TestALE29ClaudeBrowserExplainsFiltersAndRefreshesWithoutWrites(t *testing.T
 			before = treeManifest(t, fx.base)
 			send("r", "Refresh: selected directory object retained")
 			collect("05-root-plugin-enabled", "Availability: available", "Plugin: demo@market", "local-marketplace-plugin", "Capability: disable | plugin", "unsupported")
+			plugin := filepath.Join(fx.base, "allowed", "root-market", "demo")
+			claudeSettings(t, filepath.Join(plugin, ".claude-plugin/plugin.json"), map[string]any{"name": "demo", "version": "1.0.0", "homepage": "not-an-absolute-url"})
+			before = treeManifest(t, fx.base)
+			send("g", "Read lines 1-")
+			send("r", "Availability: unknown")
+			collect("06-invalid-manifest", "Availability: unknown", "Plugin: demo@market", "plugin-manifest-unverified", "homepage", "Capability: disable | plugin", "unsupported")
 			send("Escape", "SKILLGLASS | Sources")
 			scope := send("s", "SKILLGLASS | Scope and filters", "Agent: claude-code", "Validated: Claude Code 2.1.282")
 			assertPaneCells(t, scope, size.width, size.height)
