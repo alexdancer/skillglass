@@ -36,9 +36,8 @@ func TestBrowserPTYJourney(t *testing.T) {
 	normal := sourceNamed(t, inventory.Sources, "normal-skill")
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	command := exec.CommandContext(
-		ctx,
-		skillglassBinary,
+	command := fx.productCommand(
+		t, ctx,
 		"browse",
 		"--root",
 		fx.cleanRoot,
@@ -135,8 +134,8 @@ func TestBrowserPTYJourney(t *testing.T) {
 	recordEvidenceCommand(
 		t,
 		"browser-pty",
-		skillglassBinary,
-		[]string{"browse", "--root", fx.cleanRoot, "--project", fx.project},
+		command.Path,
+		command.Args[1:],
 		fx.project,
 		commandResult{stdout: raw.Bytes(), duration: time.Since(started)},
 	)
@@ -165,7 +164,7 @@ func TestBrowserTmuxCellsAtRequiredWidths(t *testing.T) {
 			defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
 			commandLine := strings.Join([]string{
 				"exec",
-				shellQuote(skillglassBinary),
+				fx.productShell(t),
 				"browse",
 				"--root",
 				shellQuote(fx.cleanRoot),
@@ -318,7 +317,7 @@ func TestBrowserManyRootsHasScrollableScopeAt60Columns(t *testing.T) {
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
 	parts := []string{
 		"exec",
-		shellQuote(skillglassBinary),
+		fx.productShell(t),
 		"browse",
 		"--project",
 		shellQuote(longProject),
@@ -472,7 +471,7 @@ func TestBrowserLongSearchUsesSingleRowTailViewport(t *testing.T) {
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
 	commandLine := strings.Join([]string{
 		"exec",
-		shellQuote(skillglassBinary),
+		fx.productShell(t),
 		"browse",
 		"--root",
 		shellQuote(root),
@@ -604,7 +603,7 @@ func TestBrowserHostileTerminalDataUsesSafeCells(t *testing.T) {
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
 	commandLine := strings.Join([]string{
 		"exec",
-		shellQuote(skillglassBinary),
+		fx.productShell(t),
 		"browse",
 		"--root",
 		shellQuote(fx.hostileRoot),

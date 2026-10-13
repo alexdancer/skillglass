@@ -176,6 +176,7 @@ func geminiWithin(root, path string) bool {
 }
 
 var geminiFrontmatter = regexp.MustCompile(`^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n([\s\S]*))?`)
+var geminiDescriptionContinuation = regexp.MustCompile(`^[ \t]+\S`)
 var geminiNameCharacters = regexp.MustCompile(`[:\\/<>*?"|]`)
 
 func geminiNativeName(source Source) (string, Evidence, bool) {
@@ -190,14 +191,18 @@ func geminiNativeName(source Source) (string, Evidence, bool) {
 	rule := "native-frontmatter-name"
 	if err != nil || !nameOK || !descriptionOK {
 		nameOK, descriptionOK = false, false
-		for _, line := range strings.Split(match[1], "\n") {
-			line = strings.TrimSpace(line)
+		lines := strings.Split(strings.ReplaceAll(match[1], "\r\n", "\n"), "\n")
+		for i := 0; i < len(lines); i++ {
+			line := strings.TrimSpace(lines[i])
 			if strings.HasPrefix(line, "name:") {
 				name = strings.TrimSpace(strings.TrimPrefix(line, "name:"))
 				nameOK = true
 			}
 			if strings.HasPrefix(line, "description:") {
 				descriptionOK = true
+				for i+1 < len(lines) && geminiDescriptionContinuation.MatchString(lines[i+1]) {
+					i++
+				}
 			}
 		}
 		rule = "native-simple-frontmatter"

@@ -24,7 +24,7 @@ func TestBrowserInvalidManifestEncodingHasRecoveryHint(t *testing.T) {
 	before := treeManifest(t, fx.base)
 	socket := fmt.Sprintf("skillglass-encoding-%d", os.Getpid())
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-	commandLine := strings.Join([]string{"exec", shellQuote(skillglassBinary), "browse", "--root", shellQuote(bundle), "--project", shellQuote(fx.project)}, " ")
+	commandLine := strings.Join([]string{"exec", fx.productShell(t), "browse", "--root", shellQuote(bundle), "--project", shellQuote(fx.project)}, " ")
 	runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", "120", "-y", "35", "-s", "encoding", commandLine)
 	runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 	runTmux(t, tmux, fx, socket, "set-option", "-w", "-t", "encoding:0", "remain-on-exit", "on")

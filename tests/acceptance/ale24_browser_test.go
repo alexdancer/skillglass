@@ -41,7 +41,7 @@ func TestALE24BrowserModesAndReferencesAtRequiredWidths(t *testing.T) {
 			socket := fmt.Sprintf("skillglass-ale24-modes-%d-%d", os.Getpid(), width)
 			defer runTmuxIgnoringError(tmux, fx.fixture, socket, "kill-server")
 			commandLine := strings.Join([]string{
-				"exec", shellQuote(skillglassBinary), "browse",
+				"exec", fx.productShell(t), "browse",
 				"--root", shellQuote(fx.rootA),
 				"--project", shellQuote(fx.project),
 				"--project-root", shellQuote(fx.rootB),
@@ -164,7 +164,7 @@ func TestALE24BrowserRefreshSelectionAndProblemPaste(t *testing.T) {
 	socket := fmt.Sprintf("skillglass-ale24-refresh-%d", os.Getpid())
 	defer runTmuxIgnoringError(tmux, fx.fixture, socket, "kill-server")
 	commandLine := strings.Join([]string{
-		"exec", shellQuote(skillglassBinary), "browse",
+		"exec", fx.productShell(t), "browse",
 		"--root", shellQuote(fx.rootA),
 		"--project", shellQuote(fx.project),
 		"--project-root", shellQuote(fx.rootB),

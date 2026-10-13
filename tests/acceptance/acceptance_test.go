@@ -791,6 +791,7 @@ func newFixture(t *testing.T) fixture {
 	writeFile(t, filepath.Join(malformed, "SKILL.md"), []byte(
 		"---\nname: [unterminated\nMALFORMED_RAW_SENTINEL\n",
 	), 0o644)
+	fx.productProfile(t)
 	return fx
 }
 
@@ -798,7 +799,7 @@ func (fx fixture) run(t *testing.T, args ...string) commandResult {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, skillglassBinary, args...)
+	command := fx.productCommand(t, ctx, args...)
 	command.Dir = fx.project
 	command.Env = fx.environment()
 	command.Stdin = bytes.NewReader(nil)
@@ -821,13 +822,15 @@ func (fx fixture) run(t *testing.T, args ...string) commandResult {
 		code = exitError.ExitCode()
 	}
 	result := commandResult{code: code, stdout: stdout.Bytes(), stderr: stderr.Bytes(), duration: duration}
-	recordEvidenceCommand(t, "public-cli", skillglassBinary, args, fx.project, result)
+	recordEvidenceCommand(t, "public-cli", command.Path, command.Args[1:], fx.project, result)
 	return result
 }
 
 func (fx fixture) environment() []string {
 	return []string{
 		"HOME=" + fx.home,
+		"GEMINI_CLI_SYSTEM_SETTINGS_PATH=" + filepath.Join(fx.home, ".gemini", "fixture-system-settings.json"),
+		"GEMINI_CLI_SYSTEM_DEFAULTS_PATH=" + filepath.Join(fx.home, ".gemini", "fixture-system-defaults.json"),
 		"XDG_CONFIG_HOME=" + fx.xdgConfig,
 		"XDG_DATA_HOME=" + fx.xdgData,
 		"XDG_CACHE_HOME=" + fx.xdgCache,

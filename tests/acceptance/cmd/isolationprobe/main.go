@@ -17,7 +17,7 @@ type result struct {
 }
 
 func main() {
-	if len(os.Args) != 5 {
+	if len(os.Args) != 5 && len(os.Args) != 6 {
 		os.Exit(2)
 	}
 	allowed, allowedError := os.ReadFile(os.Args[1])
@@ -39,6 +39,10 @@ func main() {
 		"file_write_denied":    os.IsPermission(writeError),
 		"network_denied":       denied(networkError),
 		"child_exec_denied":    os.IsPermission(childError),
+	}
+	if len(os.Args) == 6 {
+		_, err := os.ReadFile(os.Args[5])
+		checks["system_absent"] = os.IsNotExist(err)
 	}
 	passed := true
 	for _, check := range checks {

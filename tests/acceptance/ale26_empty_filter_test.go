@@ -75,7 +75,7 @@ func TestALE26BrowserAvailabilityEmptyAndGenericShortcut(t *testing.T) {
 				t.Cleanup(func() { assertTreeUnchanged(t, before, treeManifest(t, fx.base)) })
 				socket := fmt.Sprintf("ale26-empty-%d-%d-%s", os.Getpid(), size.width, kind)
 				defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-				runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser", "exec "+shellQuote(skillglassBinary)+" browse "+scope)
+				runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser", "exec "+fx.productShell(t)+" browse "+scope)
 				runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 				runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height))
 				pane := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "Root filter: all")

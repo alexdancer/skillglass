@@ -19,7 +19,7 @@ func TestBrowserBracketedPasteIsSearchData(t *testing.T) {
 	before := treeManifest(t, fx.base)
 	socket := fmt.Sprintf("skillglass-paste-%d", os.Getpid())
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-	commandLine := strings.Join([]string{"exec", shellQuote(skillglassBinary), "browse", "--root", shellQuote(fx.cleanRoot), "--project", shellQuote(fx.project)}, " ")
+	commandLine := strings.Join([]string{"exec", fx.productShell(t), "browse", "--root", shellQuote(fx.cleanRoot), "--project", shellQuote(fx.project)}, " ")
 	runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", "60", "-y", "30", "-s", "paste", commandLine)
 	runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 	runTmux(t, tmux, fx, socket, "set-option", "-w", "-t", "paste:0", "remain-on-exit", "on")

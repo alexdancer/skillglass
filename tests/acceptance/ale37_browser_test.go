@@ -23,7 +23,7 @@ func TestALE37BrowserExplanationAvailabilityAndRefresh(t *testing.T) {
 			before := treeManifest(t, fx.base)
 			socket := fmt.Sprintf("ale37-%d-%d", os.Getpid(), width)
 			defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-			command := "exec " + shellQuote(skillglassBinary) + " browse --agent gemini --project " + shellQuote(fx.project) + " --availability ask"
+			command := "exec " + fx.productShell(t) + " browse --agent gemini --project " + shellQuote(fx.project) + " --availability ask"
 			runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", strconv.Itoa(width), "-y", "24", "-s", "browser", command)
 			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(width), "-y", "24")
@@ -86,6 +86,60 @@ func TestALE37BrowserExplanationAvailabilityAndRefresh(t *testing.T) {
 			assertPaneCells(t, pane, width, 24)
 			writeEvidence(t, fmt.Sprintf("tmux/ale37/%d/05-scope.txt", width), []byte(pane))
 			send("Escape", "SKILLGLASS | Sources")
+			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "q")
+			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+		})
+	}
+}
+
+func TestALE37BrowserMalformedDisabledNativeName(t *testing.T) {
+	tmux, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, width := range []int{48, 80} {
+		t.Run(strconv.Itoa(width), func(t *testing.T) {
+			fx := geminiFixture(t)
+			writeFile(t, filepath.Join(fx.home, ".gemini/skills/fallback/SKILL.md"), []byte("---\nname: actual-native\ndescription: A workflow: details\n  name: fictional-native\n---\nINERT_RAW_BYTES\n"), 0600)
+			writeFile(t, filepath.Join(fx.home, ".gemini/settings.json"), []byte(`{"security":{"folderTrust":{"enabled":false}},"skills":{"disabled":["actual-native"]}}`), 0600)
+			before := treeManifest(t, fx.base)
+			socket := fmt.Sprintf("ale37-malformed-%d-%d", os.Getpid(), width)
+			defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
+			shell := "exec " + fx.productShell(t) + " browse --agent gemini --project " + shellQuote(fx.project) + " --availability disabled"
+			runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", strconv.Itoa(width), "-y", "24", "-s", "browser", shell)
+			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
+			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(width), "-y", "24")
+			frame := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "disabled (inferred)", "Focus: 1/1")
+			writeEvidence(t, fmt.Sprintf("tmux/ale37-repair/%d/01-disabled.txt", width), []byte(frame))
+			frame = actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter") }, "Read lines")
+			rows := make(map[int]string)
+			var complete string
+			for page := 0; page < 40; page++ {
+				assertPaneCells(t, frame, width, 24)
+				first, last, total, body := sourceDetailBody(t, frame)
+				for index, row := range body {
+					rows[first+index] = row
+				}
+				ordered := make([]string, total)
+				for index := range ordered {
+					ordered[index] = rows[index+1]
+				}
+				complete = strings.Join(ordered, "\n")
+				writeEvidence(t, fmt.Sprintf("tmux/ale37-repair/%d/02-detail-page-%02d.txt", width, page), []byte(frame))
+				if last == total {
+					break
+				}
+				previous := first
+				frame = actOnPane(t, tmux, fx, socket, "browser:0.0", func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "PageDown") }, func(next paneSnapshot) bool { first, _, _ := sourceDetailRange(next.cells); return first > previous }).cells
+			}
+			for _, needle := range []string{"Native name: actual-native", "Availability: disabled", "Permission: denied", "malformed-manifest", "name: fictional-native", "INERT_RAW_BYTES", "fixture-system-settings.json", "fixture-system-defaults.json"} {
+				if !paneContains(complete, needle) {
+					t.Fatalf("missing %s in browser:\n%s", needle, complete)
+				}
+			}
+			if paneContains(complete, "/Library/Application Support/GeminiCli") {
+				t.Fatal("live system input in browser")
+			}
 			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "q")
 			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 		})
