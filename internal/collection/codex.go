@@ -2,81 +2,17 @@ package collection
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-func codexAncestors(project ProjectContext) ([]string, string, error) {
-	if !project.Selected {
-		return nil, "", nil
-	}
-	selected, err := filepath.EvalSymlinks(project.Path)
-	if err != nil {
-		return nil, "", err
-	}
-	info, err := os.Stat(selected)
-	if err != nil || !info.IsDir() {
-		return nil, "", errors.New("selected project is not a directory")
-	}
-	var ancestors []string
-	for path := selected; ; path = filepath.Dir(path) {
-		ancestors = append(ancestors, path)
-		if actualGitBoundary(path) {
-			return ancestors, path, nil
-		}
-		if filepath.Dir(path) == path {
-			break
-		}
-	}
-	return []string{selected}, "", nil
-}
-func actualGitBoundary(path string) bool {
-	marker := filepath.Join(path, ".git")
-	info, err := os.Stat(marker)
-	if err != nil {
-		return false
-	}
-	gitdir := marker
-	if !info.IsDir() {
-		raw, err := nativeBytes(marker)
-		if err != nil {
-			return false
-		}
-		text := strings.TrimSpace(string(raw))
-		if !strings.HasPrefix(text, "gitdir: ") {
-			return false
-		}
-		gitdir = strings.TrimPrefix(text, "gitdir: ")
-		if !filepath.IsAbs(gitdir) {
-			gitdir = filepath.Join(path, gitdir)
-		}
-	}
-	head, err := nativeBytes(filepath.Join(gitdir, "HEAD"))
-	if err != nil || len(head) == 0 {
-		return false
-	}
-	if objects, err := os.Stat(filepath.Join(gitdir, "objects")); err == nil && objects.IsDir() {
-		return true
-	}
-	common, err := nativeBytes(filepath.Join(gitdir, "commondir"))
-	if err != nil {
-		return false
-	}
-	commonDir := strings.TrimSpace(string(common))
-	if !filepath.IsAbs(commonDir) {
-		commonDir = filepath.Join(gitdir, commonDir)
-	}
-	objects, err := os.Stat(filepath.Join(commonDir, "objects"))
-	return err == nil && objects.IsDir()
-}
 func appendNativeRoot(request *Request, path string, context ReferenceContext, origin string) {
 	request.Roots = append(request.Roots, DiscoveryRoot{ID: RootID(stableID("root_codex", origin, path)), Path: path, Context: context, Origin: origin, Optional: true})
 }
 func buildCodex(ctx context.Context, request Request) (*Snapshot, error) {
 	original := cloneRequest(request)
-	ancestors, boundary, err := codexAncestors(request.Project)
+	ancestors, boundary, err := nativeProjectAncestors(request.Project)
 	inputs := readCodexInputs(request, ancestors, boundary)
 	if err != nil {
 		inputs.problem(request.Project.Path, "selected project cannot be resolved; project coverage is unknown")
@@ -112,7 +48,7 @@ func buildCodex(ctx context.Context, request Request) (*Snapshot, error) {
 		snapshot.sources[id] = explainCodexSource(snapshot, id, roots, plugins, &inputs)
 	}
 	applyCodexCoexistence(snapshot)
-	applyCodexProblems(snapshot, inputs.problems, roots)
+	applyNativeProblems(snapshot, inputs.problems, roots)
 
 	return snapshot, nil
 }
@@ -321,76 +257,6 @@ func explainCodexSource(snapshot *Snapshot, id SourceID, roots map[RootID]Discov
 	}
 	source.Availability = explanation
 	return source
-}
-
-func applyCodexProblems(snapshot *Snapshot, problems []Problem, roots map[RootID]DiscoveryRoot) {
-	merged := make(map[ProblemID]Problem, len(problems))
-	for _, problem := range problems {
-		current, exists := merged[problem.ID]
-		if !exists {
-			current = problem
-		}
-		current.SourceIDs = appendUniqueSourceIDs(current.SourceIDs, problem.SourceIDs...)
-		current.ReferenceIDs = appendUniqueReferenceIDs(current.ReferenceIDs, problem.ReferenceIDs...)
-		current.RootIDs = appendUniqueRootIDs(current.RootIDs, problem.RootIDs...)
-		merged[problem.ID] = current
-	}
-	known := make(map[ProblemID]bool)
-	for _, problem := range snapshot.problems {
-		known[problem.ID] = true
-	}
-	for _, problem := range problems {
-		if known[problem.ID] {
-			continue
-		}
-		problem = merged[problem.ID]
-		sourceLocal := len(problem.SourceIDs) > 0
-		for _, rid := range snapshot.referenceOrder {
-			reference := snapshot.references[rid]
-			if sourceLocal {
-				if !codexContainsSource(problem.SourceIDs, reference.Source) {
-					continue
-				}
-			} else if roots[reference.Root].Origin == "" {
-				continue
-			}
-			problem.RootIDs = appendUniqueRootIDs(problem.RootIDs, reference.Root)
-			problem.ReferenceIDs = appendUniqueReferenceIDs(problem.ReferenceIDs, rid)
-			problem.SourceIDs = appendUniqueSourceIDs(problem.SourceIDs, reference.Source)
-		}
-		if len(problem.RootIDs) == 0 && !sourceLocal {
-			for _, root := range snapshot.scope.Roots {
-				if root.Origin != "" {
-					problem.RootIDs = append(problem.RootIDs, root.ID)
-				}
-			}
-		}
-		snapshot.problems = append(snapshot.problems, problem)
-		for _, id := range problem.SourceIDs {
-			source := snapshot.sources[id]
-			source.Problems = append(source.Problems, problem)
-			snapshot.sources[id] = source
-		}
-		for _, id := range problem.ReferenceIDs {
-			reference := snapshot.references[id]
-			reference.Problems = append(reference.Problems, problem)
-			snapshot.references[id] = reference
-		}
-		if problem.LimitsCoverage {
-			snapshot.scope.Completeness = Incomplete
-		}
-		known[problem.ID] = true
-	}
-	recountRootReports(snapshot.scope.Roots, snapshot.references, snapshot.problems)
-}
-
-func codexContainsSource(values []SourceID, id SourceID) bool {
-	for _, value := range values {
-		if value == id {
-			return true
-		}
-	}
-	return false
 }
 
 func applyCodexCoexistence(snapshot *Snapshot) {

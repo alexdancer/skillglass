@@ -2,10 +2,8 @@ package collection
 
 import (
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
-	"syscall"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -37,13 +35,6 @@ type codexInputs struct {
 	trustedProject bool
 }
 
-func nativeHome() (string, error) {
-	home := os.Getenv("HOME")
-	if home == "" {
-		return "", errors.New("--agent codex requires HOME to bound native discovery")
-	}
-	return filepath.Abs(home)
-}
 func codexHome(home string) string {
 	if value := os.Getenv("CODEX_HOME"); value != "" {
 		if path, err := filepath.Abs(value); err == nil {
@@ -56,36 +47,6 @@ func codexEvidence(kind EvidenceKind, rule, path, setting, reason string) Eviden
 	return Evidence{Kind: kind, Rule: rule, InputPath: path, Setting: setting, AgentVersion: codexValidatedVersion, Reason: reason}
 }
 
-// Only bounded regular files are opened; FIFOs, devices and oversized inputs cannot block browsing.
-func nativeBytes(path string) ([]byte, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return nil, err
-	}
-	if !info.Mode().IsRegular() {
-		return nil, errors.New("native input is not a regular file")
-	}
-	if info.Size() > maxManifestBytes {
-		return nil, errors.New("native input exceeds read limit")
-	}
-	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	opened, err := file.Stat()
-	if err != nil || !opened.Mode().IsRegular() {
-		return nil, errors.New("native input changed file kind during read")
-	}
-	raw, err := io.ReadAll(io.LimitReader(file, maxManifestBytes+1))
-	if err != nil {
-		return nil, err
-	}
-	if int64(len(raw)) > maxManifestBytes {
-		return nil, errors.New("native input exceeds read limit")
-	}
-	return raw, nil
-}
 func (inputs *codexInputs) problem(path, reason string) {
 	inputs.problems = append(inputs.problems, makeProblem(ProblemNativeInput, path, reason, nil, true))
 	inputs.uncertain = true
@@ -244,12 +205,4 @@ func (inputs *codexInputs) permission(manifest string) PermissionExplanation {
 		result.Evidence = codexEvidence(EvidenceInferred, "manifest-selector", inputs.selectedLayer, "skills.config.path="+choice.Path, "manifest selector matches the canonical source; folder selectors do not match on this version")
 	}
 	return result
-}
-
-func nativeAbsent(path string, err error) bool {
-	if !errors.Is(err, os.ErrNotExist) {
-		return false
-	}
-	_, linkErr := os.Lstat(path)
-	return errors.Is(linkErr, os.ErrNotExist)
 }
