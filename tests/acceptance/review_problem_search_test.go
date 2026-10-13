@@ -114,7 +114,7 @@ func TestReviewBrowserProblemSearchFindsOriginalAlias(t *testing.T) {
 	before := treeManifest(t, fx.base)
 	socket := fmt.Sprintf("skillglass-problem-search-%d", os.Getpid())
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-	commandLine := strings.Join([]string{"exec", shellQuote(skillglassBinary), "browse", "--root", shellQuote(custom), "--project", shellQuote(fx.project), "--project-root", shellQuote(project)}, " ")
+	commandLine := strings.Join([]string{"exec", fx.productShell(t, false), "browse", "--root", shellQuote(custom), "--project", shellQuote(fx.project), "--project-root", shellQuote(project)}, " ")
 	runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", "60", "-y", "30", "-s", "search", commandLine)
 	runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 	runTmux(t, tmux, fx, socket, "set-option", "-w", "-t", "search:0", "remain-on-exit", "on")

@@ -25,7 +25,7 @@ func TestALE26BrowserAvailabilityExplanationFilterAndRefresh(t *testing.T) {
 			before := treeManifest(t, fx.base)
 			socket := fmt.Sprintf("ale26-%d-%d-%d", os.Getpid(), width, height)
 			defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-			command := "exec " + shellQuote(skillglassBinary) + " browse --agent codex --project " + shellQuote(fx.project) + " --availability available"
+			command := "exec " + fx.productShell(t, false) + " browse --agent codex --project " + shellQuote(fx.project) + " --availability available"
 			runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", strconv.Itoa(width), "-y", strconv.Itoa(height), "-s", "browser", command)
 			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(width), "-y", strconv.Itoa(height))
@@ -124,7 +124,7 @@ func TestALE26BrowserContextCycleRecoversGenericAndPreservesNativeOrder(t *testi
 			}
 			socket := fmt.Sprintf("ale26-context-%d-%s", os.Getpid(), initial)
 			defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-			runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", "48", "-y", "24", "-s", "browser", "exec "+shellQuote(skillglassBinary)+" browse "+scope)
+			runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", "48", "-y", "24", "-s", "browser", "exec "+fx.productShell(t, false)+" browse "+scope)
 			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", "48", "-y", "24")
 			current := initial

@@ -38,7 +38,7 @@ type publicComparison struct {
 func compareFixture(t *testing.T) (fixture, string, string, string) {
 	t.Helper()
 	fx := newFixture(t)
-	root := filepath.Join(fx.base, "compare")
+	root := filepath.Join(fx.base, "allowed", "compare")
 	a, b := filepath.Join(root, "left"), filepath.Join(root, "right")
 	for _, p := range []string{a, b} {
 		writeFile(t, filepath.Join(p, "SKILL.md"), []byte("---\nname: same-name\ndescription: compare fixture\n---\nSame instructions\n"), 0600)
@@ -124,8 +124,8 @@ func TestALE25PublicIncompleteCoverage(t *testing.T) {
 			fx, root, a, b := compareFixture(t)
 			switch kind {
 			case "external":
-				writeFile(t, filepath.Join(fx.base, "outside"), []byte("external target"), 0600)
-				if err := os.Symlink(filepath.Join(fx.base, "outside"), filepath.Join(a, "external")); err != nil {
+				writeFile(t, filepath.Join(fx.base, "allowed", "external-file"), []byte("external target"), 0600)
+				if err := os.Symlink(filepath.Join(fx.base, "allowed", "external-file"), filepath.Join(a, "external")); err != nil {
 					t.Fatal(err)
 				}
 			case "broken":
@@ -141,7 +141,7 @@ func TestALE25PublicIncompleteCoverage(t *testing.T) {
 			case "limit":
 				writeFile(t, filepath.Join(a, "large"), bytes.Repeat([]byte("x"), 8*1024*1024+1), 0600)
 			case "linked-manifest":
-				external := filepath.Join(fx.base, "manifest")
+				external := filepath.Join(fx.base, "allowed", "manifest")
 				writeFile(t, external, []byte("---\nname: same-name\n---\nlinked\n"), 0600)
 				for _, p := range []string{a, b} {
 					if err := os.Remove(filepath.Join(p, "SKILL.md")); err != nil {
@@ -188,7 +188,7 @@ func assertTreeUnchanged(t *testing.T, a, b []byte) {
 
 func TestALE25PublicLinksSharedReferencesAndBoundedDiff(t *testing.T) {
 	fx, root, a, b := compareFixture(t)
-	aliasRoot := filepath.Join(fx.base, "alias-root")
+	aliasRoot := filepath.Join(fx.base, "allowed", "alias-root")
 	if err := os.Mkdir(aliasRoot, 0700); err != nil {
 		t.Fatal(err)
 	}

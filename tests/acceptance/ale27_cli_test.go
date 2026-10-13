@@ -27,9 +27,8 @@ func changeCommand(t *testing.T, fx fixture, extraProfile string, args ...string
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	profile := "(version 1)(allow default)(deny network*)" + extraProfile
-	argv := append([]string{"-p", profile, skillglassBinary}, args...)
-	cmd := exec.CommandContext(ctx, "/usr/bin/sandbox-exec", argv...)
+	argv := fx.launchArgs(t, skillglassBinary, true, extraProfile, args...)
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Env = fx.environment()
 	cmd.Dir = fx.project
 	var stdout, stderr bytes.Buffer
@@ -49,7 +48,7 @@ func changeCommand(t *testing.T, fx fixture, extraProfile string, args ...string
 		t.Fatal("change timed out")
 	}
 	result := commandResult{code: code, stdout: stdout.Bytes(), stderr: stderr.Bytes(), duration: time.Since(started)}
-	recordEvidenceCommand(t, "offline-public-mutation", "/usr/bin/sandbox-exec", argv, fx.project, result)
+	recordEvidenceCommand(t, "offline-public-mutation", argv[0], argv[1:], fx.project, result)
 	return result
 }
 func changeRun(t *testing.T, fx fixture, choice, id, token string, want int, extra ...string) changeReceipt {
@@ -354,10 +353,11 @@ func TestALE27WrongConfirmationConcurrencyAndWriteDenial(t *testing.T) {
 		t.Fatalf("denial %+v", out)
 	}
 	assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+	argv := fx.launchArgs(t, skillglassBinary, true, "", args...)
 	results := make(chan commandResult, 2)
 	for i := 0; i < 2; i++ {
 		go func() {
-			cmd := exec.Command(skillglassBinary, args...)
+			cmd := exec.Command(argv[0], argv[1:]...)
 			cmd.Env = fx.environment()
 			cmd.Dir = fx.project
 			raw, err := cmd.Output()

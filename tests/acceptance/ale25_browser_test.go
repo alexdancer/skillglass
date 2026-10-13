@@ -21,7 +21,7 @@ func TestALE25BrowserCompareCurrentBytesAndStaleSelection(t *testing.T) {
 			before := treeManifest(t, fx.base)
 			socket := fmt.Sprintf("ale25-%d-%d", os.Getpid(), width)
 			defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-			commandLine := "exec " + shellQuote(skillglassBinary) + " browse --root " + shellQuote(root) + " --project " + shellQuote(fx.project)
+			commandLine := "exec " + fx.productShell(t, false) + " browse --root " + shellQuote(root) + " --project " + shellQuote(fx.project)
 			runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", strconv.Itoa(width), "-y", "30", "-s", "browser", commandLine)
 			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(width), "-y", "30")
@@ -53,7 +53,7 @@ func TestALE25BrowserCompareCurrentBytesAndStaleSelection(t *testing.T) {
 			// The marked directory is still selected through discovery identity, then replaced.
 			// Neither independent replacement is an acceptable substitute for its old ID.
 			for _, p := range []string{a, b} {
-				if err := os.Rename(p, filepath.Join(fx.base, filepath.Base(p)+"-old")); err != nil {
+				if err := os.Rename(p, filepath.Join(fx.base, "allowed", filepath.Base(p)+"-old")); err != nil {
 					t.Fatal(err)
 				}
 				writeFile(t, filepath.Join(p, "SKILL.md"), []byte("---\nname: replacement\n---\nREPLACEMENT_NOT_SELECTED\n"), 0600)

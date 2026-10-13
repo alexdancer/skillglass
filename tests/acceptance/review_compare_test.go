@@ -236,7 +236,7 @@ func TestReviewComparisonAncestorTypeProvesMembership(t *testing.T) {
 			default:
 				target := "target"
 				if cause == "external-directory-link" {
-					target = filepath.Join(fx.base, "external-target")
+					target = filepath.Join(fx.base, "allowed", "external-target")
 				}
 				if cause == "broken-link" {
 					target = "missing-target"

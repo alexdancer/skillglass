@@ -3,6 +3,7 @@ package acceptance_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -318,6 +319,11 @@ func runSandboxBrowser(t *testing.T, fx fixture, profile, executable string) []b
 }
 
 func runtimeProfile(executable, allowedRoot string) string {
+	ancestors := ""
+	for parent := filepath.Dir(allowedRoot); parent != "/"; parent = filepath.Dir(parent) {
+		ancestors += " (literal " + sandboxString(parent) + ")\n"
+	}
+	absent := sandboxString(filepath.Join(filepath.Dir(allowedRoot), "excluded", "controlled-system"))
 	return fmt.Sprintf(`(version 1)
 (allow default)
 (deny network*)
@@ -325,12 +331,16 @@ func runtimeProfile(executable, allowedRoot string) string {
 (deny file-read-data (require-not (require-any
  (literal %s)
  (literal "/")
+%s (subpath %s)
+ (subpath "/etc/codex")
+ (subpath "/private/etc/codex")
  (subpath %s)
  (subpath "/System")
  (subpath "/usr/lib")
  (subpath "/dev"))))
+(deny file-read* (with errno 2) (require-any (subpath "/etc/codex") (subpath "/private/etc/codex") (subpath %s)))
 (deny process-exec (require-not (literal %s)))
-`, sandboxString(executable), sandboxString(allowedRoot), sandboxString(executable))
+`, sandboxString(executable), ancestors, sandboxString(allowedRoot), absent, absent, sandboxString(executable))
 }
 
 func sandboxString(value string) string {
@@ -370,5 +380,161 @@ func setListenerDeadline(t *testing.T, listener net.Listener, deadline time.Time
 	}
 	if err := tcpListener.SetDeadline(deadline); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestOrdinaryCLIRejectsOutsideFixtureContent(t *testing.T) {
+	fx := newFixture(t)
+	outside := filepath.Join(fx.base, "excluded", "owned-system", "skills")
+	writeFile(t, filepath.Join(outside, "canary", "SKILL.md"), []byte("---\nname: outside-canary\ndescription: Inert isolation control.\n---\nOWNED_OUTSIDE_CONTENT_CANARY\n"), 0600)
+	result := fx.run(t, "list", "--root", outside, "--json")
+	if bytes.Contains(result.stdout, []byte("OWNED_OUTSIDE_CONTENT_CANARY")) {
+		t.Fatalf("ordinary CLI read outside fixture content: %s", result.stdout)
+	}
+	assertExit(t, result, 1)
+}
+
+func (fx fixture) launchArgs(t *testing.T, executable string, writer bool, extra string, args ...string) []string {
+	t.Helper()
+	if runtime.GOOS != "darwin" {
+		t.Skip("ordinary runtime containment requires Darwin sandbox-exec")
+	}
+	executable = canonicalPath(t, executable)
+	allowed := canonicalPath(t, filepath.Join(fx.base, "allowed"))
+	profile := runtimeProfile(executable, allowed)
+	if writer {
+		profile = strings.ReplaceAll(profile, "(literal "+sandboxString(executable)+")", "(require-any (literal "+sandboxString(executable)+") (literal \"/bin/ls\"))")
+		profile = strings.Replace(profile, "(deny file-write*)", "(deny file-write* (require-not (subpath "+sandboxString(allowed)+")))", 1)
+	}
+	profile += extra
+	sum := sha256.Sum256([]byte(profile))
+	path := filepath.Join(builtBinaryDir, fmt.Sprintf("fixture-%x.sb", sum))
+	if err := os.WriteFile(path, []byte(profile), 0600); err != nil {
+		t.Fatal(err)
+	}
+	writeEvidence(t, fmt.Sprintf("isolation/profiles/%x.sb", sum), []byte(profile))
+	return append([]string{"/usr/bin/sandbox-exec", "-f", path, executable}, args...)
+}
+
+func (fx fixture) productShell(t *testing.T, writer bool) string {
+	t.Helper()
+	parts := fx.launchArgs(t, skillglassBinary, writer, "")
+	for i := range parts {
+		parts[i] = shellQuote(parts[i])
+	}
+	return strings.Join(parts, " ")
+}
+
+func TestFixtureLauncherContainmentControls(t *testing.T) {
+	tmux, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, writer := range []bool{false, true} {
+		for _, route := range []string{"cli", "pty", "tmux"} {
+			t.Run(fmt.Sprintf("%s/writer-%t", route, writer), func(t *testing.T) {
+				fx := newFixture(t)
+				allowed := filepath.Join(fx.base, "allowed", "control.txt")
+				excluded := filepath.Join(fx.base, "excluded", "canary.txt")
+				write := filepath.Join(fx.base, "allowed", "control-write.txt")
+				outsideWrite := filepath.Join(fx.base, "excluded", "outside-write.txt")
+				absent := filepath.Join(fx.base, "excluded", "controlled-system")
+				config := filepath.Join(absent, "config.toml")
+				skills := filepath.Join(absent, "skills")
+				writeFile(t, allowed, []byte("ALLOWED_READ_SENTINEL\n"), 0600)
+				writeFile(t, excluded, []byte("OWNED_EXCLUDED_READ_CANARY\n"), 0600)
+				writeFile(t, config, []byte("OWNED_SYSTEM_CONFIG_CANARY\n"), 0600)
+				writeFile(t, filepath.Join(skills, "control", "SKILL.md"), []byte("OWNED_SYSTEM_SKILL_CANARY\n"), 0600)
+				if string(readBytes(t, config)) != "OWNED_SYSTEM_CONFIG_CANARY\n" {
+					t.Fatal("system config positive control")
+				}
+				if entries, err := os.ReadDir(skills); err != nil || len(entries) != 1 {
+					t.Fatal("system root positive control", err)
+				}
+				writeFile(t, outsideWrite, []byte("positive write"), 0600)
+				if err := os.Remove(outsideWrite); err != nil {
+					t.Fatal(err)
+				}
+				before := treeManifest(t, fx.base)
+				argv := fx.launchArgs(t, isolationProbeBinary, writer, "", "boundary", fmt.Sprint(writer), allowed, excluded, write, outsideWrite, config, skills)
+				var raw []byte
+				switch route {
+				case "cli":
+					cmd := exec.Command(argv[0], argv[1:]...)
+					cmd.Env, cmd.Dir = fx.environment(), fx.project
+					raw, err = cmd.CombinedOutput()
+					if err != nil {
+						t.Fatalf("control failed: %v\n%s", err, raw)
+					}
+				case "pty":
+					cmd := exec.Command(argv[0], argv[1:]...)
+					cmd.Env, cmd.Dir = fx.environment(), fx.project
+					terminal, startErr := pty.StartWithSize(cmd, &pty.Winsize{Rows: 24, Cols: 80})
+					if startErr != nil {
+						t.Fatal(startErr)
+					}
+					raw, _ = io.ReadAll(terminal)
+					err = cmd.Wait()
+					_ = terminal.Close()
+					if err != nil {
+						t.Fatalf("PTY control failed: %v\n%s", err, raw)
+					}
+				case "tmux":
+					socket := fmt.Sprintf("ale27-controls-%d-%t", os.Getpid(), writer)
+					defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
+					runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", "80", "-y", "24", "-s", "browser", "exec /bin/cat")
+					runTmux(t, tmux, fx, socket, "set-option", "-g", "remain-on-exit", "on")
+					parts := append([]string(nil), argv...)
+					for i := range parts {
+						parts[i] = shellQuote(parts[i])
+					}
+					runTmux(t, tmux, fx, socket, "respawn-pane", "-k", "-t", "browser:0.0", "exec "+strings.Join(parts, " "))
+					deadline := time.Now().Add(3 * time.Second)
+					var pane string
+					for time.Now().Before(deadline) {
+						status := strings.TrimSpace(runTmux(t, tmux, fx, socket, "display-message", "-p", "-t", "browser:0.0", "#{pane_dead}:#{pane_dead_status}"))
+						if strings.HasPrefix(status, "1:") {
+							pane = runTmux(t, tmux, fx, socket, "capture-pane", "-p", "-J", "-S", "-", "-t", "browser:0.0")
+							if status != "1:0" {
+								t.Fatalf("tmux control exited %s: %s", status, pane)
+							}
+							break
+						}
+						time.Sleep(20 * time.Millisecond)
+					}
+					if pane == "" {
+						t.Fatal("tmux control timed out")
+					}
+					raw = []byte(strings.Split(strings.TrimSpace(pane), "\n")[0])
+				}
+				var controls struct {
+					Passed bool
+					Checks map[string]bool
+				}
+				decodeJSON(t, bytes.TrimSpace(raw), &controls)
+				if !controls.Passed {
+					t.Fatalf("controls did not pass: %s", raw)
+				}
+				for name, passed := range controls.Checks {
+					if !passed {
+						t.Error("control failed", name)
+					}
+				}
+				writeEvidence(t, fmt.Sprintf("isolation/ordinary/%s-writer-%t.json", route, writer), raw)
+				writeEvidence(t, fmt.Sprintf("isolation/ordinary/%s-writer-%t.sb", route, writer), readBytes(t, argv[2]))
+				if _, err := os.Stat(outsideWrite); !os.IsNotExist(err) {
+					t.Fatal("outside write escaped", err)
+				}
+				if writer {
+					if string(readBytes(t, write)) != "fixture-write\n" {
+						t.Fatal("fixture writer did not write")
+					}
+					if err := os.Remove(write); err != nil {
+						t.Fatal(err)
+					}
+				}
+				assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+			})
+		}
 	}
 }

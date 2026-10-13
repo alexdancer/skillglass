@@ -798,7 +798,8 @@ func (fx fixture) run(t *testing.T, args ...string) commandResult {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, skillglassBinary, args...)
+	argv := fx.launchArgs(t, skillglassBinary, false, "", args...)
+	command := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	command.Dir = fx.project
 	command.Env = fx.environment()
 	command.Stdin = bytes.NewReader(nil)
@@ -821,7 +822,7 @@ func (fx fixture) run(t *testing.T, args ...string) commandResult {
 		code = exitError.ExitCode()
 	}
 	result := commandResult{code: code, stdout: stdout.Bytes(), stderr: stderr.Bytes(), duration: duration}
-	recordEvidenceCommand(t, "public-cli", skillglassBinary, args, fx.project, result)
+	recordEvidenceCommand(t, "public-cli", argv[0], argv[1:], fx.project, result)
 	return result
 }
 
