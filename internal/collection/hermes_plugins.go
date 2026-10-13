@@ -33,6 +33,25 @@ func hermesPortableNamespace(key string) string {
 	sum := sha256.Sum256([]byte(key))
 	return fmt.Sprintf("agent-plugin-%s-%x", text, sum[:4])
 }
+func hermesPluginStrings(value any) ([]string, bool) {
+	if value == nil {
+		return nil, true
+	}
+	list, ok := value.([]any)
+	if !ok {
+		return nil, false
+	}
+	result := make([]string, 0, len(list))
+	for _, value := range list {
+		text, ok := value.(string)
+		if !ok {
+			return nil, false
+		}
+		result = append(result, text)
+	}
+	return result, true
+}
+
 func discoverHermesPlugins(request *Request, inputs *hermesInputs) {
 	var plugins []hermesPlugin
 	scan := func(root string, project bool) {
@@ -101,14 +120,8 @@ func discoverHermesPlugins(request *Request, inputs *hermesInputs) {
 					}
 				}
 				config := inputs.pluginConfig
-				enabled, enabledOK := hermesStrings(config["enabled"])
-				if config["enabled"] != nil {
-					_, enabledOK = config["enabled"].([]any)
-				}
-				disabled, disabledOK := hermesStrings(config["disabled"])
-				if config["disabled"] != nil {
-					_, disabledOK = config["disabled"].([]any)
-				}
+				enabled, enabledOK := hermesPluginStrings(config["enabled"])
+				disabled, disabledOK := hermesPluginStrings(config["disabled"])
 				switch {
 				case !enabledOK || !disabledOK || inputs.uncertain || inputs.pluginUncertain:
 					plugin.state = ParticipationUnknown
