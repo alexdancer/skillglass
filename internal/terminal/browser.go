@@ -282,7 +282,9 @@ func (model browserModel) updateSearch(key tea.KeyPressMsg) (tea.Model, tea.Cmd)
 func (model browserModel) updateCollection(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
 	case "a":
-		model.cycleAvailability()
+		if model.snapshot.Scope().Agent != nil {
+			model.cycleAvailability()
+		}
 	case "m":
 		if model.mode == browserSources && len(model.sources) > 0 {
 			model.marked = model.sources[model.sourceFocus].ID
@@ -865,7 +867,7 @@ func rootCountLabel(count int) string {
 func (model browserModel) inventoryBodyLines() ([]string, []int) {
 	if len(model.sources) == 0 {
 		lines := []string{"No matching sources."}
-		if model.filters.Search == "" && model.filters.SourceRoot == "" && model.filters.Context == collection.FilterAll && model.filters.Problem == "" {
+		if model.filters.Search == "" && model.filters.SourceRoot == "" && model.filters.Context == collection.FilterAll && model.filters.Problem == "" && model.filters.Availability == "" {
 			lines[0] = "No sources found in the selected roots."
 		}
 		return lines, nil
@@ -918,7 +920,7 @@ func (model browserModel) problemBodyLines() ([]string, []int) {
 
 func (model browserModel) inventoryStatus() string {
 	if len(model.sources) == 0 {
-		if model.filters.Search == "" && model.filters.SourceRoot == "" && model.filters.Context == collection.FilterAll && model.filters.Problem == "" {
+		if model.filters.Search == "" && model.filters.SourceRoot == "" && model.filters.Context == collection.FilterAll && model.filters.Problem == "" && model.filters.Availability == "" {
 			return "0 sources"
 		}
 		return "0 matches | selected source unchanged"

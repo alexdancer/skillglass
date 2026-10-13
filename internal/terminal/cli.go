@@ -88,7 +88,7 @@ func renderList(snapshot *collection.Snapshot, filters collection.Filters) strin
 	output.WriteString("\n")
 	renderProblems(&output, view.Problems)
 	if len(view.Sources) == 0 {
-		if filters.Search == "" && filters.SourceRoot == "" && filters.Context == collection.FilterAll && filters.Problem == "" {
+		if filters.Search == "" && filters.SourceRoot == "" && filters.Context == collection.FilterAll && filters.Problem == "" && filters.Availability == "" {
 			output.WriteString("Sources: none found\n")
 		} else {
 			output.WriteString("Sources: no matches\n")
