@@ -11,7 +11,7 @@ import tempfile
 
 
 def native_profile(base, node, package):
-    """The child can write only its canonical fixture; parent owns evidence."""
+    """Writes stay in the canonical fixture, except /dev/null; parent owns evidence."""
     quote = lambda path: json.dumps(str(Path(path).resolve()))
     content = f'''(literal "/") (literal {quote(node)}) (subpath {quote(package)})
  (subpath {quote(base)}) (subpath "/System") (subpath "/usr/lib")
@@ -62,7 +62,7 @@ def main():
                   for key in ('CONFIG', 'CACHE', 'DATA', 'STATE')}}
         cases = []
         receipt = {'credential_free': True, 'network': 'sandbox-exec denies network*',
-                   'write_scope': str(base), 'read_scope': 'canonical fixture/package/runtime and required OS libraries/devices',
+                   'write_scope': {'canonical_fixture': str(base), 'nonpersistent_runtime_sinks': ['/dev/null']}, 'read_scope': 'canonical fixture/package/runtime and required OS libraries/devices',
                    'no_workload': 'version and inert skills listing; no prompt, activation, hook or server',
                    'helper_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                    'node_path': node, 'node_sha256': hashlib.sha256(Path(node).read_bytes()).hexdigest(),
