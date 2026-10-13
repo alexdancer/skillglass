@@ -40,7 +40,7 @@ type codexInputs struct {
 func nativeHome() (string, error) {
 	home := os.Getenv("HOME")
 	if home == "" {
-		return "", errors.New("--agent codex requires HOME to bound native discovery")
+		return "", errors.New("native agent scope requires HOME to bound discovery")
 	}
 	return filepath.Abs(home)
 }

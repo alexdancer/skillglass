@@ -20,7 +20,10 @@ import (
 const maxManifestBytes int64 = 4 << 20
 
 func inspectManifest(bundleDirectory string) (Manifest, []Problem) {
-	lexicalPath := filepath.Join(bundleDirectory, "SKILL.md")
+	return inspectManifestFile(filepath.Join(bundleDirectory, "SKILL.md"), false)
+}
+
+func inspectManifestFile(lexicalPath string, pi bool) (Manifest, []Problem) {
 	manifest := Manifest{Path: lexicalPath, Status: ManifestUnreadable}
 
 	info, err := os.Lstat(lexicalPath)
@@ -174,7 +177,10 @@ func inspectManifest(bundleDirectory string) (Manifest, []Problem) {
 	}
 
 	name, ok := metadata["name"].(string)
-	if !ok || strings.TrimSpace(name) == "" {
+	if pi && (!ok || name == "") {
+		name, ok = filepath.Base(filepath.Dir(lexicalPath)), true
+	}
+	if !ok || (!pi && strings.TrimSpace(name) == "") {
 		manifest.Status = ManifestMalformed
 		problem := makeProblem(
 			ProblemMalformedManifest,

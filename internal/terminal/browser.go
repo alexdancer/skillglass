@@ -486,14 +486,18 @@ func (model *browserModel) refresh() {
 			model.marked = ""
 		}
 	}
+	objectKind := "directory"
+	if previous, ok := model.snapshot.Source(model.selected); ok && previous.Identity.Method == "darwin-file-object" {
+		objectKind = "file"
+	}
 	model.comparisonGeneration++
 	model.snapshot = refreshed
 	switch change.State {
 	case collection.SelectionChangeCleared:
 		model.clearSelectedSource()
-		model.feedback = "Refresh: selection cleared because its directory object is no longer reachable"
+		model.feedback = "Refresh: selection cleared because its " + objectKind + " object is no longer reachable"
 	case collection.SelectionChangeRetained:
-		model.feedback = "Refresh: selected directory object retained"
+		model.feedback = "Refresh: selected " + objectKind + " object retained"
 	case collection.SelectionChangeNone:
 		model.feedback = "Refresh: collection updated"
 	default:
@@ -784,7 +788,7 @@ func (model browserModel) headerLines(mode browserMode) []string {
 		fitLine("Root filter: "+model.rootFilterSummary(), model.width),
 	}, model.width)...)
 	if scope.Agent != nil {
-		header = append(header, fitLine("Agent: codex | Availability filter: "+browserFilterValue(string(model.filters.Availability)), model.width))
+		header = append(header, fitLine("Agent: "+scope.Agent.Application+" | Availability filter: "+browserFilterValue(string(model.filters.Availability)), model.width))
 	}
 	return append(header, model.selectedSummaryLines(mode)...)
 }
@@ -1116,7 +1120,7 @@ func (model browserModel) scopeBodyLines() []string {
 	scope := model.snapshot.Scope()
 	lines := make([]string, 0, 8+len(scope.Roots)*4)
 	if scope.Agent != nil {
-		lines = append(lines, "Agent: codex | Validated: "+scope.Agent.ValidatedVersion, "Session: unknown; local configuration inferred", "")
+		lines = append(lines, "Agent: "+scope.Agent.Application+" | Validated: "+scope.Agent.ValidatedVersion, "Session: unknown; local configuration inferred", "")
 	}
 	if scope.Project.Selected {
 		lines = append(lines, "Project:")

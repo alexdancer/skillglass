@@ -72,6 +72,8 @@ type DiscoveryRoot struct {
 	Context  ReferenceContext `json:"context"`
 	Origin   string           `json:"origin,omitempty"`
 	Optional bool             `json:"-"`
+	piMode   string
+	piFile   bool
 }
 
 type Request struct {
@@ -87,8 +89,8 @@ func NewRequest(rawRoots, rawProjectRoots []string, rawProject *string) (Request
 }
 
 func NewRequestWithAgent(rawRoots, rawProjectRoots []string, rawProject *string, agent string) (Request, error) {
-	if agent != "" && agent != "codex" {
-		return Request{}, fmt.Errorf("unknown agent %q; use codex", agent)
+	if agent != "" && agent != "codex" && agent != "pi" {
+		return Request{}, fmt.Errorf("unknown agent %q; use codex or pi", agent)
 	}
 	request := Request{Roots: make([]DiscoveryRoot, 0, len(rawRoots)+len(rawProjectRoots))}
 	if rawProject != nil {
@@ -131,7 +133,7 @@ func NewRequestWithAgent(rawRoots, rawProjectRoots []string, rawProject *string,
 		return Request{}, err
 	}
 	request.Agent = agent
-	if agent == "codex" {
+	if agent != "" {
 		var err error
 		request.home, err = nativeHome()
 		if err != nil {
@@ -354,10 +356,10 @@ type Snapshot struct {
 }
 
 func Build(ctx context.Context, request Request) (*Snapshot, error) {
-	if request.Agent != "" && request.Agent != "codex" {
+	if request.Agent != "" && request.Agent != "codex" && request.Agent != "pi" {
 		return nil, fmt.Errorf("unknown agent %q", request.Agent)
 	}
-	if request.Agent == "codex" && (request.home == "" || request.codexHome == "") {
+	if request.Agent != "" && (request.home == "" || (request.Agent == "codex" && request.codexHome == "")) {
 		return nil, errors.New("native scope requires NewRequestWithAgent")
 	}
 	if len(request.Roots) == 0 && request.Agent == "" {
@@ -373,6 +375,9 @@ func Build(ctx context.Context, request Request) (*Snapshot, error) {
 	}
 	if request.Agent == "codex" {
 		return buildCodex(ctx, request)
+	}
+	if request.Agent == "pi" {
+		return buildPi(ctx, request)
 	}
 	return discover(ctx, request)
 }
@@ -492,11 +497,15 @@ func (snapshot *Snapshot) Refresh(ctx context.Context, selected SourceID) (*Snap
 	}
 	previous, previousOK := snapshot.sources[selected]
 	current, currentOK := refreshed.sources[selected]
+	objectKind := "directory"
+	if previousOK && previous.Identity.Method == "darwin-file-object" {
+		objectKind = "file"
+	}
 	if previousOK && currentOK &&
 		previous.Identity.Certainty == "proven" && current.Identity.Certainty == "proven" {
-		return refreshed, SelectionChange{State: SelectionChangeRetained, Reason: "same proven directory object remains reachable"}, nil
+		return refreshed, SelectionChange{State: SelectionChangeRetained, Reason: "same proven " + objectKind + " object remains reachable"}, nil
 	}
-	return refreshed, SelectionChange{State: SelectionChangeCleared, Reason: "selected directory object is no longer provably reachable"}, nil
+	return refreshed, SelectionChange{State: SelectionChangeCleared, Reason: "selected " + objectKind + " object is no longer provably reachable"}, nil
 }
 
 func (snapshot *Snapshot) Source(id SourceID) (Source, bool) {

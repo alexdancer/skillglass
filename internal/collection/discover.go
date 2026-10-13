@@ -150,6 +150,11 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 		report.ProblemCount = 1
 		return report
 	}
+	if root.piFile && rootInfo.Mode().IsRegular() {
+		builder.discoverPiFile(ctx, root, root.Path, ".")
+		report.State = RootSearched
+		return report
+	}
 	if !rootInfo.IsDir() {
 		err := fmt.Errorf("selected root resolves to %s, not a directory", rootInfo.Mode().Type())
 		problem := makeProblem(
@@ -167,7 +172,9 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 	}
 
 	rootIsBundle, manifestErr := hasManifest(resolvedRoot)
-	if rootIsBundle {
+	if rootIsBundle && strings.HasPrefix(root.Origin, "pi-") && root.piMode == "all" {
+		builder.discoverPiChildren(ctx, root, root.Path, make(map[string]bool), new(int), true)
+	} else if rootIsBundle {
 		if builder.discoverCandidate(ctx, root, root.Path, ".") {
 			report.SourceCount++
 		}
@@ -195,7 +202,10 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 		sort.Slice(entries, func(left, right int) bool {
 			return entries[left].Name() < entries[right].Name()
 		})
-		if root.Origin != "" {
+		if strings.HasPrefix(root.Origin, "pi-") {
+			builder.discoverPiChildren(ctx, root, root.Path, make(map[string]bool), new(int), true)
+			entries = nil
+		} else if root.Origin != "" {
 			builder.discoverNativeChildren(ctx, root, root.Path, make(map[string]bool), new(int))
 			entries = nil
 		}
@@ -366,7 +376,13 @@ func (builder *discoveryBuilder) discoverCandidate(
 		return true
 	}
 
-	manifest, manifestProblems := inspectManifest(resolvedPath)
+	var manifest Manifest
+	var manifestProblems []Problem
+	if builder.request.Agent == "pi" {
+		manifest, manifestProblems = inspectManifestFile(filepath.Join(resolvedPath, "SKILL.md"), true)
+	} else {
+		manifest, manifestProblems = inspectManifest(resolvedPath)
+	}
 	resources, resourceProblems := inventoryResources(ctx, resolvedPath)
 	problems := append(manifestProblems, resourceProblems...)
 	if identityErr != nil {
