@@ -4,27 +4,21 @@ This slice adds read-only Codex discovery and local configured-availability expl
 
 ## Use
 
-```sh
-bin/skillglass list --agent codex --project /path/to/repository/nested --json
-bin/skillglass list --agent codex --availability disabled
-bin/skillglass explain --agent codex --project /path/to/repository/nested SOURCE_ID
-bin/skillglass read --agent codex --project /path/to/repository/nested --json SOURCE_ID
-bin/skillglass browse --agent codex --project /path/to/repository/nested
-```
+The [README](../../README.md#build-and-use) owns common commands, filter values, browser keys and generic inventory behavior. This document owns the version-specific Codex contract, evidence and limits.
 
-`--agent codex` selects native user, compatibility, system, builtin and selected-project roots. Omitting `--project` selects only machine-wide roots, even when the command runs in a project. `HOME` is required; `CODEX_HOME` overrides HOME/.codex. Extra explicit roots remain inspection references and do not become runtime extra roots. Generic commands still require explicit roots and retain their existing direct-child discovery and unknown ownership/availability contract.
+`--agent codex` selects native user, compatibility, system, builtin, plugin-cache and selected-project roots. Omitting `--project` selects only machine-wide roots, even when the command runs in a project. `HOME` is required; `CODEX_HOME` overrides HOME/.codex. Extra explicit roots remain inspection references and do not become runtime extra roots.
 
-`--availability` accepts all, available, disabled, explicit-only, ask, shadowed, unavailable and unknown. Codex boolean configuration does not invent ask or name-based shadowing states. Availability is resolved before display filters; search/context/root filters never recalculate permission. The browser uses `a` to cycle availability, `c` to cycle reference context, `s` for scope and `r` to refresh local inputs. Detail begins with configured availability, evidence confidence and unknown session/reload state before long paths. All full provenance remains scrollable.
+Codex boolean configuration does not invent ask or name-based shadowing states. Availability is resolved before display filters; search/context/root filters never recalculate permission. Detail begins with configured availability, evidence confidence and unknown session/reload state before long paths. All full provenance remains scrollable.
 
 ## Contract and decisions
 
 The source's availability retains `state` and `reason` and adds per-reference participation, permission with configuration-layer provenance, source coexistence, invocation policy, session observation, reload and scoped capability explanations. Each evidence record states observed, inferred or unknown and carries its controlling rule, input path, relevant setting and validated version. Filesystem/config input facts and the recorded version receipt are observed; local native participation and effective permission are inferred; current inference-session state is unknown. User/global discovery scope does not prove user ownership. System and plugin content is managed.
 
-Native `.agents/skills` and compatibility `.codex/skills` are included at **every ancestor** from the selected directory to the actual Git repository, inclusive. Repository detection recognizes normal repositories and linked worktree gitdir/commondir files; an empty `.git/` marker is insufficient. Without a real Git boundary, only the selected directory is inspected and native traversal/permission coverage is explicitly unknown and incomplete. Native roots recursively discover ordinary containers and directory aliases, stop at bundles, omit hidden containers, and separately include the observed CODEX_HOME/skills/.system root. Traversal is capped at 10,000 directories with visible incomplete coverage. Generic explicit-root discovery remains direct children.
+Native `.agents/skills` and compatibility `.codex/skills` are included at **every ancestor** from the selected directory to the actual Git repository, inclusive. Repository detection recognizes normal repositories and linked worktree gitdir/commondir files; an empty `.git/` marker is insufficient. Without a real Git boundary, only the selected directory is inspected and native traversal/permission coverage is explicitly unknown and incomplete. Native roots recursively discover ordinary containers and directory aliases, stop at bundles, omit hidden containers, and separately include the observed CODEX_HOME/skills/.system root. Traversal is capped at 10,000 directories with visible incomplete coverage. The [README](../../README.md#build-and-use) defines explicit-root traversal.
 
 Independent sources with the same native name coexist. The explanation never fabricates a winner. Plugin namespaces come from a valid canonical ancestor plugin manifest when comparing native names, independently of ownership; a cache folder identity alone never creates a namespace. Orphan aliases without a valid manifest retain their plain names. The source's skill manifest name is retained. Proven shared directory aliases retain all references and one source identity. Native roots have stable IDs independent of extra viewer roots. Merely sharing a manifest does not merge directories.
 
-Configuration uses the pinned `github.com/pelletier/go-toml/v2 v2.3.1` parser. Canonical project trust keys govern whether project layers participate; untrusted project config is identified without reading its contents. Trusted closer project `skills.config` arrays replace lower arrays, including replacement by an empty array. Replaced and ignored layers remain visible. Only relevant skill selectors are exposed; raw config, provider keys, credentials and unrelated settings are never serialized. Optional absent roots/config are normal absence. Broken links, invalid TOML, unreadable or oversized relevant inputs report `native-input`, preserve useful output, and return incomplete coverage. Input reads require bounded regular files and use nonblocking opens to avoid FIFO races.
+Configuration uses the TOML parser pinned in [go.mod](../../go.mod). Canonical project trust keys govern whether project layers participate; untrusted project config is identified without reading its contents. Trusted closer project `skills.config` arrays replace lower arrays, including replacement by an empty array. Replaced and ignored layers remain visible. Only relevant skill selectors are exposed; raw config, provider keys, credentials and unrelated settings are never serialized. Optional absent roots/config are normal absence. Broken links, invalid TOML, unreadable or oversized relevant inputs report `native-input`, preserve useful output, and return incomplete coverage. Input reads require bounded regular files and use nonblocking opens to avoid FIFO races.
 
 For validated 0.155.1 behavior, an absolute selector ending in SKILL.md matches the canonical manifest, including a directory alias. A folder selector does not disable the skill. Relative selectors and contradictory entries targeting the same canonical manifest remain unknown instead of receiving guessed semantics. YAML `policy.allow_implicit_invocation: false` yields explicit-only independently of permission; wrong types, malformed or unreadable policy remain unknown. Generic metadata parsing is stricter than Codex's native parser: a malformed generic manifest remains inspectable with diagnostics and unknown native eligibility. Missing description and file-manifest symlinks are observed native exclusions.
 
@@ -61,18 +55,7 @@ Other gaps: custom root markers and traversal outside Git, exact depth/metadata 
 
 `tests/acceptance/ale26_browser_test.go` drives the same executable through real tmux at 48x24, 48x30 and 80x30 with long source paths. It verifies immediate summary visibility, full permission/session explanation, external config edits, retained directory selection, hidden selection under filters, availability cycling, scope and bounded terminal cells. It also verifies generic accepted global/system/managed contexts recover to all with `c`, and preserves native all/project/custom/global/system/managed cycle order. The existing suite retains PTY/browser, source identity, comparison and sandbox positive/negative controls. Word-aware wrapping preserves readable prose and still bounds long paths by terminal cells.
 
-Run the complete checks on the final candidate:
-
-```sh
-gofmt -l cmd internal tests/acceptance
-GOPROXY=off GOSUMDB=off go vet ./...
-GOPROXY=off GOSUMDB=off go test -count=1 -mod=readonly ./...
-tests/acceptance/run.sh /absolute/unique/evidence-directory
-python3 -m unittest discover -s tests/agent_loop
-shellcheck tests/acceptance/run.sh
-sh -n tests/acceptance/run.sh
-git diff --check
-```
+Run the [current combined-suite verification procedure](ale-24.md#reproduce-the-acceptance-evidence) on the final candidate, including its prerequisites, fresh evidence directory, terminal inspection and repository checks.
 
 Acceptance evidence contains the built binary, candidate/build receipt, CLI argv/stdout/exit outcomes, tmux cells, isolation controls and before/after tree manifests. Runtime acceptance runs offline with GOPROXY=off/GOSUMDB=off. The feature-specific fixture environment explicitly supplies a disposable HOME and only the bounded native configuration locations; it cannot use the real user's HOME or skills. The separate native probes provide version evidence, not inference-session validation. Review, no-mistakes, publication and ticket closure remain separate workflow gates.
 
