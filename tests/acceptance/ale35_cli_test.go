@@ -191,9 +191,9 @@ func TestALE35OpenCodeOfflineCacheInputsAndImmutability(t *testing.T) {
 	}
 	before = treeManifest(t, fx.base)
 	profile := filepath.Join(fx.base, "allowed", "opencode.sb")
-	writeFile(t, profile, []byte(runtimeProfile(canonicalPath(t, skillglassBinary), canonicalPath(t, filepath.Join(fx.base, "allowed")))), 0600)
+	writeFile(t, profile, []byte(runtimeProfile(canonicalPath(t, skillglassExecutable), canonicalPath(t, filepath.Join(fx.base, "allowed")))), 0600)
 	before = treeManifest(t, fx.base)
-	result := runSandboxCommand(t, fx, profile, canonicalPath(t, skillglassBinary), "list", "--agent", "opencode", "--project", fx.project, "--json")
+	result := runSandboxCommand(t, fx, profile, canonicalPath(t, skillglassExecutable), "list", "--agent", "opencode", "--project", fx.project, "--json")
 	assertExit(t, result, 0)
 	var offline codexList
 	decodeJSON(t, result.stdout, &offline)

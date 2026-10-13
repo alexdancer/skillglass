@@ -7,44 +7,91 @@ import json
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import tempfile
+
+from native_containment import native_profile, runtime_data_paths
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--opencode', required=True)
     parser.add_argument('--out', required=True)
+    parser.add_argument('--git', default='/Library/Developer/CommandLineTools/usr/bin/git')
     args = parser.parse_args()
     out = Path(args.out).resolve()
     out.mkdir(parents=True, exist_ok=True)
-    binary = str(Path(args.opencode).resolve())
+    source_binary = Path(args.opencode).resolve(strict=True)
+    source_hash = hashlib.sha256(source_binary.read_bytes()).hexdigest()
+    source_git = Path(args.git).resolve(strict=True)
+    git_hash = hashlib.sha256(source_git.read_bytes()).hexdigest()
     base = Path(tempfile.mkdtemp(prefix='ale-35-native-', dir='/private/tmp'))
+    binary_path = base/'native-executable'
+    shutil.copyfile(source_binary, binary_path)
+    binary_path.chmod(0o700)
+    binary = str(binary_path)
+    if hashlib.sha256(binary_path.read_bytes()).hexdigest() != source_hash:
+        raise RuntimeError('native executable copy changed bytes')
+    (base/'bin').mkdir()
+    git_binary = base/'bin/git'
+    shutil.copyfile(source_git, git_binary)
+    git_binary.chmod(0o700)
+    if hashlib.sha256(git_binary.read_bytes()).hexdigest() != git_hash:
+        raise RuntimeError('Git executable copy changed bytes')
     home, config, project = base/'home', base/'config', base/'project'
-    for name in ['home', 'config', 'data', 'cache', 'state', 'tmp', 'managed', 'project', 'extra']:
+    for name in ['home', 'config', 'data', 'cache', 'state', 'tmp', 'managed', 'project', 'extra', 'templates']:
         (base/name).mkdir()
-    env = {'PATH':'/opt/homebrew/bin:/usr/bin:/bin', 'HOME':str(home),
+    env = {'PATH':str(base/'bin')+':/usr/bin:/bin', 'HOME':str(home),
            'XDG_CONFIG_HOME':str(config), 'XDG_DATA_HOME':str(base/'data'),
            'XDG_CACHE_HOME':str(base/'cache'), 'XDG_STATE_HOME':str(base/'state'),
            'TMPDIR':str(base/'tmp'), 'OPENCODE_DISABLE_AUTOUPDATE':'true',
            'OPENCODE_DISABLE_MODELS_FETCH':'true', 'OPENCODE_DISABLE_DEFAULT_PLUGINS':'true',
-           'OPENCODE_TEST_MANAGED_CONFIG_DIR':str(base/'managed'), 'OPENCODE_PURE':'true'}
+           'OPENCODE_TEST_MANAGED_CONFIG_DIR':str(base/'managed'), 'OPENCODE_PURE':'true',
+           'GIT_CONFIG_NOSYSTEM':'1','GIT_CONFIG_GLOBAL':str(base/'missing-global.gitconfig'),
+           'GIT_CONFIG_SYSTEM':str(base/'missing-system.gitconfig'),'GIT_TEMPLATE_DIR':str(base/'templates')}
     profile = base/'native.sb'
-    # Protect the real home even if a native component disregards environment routing.
-    profile.write_text('(version 1)\n(allow default)\n(deny network*)\n'
-                       '(deny file-read* file-write* (subpath "'+str(Path.home())+'"))\n')
+    runtime_data = runtime_data_paths()
+    profile.write_text(native_profile(base, Path(binary), runtime_data=runtime_data))
+    policy = profile.read_text()
+    (out/'native.sb').write_text(policy)
     receipts, checks = [], []
-    def run(label, *arguments, extra=None):
+    def run(label, *arguments, extra=None, expected=0, executable=None, pure=True):
         e = env.copy()
         e.update(extra or {})
-        argv = [binary, '--pure', *arguments]
-        result = subprocess.run(['/usr/bin/sandbox-exec','-f',str(profile),*argv],
-                                cwd=project/'nested', env=e, capture_output=True, timeout=60)
+        executed = executable or binary
+        original = source_git if executed == str(git_binary) else source_binary
+        original_hash = git_hash if executed == str(git_binary) else source_hash
+        argv = [executed, *(['--pure'] if pure else []), *arguments]
+        wrapped = ['/usr/bin/sandbox-exec','-f',str(profile),*argv]
+        invocation_hash = hashlib.sha256(Path(executed).read_bytes()).hexdigest()
+        child = subprocess.Popen(wrapped, cwd=project/'nested', env=e,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 start_new_session=True)
+        timed_out = False
+        try:
+            stdout, stderr = child.communicate(timeout=60)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+        finally:
+            # Only the newly created child process group is owned by this helper.
+            try:
+                os.killpg(child.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            stdout, stderr = child.communicate()
+        result = subprocess.CompletedProcess(wrapped, child.returncode, stdout, stderr)
         (out/(label+'.stdout')).write_bytes(result.stdout)
         (out/(label+'.stderr')).write_bytes(result.stderr)
-        receipts.append({'label':label,'argv':argv,'cwd':str(project/'nested'),
+        receipts.append({'label':label,'argv':argv,'wrapped_argv':wrapped,
+                         'binary':executed,'binary_sha256':invocation_hash,
+                         'source_binary':str(original),'source_binary_sha256':original_hash,
+                         'environment':e,'profile':policy,'runtime_data':runtime_data,'cwd':str(project/'nested'),
+                         'pid':child.pid,'owned_process_group':child.pid,'group_cleanup':'SIGKILL to owned group, then reaped child','timed_out':timed_out,
                          'exit':result.returncode,'stdout':label+'.stdout','stderr':label+'.stderr'})
-        if result.returncode != 0:
+        if timed_out:
+            raise RuntimeError(label+' timed out; owned process group stopped')
+        if result.returncode != expected:
             raise RuntimeError(label+' failed: '+result.stderr.decode(errors='replace')[-1000:])
         return result.stdout
     def check(label, value):
@@ -67,7 +114,10 @@ def main():
         return matching[-1]['action'] if matching else 'ask'
     try:
         (project/'nested').mkdir()
-        subprocess.run(['/usr/bin/git','init','-q',str(project)],env=env,check=True,capture_output=True)
+        run('git-init','init','-q',str(project),executable=str(git_binary),pure=False)
+        git_version = run('git-version','--version',executable=str(git_binary),pure=False).decode().strip()
+        git_root = run('git-boundary','rev-parse','--show-toplevel',executable=str(git_binary),pure=False).decode().strip()
+        check('controlled native Git root',git_root==str(project))
         version = run('version','--version').decode().strip()
         check('reference version 1.17.15',version=='1.17.15')
         for root,folder,name in [(home/'.agents/skills','shared','agents-global'),
@@ -138,8 +188,26 @@ def main():
         check('native equal names collapse to one source',len(winners)==5)
         # A repeated winner does not establish deterministic precedence under the concurrent source implementation.
         (out/'collision-observations.json').write_text(json.dumps({'locations':winners,'winner_rule':'unknown: source loads concurrently'},indent=2))
+        # Each native file is validated before merge; later valid layers cannot hide rejection.
+        for path in base.rglob('opencode.json*'):
+            path.unlink()
+        cases = [('valid-empty', {}, 0),
+                 ('valid-false', {'plugin': [], 'agent': {'build': {'hidden': False}}}, 0),
+                 ('permission-null', {'permission': None}, 1),
+                 ('agent-permission-null', {'agent': {'build': {'permission': None}}}, 1),
+                 ('plugin-false', {'plugin': False}, 1),
+                 ('agent-hidden-string', {'agent': {'build': {'hidden': 'false'}}}, 1)]
+        for label, value, expected in cases:
+            write(config/'opencode/opencode.json', value)
+            run('schema-'+label, 'debug', 'skill', expected=expected)
+            check('native startup '+label, True)
+        write(config/'opencode/opencode.json', {'permission': None})
+        write(project/'opencode.json', {'permission': 'allow'})
+        run('schema-invalid-earlier-layer', 'debug', 'skill', expected=1)
+        check('native validates rejected earlier layer before merge', True)
+
     finally:
-        (out/'receipts.json').write_text(json.dumps({'version':locals().get('version'),'fixture':str(base),'environment_keys':sorted(env),'network':'sandbox denies network*','real_home':'sandbox denies real HOME reads/writes','commands':receipts,'checks':checks,'gaps':['No inference or tool execution.','Debug skill lists raw definitions without permissions.','Concurrent collision winner cannot be generalized.','Native built-in is omitted from local bundle inventory.','Running session, remote policy, plugin hooks and writers remain unverified.']},indent=2)+'\n')
+        (out/'receipts.json').write_text(json.dumps({'version':locals().get('version'),'git_version':locals().get('git_version'),'git_runtime':{'source':str(source_git),'sha256':git_hash,'fixture_copy':str(git_binary)},'fixture':str(base),'binary':binary,'source_binary':str(source_binary),'source_binary_sha256':source_hash,'environment':env,'profile':policy,'runtime_data':runtime_data,'network':'sandbox denies network*','write_boundary':'canonical fixture only','read_boundary':'fixture, exact executable and OS runtime paths; live homes and managed inputs excluded with controlled ENOENT','commands':receipts,'checks':checks,'gaps':['No inference or tool execution.','Debug skill lists raw definitions without permissions.','Concurrent collision winner cannot be generalized.','Native built-in is omitted from local bundle inventory.','Running session, remote policy, plugin hooks and writers remain unverified.','Actual system/enterprise and other user inputs excluded; fixture managed override only.','Historical outside-fixture effects remain unknown.']},indent=2)+'\n')
         shutil.rmtree(base)
     print(json.dumps({'checks':len(checks),'passed':all(x['passed'] for x in checks),'out':str(out)}))
 

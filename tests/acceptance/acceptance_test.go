@@ -23,6 +23,7 @@ import (
 
 var (
 	skillglassBinary     string
+	skillglassExecutable string
 	isolationProbeBinary string
 	repositoryRoot       string
 	builtBinaryDir       string
@@ -87,6 +88,13 @@ func TestMain(testMain *testing.M) {
 			os.RemoveAll(builtBinaryDir)
 			os.Exit(1)
 		}
+	}
+	skillglassExecutable = skillglassBinary
+	skillglassBinary, err = fixtureLauncher(skillglassExecutable, builtBinaryDir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.RemoveAll(builtBinaryDir)
+		os.Exit(1)
 	}
 	code := testMain.Run()
 	if err := writeEvidenceCaseIndex(); err != nil {
@@ -700,6 +708,7 @@ func newFixture(t *testing.T) fixture {
 		fx.xdgCache,
 		fx.xdgState,
 		fx.temporary,
+		filepath.Join(fx.base, "allowed", "git-templates"),
 		fx.project,
 		fx.cleanRoot,
 		fx.hostileRoot,
@@ -791,6 +800,7 @@ func newFixture(t *testing.T) fixture {
 	writeFile(t, filepath.Join(malformed, "SKILL.md"), []byte(
 		"---\nname: [unterminated\nMALFORMED_RAW_SENTINEL\n",
 	), 0o644)
+	writeFile(t, filepath.Join(fx.base, "allowed", "fixture.sb"), []byte(fixtureProfile(canonicalPath(t, fx.base), canonicalPath(t, skillglassExecutable))), 0600)
 	return fx
 }
 
@@ -827,6 +837,11 @@ func (fx fixture) run(t *testing.T, args ...string) commandResult {
 
 func (fx fixture) environment() []string {
 	return []string{
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_CONFIG_GLOBAL=" + filepath.Join(fx.home, "missing-global.gitconfig"),
+		"GIT_CONFIG_SYSTEM=" + filepath.Join(fx.home, "missing-system.gitconfig"),
+		"GIT_TEMPLATE_DIR=" + filepath.Join(fx.base, "allowed", "git-templates"),
+		"SKILLGLASS_FIXTURE_PROFILE=" + filepath.Join(fx.base, "allowed", "fixture.sb"),
 		"HOME=" + fx.home,
 		"XDG_CONFIG_HOME=" + fx.xdgConfig,
 		"XDG_DATA_HOME=" + fx.xdgData,

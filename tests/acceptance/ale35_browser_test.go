@@ -92,3 +92,68 @@ func TestALE35OpenCodeTerminalExplanationFilterRefreshAndScope(t *testing.T) {
 		})
 	}
 }
+
+func TestALE35InvalidConfigTerminalEvidence(t *testing.T) {
+	tmux, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, size := range []struct{ width, height int }{{48, 24}, {80, 30}} {
+		t.Run(fmt.Sprintf("%dx%d", size.width, size.height), func(t *testing.T) {
+			fx, _ := codexFixture(t)
+			codexSkill(t, filepath.Join(fx.xdgConfig, "opencode", "skills"), strings.Repeat("long-folder-", 8), "invalid-input-source")
+			config := filepath.Join(fx.xdgConfig, "opencode", "opencode.json")
+			opencodeConfig(t, config, `{"permission":null}`)
+			before := treeManifest(t, fx.base)
+			socket := fmt.Sprintf("ale35-invalid-%d-%d", os.Getpid(), size.width)
+			defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
+			line := "exec " + shellQuote(skillglassBinary) + " browse --agent opencode --project " + shellQuote(fx.project) + " --availability unknown"
+			runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser", line)
+			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
+			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height))
+			initial := waitForPane(t, tmux, fx, socket, false, "invalid-input-source", "unknown (unknown)")
+			prefix := fmt.Sprintf("tmux/ale35-invalid/%dx%d/", size.width, size.height)
+			capture := func(name, frame string) {
+				assertPaneCells(t, frame, size.width, size.height)
+				writeEvidence(t, prefix+name+".txt", []byte(frame))
+			}
+			capture("01-sources", initial)
+			send := func(key string, needles ...string) string {
+				return actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", key) }, needles...)
+			}
+			detail := send("Enter", "Availability: unknown", "Configured permission: unknown", "Session: unknown")
+			capture("02-explanation", detail)
+			var explained strings.Builder
+			for page := 0; page < 40; page++ {
+				first, last, total, body := sourceDetailBody(t, detail)
+				explained.WriteString(strings.Join(body, "\n"))
+				explained.WriteByte('\n')
+				capture(fmt.Sprintf("02-explanation-page-%02d", page), detail)
+				if last == total {
+					break
+				}
+				previous := first
+				detail = actOnPane(t, tmux, fx, socket, "browser:0.0", func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "PageDown") }, func(next paneSnapshot) bool { first, _, _ := sourceDetailRange(next.cells); return first > previous }).cells
+			}
+			for _, needle := range []string{"Permission: unknown", "opencode.json", "Session: unknown"} {
+				if !paneContains(explained.String(), needle) {
+					t.Fatalf("unknown explanation omitted %s", needle)
+				}
+			}
+			send("Escape", "SKILLGLASS | Sources")
+			problems := send("Tab", "SKILLGLASS | Problems", "native-input")
+			capture("03-problems", problems)
+			problem := send("Enter", "SKILLGLASS | Problem", "Code: native-input")
+			capture("04-problem", problem)
+			send("Escape", "SKILLGLASS | Problems")
+			scope := send("s", "Scope and filters", "Agent: opencode", "Validated: OpenCode 1.17.15")
+			capture("06-scope", scope)
+			send("Escape", "SKILLGLASS | Problems")
+			send("Tab", "SKILLGLASS | Sources")
+			filtered := send("a", "Availability filter: all", "invalid-input-source")
+			capture("07-filter", filtered)
+			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "q")
+			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+		})
+	}
+}

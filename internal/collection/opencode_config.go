@@ -261,7 +261,7 @@ func (in *opencodeInputs) load(path, scope string, raw []byte, required bool) {
 	} else {
 		layer.State = "loaded"
 		layer.Reason = "deep merge in native order; conflicting keys replace values without reordering existing keys"
-		in.validate(obj, path)
+		in.validate(obj, path, false)
 		normalizeOpencodeConfig(obj)
 		mergeOpencode(in.config, obj)
 	}
@@ -561,12 +561,9 @@ func expandOpencodePattern(pattern, home string) string {
 	}
 	return pattern
 }
-func (in *opencodeInputs) validate(obj *opencodeObject, path string) {
+func (in *opencodeInputs) validate(obj *opencodeObject, path string, agentConfig bool) {
 	var permission func(any)
 	permission = func(value any) {
-		if value == nil {
-			return
-		}
 		if action, ok := value.(string); ok {
 			if action != "allow" && action != "ask" && action != "deny" {
 				in.problem(path, "permission action is invalid")
@@ -590,7 +587,20 @@ func (in *opencodeInputs) validate(obj *opencodeObject, path string) {
 		}
 		in.problem(path, "permission action/object is invalid")
 	}
-	permission(obj.get("permission"))
+	if value, present := obj.values["permission"]; present {
+		permission(value)
+	}
+	if agentConfig {
+		if value, present := obj.values["hidden"]; present {
+			if _, ok := value.(bool); !ok {
+				in.problem(path, "agent hidden must be boolean")
+			}
+		}
+	} else if value, present := obj.values["plugin"]; present {
+		if _, ok := value.([]any); !ok {
+			in.problem(path, "plugin must be an array")
+		}
+	}
 	if tools := obj.get("tools"); tools != nil {
 		if o, ok := tools.(*opencodeObject); ok {
 			for _, key := range o.keys {
@@ -626,7 +636,7 @@ func (in *opencodeInputs) validate(obj *opencodeObject, path string) {
 		if a, ok := agents.(*opencodeObject); ok {
 			for _, key := range a.keys {
 				if selected, ok := a.get(key).(*opencodeObject); ok {
-					in.validate(selected, path)
+					in.validate(selected, path, true)
 				} else {
 					in.problem(path, "agent configuration is not an object")
 				}
