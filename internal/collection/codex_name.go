@@ -15,6 +15,7 @@ func codexNativeName(source Source) (string, Evidence, *Problem) {
 		}
 		if !nativeAbsent(metadata, err) {
 			problem := makeProblem(ProblemNativeInput, metadata, "native namespace metadata is unreadable or outside the validated manifest form", nil, true)
+			problem.SourceIDs = []SourceID{source.ID}
 			return "", codexEvidence(EvidenceUnknown, "ancestor-plugin-manifest", metadata, "name", "namespace cannot be reliably interpreted; ownership and permission remain separate"), &problem
 		}
 		if filepath.Dir(path) == path {
@@ -22,5 +23,6 @@ func codexNativeName(source Source) (string, Evidence, *Problem) {
 		}
 	}
 	problem := makeProblem(ProblemNativeInput, source.Directory, "native namespace ancestry exceeds inspection limit", nil, true)
+	problem.SourceIDs = []SourceID{source.ID}
 	return "", codexEvidence(EvidenceUnknown, "ancestor-plugin-manifest", source.Directory, "name", "ancestry inspection limit reached"), &problem
 }

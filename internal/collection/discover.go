@@ -39,7 +39,7 @@ func discover(ctx context.Context, request Request) (*Snapshot, error) {
 	}
 	builder.addRelationshipProblems()
 	builder.finalizeProblemRelationships()
-	recountRootReports(rootReports, builder)
+	recountRootReports(rootReports, builder.references, builder.problems)
 
 	completeness := Complete
 	for _, problem := range builder.problems {
@@ -63,18 +63,18 @@ func discover(ctx context.Context, request Request) (*Snapshot, error) {
 	}, nil
 }
 
-func recountRootReports(reports []RootReport, builder discoveryBuilder) {
+func recountRootReports(reports []RootReport, references map[ReferenceID]Reference, allProblems []Problem) {
 	for index := range reports {
 		report := &reports[index]
 		sourceCount := 0
-		for _, reference := range builder.references {
+		for _, reference := range references {
 			if reference.Root == report.ID && reference.Source != "" {
 				sourceCount++
 			}
 		}
 		report.SourceCount = sourceCount
 		problems := make(map[ProblemID]Problem)
-		for _, problem := range builder.problems {
+		for _, problem := range allProblems {
 			if containsRootID(problem.RootIDs, report.ID) {
 				problems[problem.ID] = problem
 			}

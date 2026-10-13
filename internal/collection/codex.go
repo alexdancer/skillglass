@@ -129,7 +129,9 @@ func codexInvocation(source Source, inputs *codexInputs) SessionExplanation {
 	value, valuePresent := policy["allow_implicit_invocation"]
 	allowed, valueOK := value.(bool)
 	if err != nil || decodeErr != nil || (policyPresent && !policyOK) || (valuePresent && !valueOK) {
-		inputs.problems = append(inputs.problems, makeProblem(ProblemNativeInput, path, "invocation policy is unreadable or invalid YAML", nil, true))
+		problem := makeProblem(ProblemNativeInput, path, "invocation policy is unreadable or invalid YAML", nil, true)
+		problem.SourceIDs = []SourceID{source.ID}
+		inputs.problems = append(inputs.problems, problem)
 		result.State = "unknown"
 		result.Evidence = codexEvidence(EvidenceUnknown, "invocation-policy", path, "policy.allow_implicit_invocation", "policy cannot be reliably interpreted")
 		return result
@@ -322,6 +324,17 @@ func explainCodexSource(snapshot *Snapshot, id SourceID, roots map[RootID]Discov
 }
 
 func applyCodexProblems(snapshot *Snapshot, problems []Problem, roots map[RootID]DiscoveryRoot) {
+	merged := make(map[ProblemID]Problem, len(problems))
+	for _, problem := range problems {
+		current, exists := merged[problem.ID]
+		if !exists {
+			current = problem
+		}
+		current.SourceIDs = appendUniqueSourceIDs(current.SourceIDs, problem.SourceIDs...)
+		current.ReferenceIDs = appendUniqueReferenceIDs(current.ReferenceIDs, problem.ReferenceIDs...)
+		current.RootIDs = appendUniqueRootIDs(current.RootIDs, problem.RootIDs...)
+		merged[problem.ID] = current
+	}
 	known := make(map[ProblemID]bool)
 	for _, problem := range snapshot.problems {
 		known[problem.ID] = true
@@ -330,25 +343,22 @@ func applyCodexProblems(snapshot *Snapshot, problems []Problem, roots map[RootID
 		if known[problem.ID] {
 			continue
 		}
-		policy := strings.HasSuffix(problem.Path, filepath.Join("agents", "openai.yaml"))
+		problem = merged[problem.ID]
+		sourceLocal := len(problem.SourceIDs) > 0
 		for _, rid := range snapshot.referenceOrder {
 			reference := snapshot.references[rid]
-			if roots[reference.Root].Origin == "" {
+			if sourceLocal {
+				if !codexContainsSource(problem.SourceIDs, reference.Source) {
+					continue
+				}
+			} else if roots[reference.Root].Origin == "" {
 				continue
 			}
-			source := snapshot.sources[reference.Source]
-			if policy && filepath.Join(source.Directory, "agents", "openai.yaml") != problem.Path {
-				continue
-			}
-			if !containsRootID(problem.RootIDs, reference.Root) {
-				problem.RootIDs = append(problem.RootIDs, reference.Root)
-			}
-			problem.ReferenceIDs = append(problem.ReferenceIDs, rid)
-			if reference.Source != "" && !codexContainsSource(problem.SourceIDs, reference.Source) {
-				problem.SourceIDs = append(problem.SourceIDs, reference.Source)
-			}
+			problem.RootIDs = appendUniqueRootIDs(problem.RootIDs, reference.Root)
+			problem.ReferenceIDs = appendUniqueReferenceIDs(problem.ReferenceIDs, rid)
+			problem.SourceIDs = appendUniqueSourceIDs(problem.SourceIDs, reference.Source)
 		}
-		if len(problem.RootIDs) == 0 {
+		if len(problem.RootIDs) == 0 && !sourceLocal {
 			for _, root := range snapshot.scope.Roots {
 				if root.Origin != "" {
 					problem.RootIDs = append(problem.RootIDs, root.ID)
@@ -361,9 +371,17 @@ func applyCodexProblems(snapshot *Snapshot, problems []Problem, roots map[RootID
 			source.Problems = append(source.Problems, problem)
 			snapshot.sources[id] = source
 		}
-		snapshot.scope.Completeness = Incomplete
+		for _, id := range problem.ReferenceIDs {
+			reference := snapshot.references[id]
+			reference.Problems = append(reference.Problems, problem)
+			snapshot.references[id] = reference
+		}
+		if problem.LimitsCoverage {
+			snapshot.scope.Completeness = Incomplete
+		}
 		known[problem.ID] = true
 	}
+	recountRootReports(snapshot.scope.Roots, snapshot.references, snapshot.problems)
 }
 
 func codexContainsSource(values []SourceID, id SourceID) bool {

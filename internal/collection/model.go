@@ -631,6 +631,19 @@ func (snapshot *Snapshot) problemMatches(
 	if filters.Problem != "" && problem.Code != filters.Problem {
 		return false
 	}
+	if filters.Availability != "" && len(problem.SourceIDs) > 0 {
+		matches := false
+		for _, id := range problem.SourceIDs {
+			source := snapshot.sources[id]
+			if source.Availability.State == filters.Availability && sourceHasMatchingReference(source, matchingReferences) {
+				matches = true
+				break
+			}
+		}
+		if !matches {
+			return false
+		}
+	}
 	if filters.Context == FilterAll && filters.SourceRoot == "" {
 		return true
 	}

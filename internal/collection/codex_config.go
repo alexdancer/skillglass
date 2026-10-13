@@ -207,6 +207,11 @@ func canonicalManifest(path string) string {
 }
 func (inputs *codexInputs) permission(manifest string) PermissionExplanation {
 	result := PermissionExplanation{State: PermissionAllowed, Layers: cloneLayers(inputs.scope.ConfigLayers), Evidence: codexEvidence(EvidenceInferred, "default-enabled", manifest, "", "no matching entry in the effective skills.config array")}
+	if manifest == "" {
+		result.State = PermissionUnknown
+		result.Evidence = codexEvidence(EvidenceUnknown, "unresolved-manifest", "", "skills.config.path", "source manifest has no reliable canonical target")
+		return result
+	}
 	if inputs.uncertain {
 		result.State = PermissionUnknown
 		result.Evidence = codexEvidence(EvidenceUnknown, "incomplete-configuration", inputs.selectedLayer, "skills.config", "native inputs prevent a reliable local calculation")
@@ -218,7 +223,8 @@ func (inputs *codexInputs) permission(manifest string) PermissionExplanation {
 			result.Evidence = codexEvidence(EvidenceUnknown, "relative-selector", inputs.selectedLayer, "skills.config.path", "relative selector behavior was not validated")
 			return result
 		}
-		if canonicalManifest(choice.Path) != manifest {
+		target := canonicalManifest(choice.Path)
+		if target == "" || target != manifest {
 			continue
 		}
 		if choice.Enabled == nil {
