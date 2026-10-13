@@ -131,8 +131,8 @@ func explainClaudeSource(snapshot *Snapshot, id SourceID, roots map[RootID]Disco
 		result.State = AvailabilityAvailable
 		result.Reason = "eligible native startup reference with automatic and explicit invocation enabled"
 		invocation = SessionExplanation{State: "automatic-and-user", Evidence: claudeEvidence(EvidenceInferred, "invocation-frontmatter", source.Manifest.Path, "", "defaults permit model and user invocation; user-invocable=false hides only the user command")}
-		disable, disableOK := source.Manifest.Metadata["disable-model-invocation"].(bool)
-		user, userOK := source.Manifest.Metadata["user-invocable"].(bool)
+		disable, disableOK := claudeInvocationBoolean(source.Manifest.Metadata["disable-model-invocation"])
+		user, userOK := claudeInvocationBoolean(source.Manifest.Metadata["user-invocable"])
 		if !userOK {
 			user = true
 		}
@@ -314,4 +314,31 @@ func applyClaudePrecedence(snapshot *Snapshot, roots map[RootID]DiscoveryRoot, a
 			snapshot.sources[id] = source
 		}
 	}
+}
+
+func claudeInvocationBoolean(value any) (bool, bool) {
+	switch typed := value.(type) {
+	case bool:
+		return typed, true
+	case string:
+		switch strings.ToLower(typed) {
+		case "true", "yes", "on", "1":
+			return true, true
+		case "false", "no", "off", "0":
+			return false, true
+		}
+	case int:
+		if typed == 0 || typed == 1 {
+			return typed == 1, true
+		}
+	case int64:
+		if typed == 0 || typed == 1 {
+			return typed == 1, true
+		}
+	case uint64:
+		if typed == 0 || typed == 1 {
+			return typed == 1, true
+		}
+	}
+	return false, false
 }

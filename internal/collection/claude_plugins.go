@@ -136,7 +136,15 @@ func discoverClaudePlugins(request *Request, inputs *claudeInputs) map[string]cl
 				fact.activation = claudeEvidence(EvidenceInferred, "inactive-plugin-installation", registry, "installPath / projectPath", "this cached version or project-scoped installation is not the applicable registered installation")
 			}
 		}
-		roots := []string{filepath.Join(directory, "skills")}
+		skillsDirectory := filepath.Join(directory, "skills")
+		roots := []string{skillsDirectory}
+		if valid && len(manifest.Skills) == 0 {
+			if _, err := os.Stat(skillsDirectory); os.IsNotExist(err) {
+				if info, err := os.Stat(filepath.Join(directory, "SKILL.md")); err == nil && info.Mode().IsRegular() {
+					roots = append(roots, directory)
+				}
+			}
+		}
 		if valid && len(manifest.Skills) > 0 {
 			var one string
 			var extras []string

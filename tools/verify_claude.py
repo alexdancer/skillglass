@@ -9,6 +9,8 @@ import select
 import subprocess
 import tempfile
 
+from claude_containment import NativeContainment
+
 
 def write(path, text):
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -49,7 +51,7 @@ def initialize(command, cwd, environment):
         if not raw:
             raise RuntimeError("native initialization returned no catalog: " + stderr)
         response = json.loads(raw)["response"]["response"]
-        return raw, stderr, response
+        return raw, stderr, response, process.returncode
     finally:
         if process.poll() is None:
             process.kill()
@@ -63,12 +65,11 @@ def main():
     options = parser.parse_args()
     output = options.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    root = pathlib.Path(tempfile.mkdtemp(prefix="ale29-native-", dir="/tmp"))
+    root = pathlib.Path(tempfile.mkdtemp(prefix="ale29-native-", dir="/private/tmp")).resolve()
     home, repo = root / "home", root / "repo"
     cwd = repo / "nested"
     home.mkdir()
     cwd.mkdir(parents=True)
-    subprocess.run(["/usr/bin/git", "init", "-q", str(repo)], check=True)
     fixtures = [
         (repo, "nested-collision", "nested-collision", "", "ROOT"),
         (cwd, "nested-collision", "nested-collision", "", "CHILD"),
@@ -89,6 +90,11 @@ def main():
     ]
     for base, folder, name, extra, description in fixtures:
         skill(base, folder, name, extra, description)
+    aliases = ["true", "TRUE", "yes", "YeS", "on", "ON", "1",
+               "false", "FALSE", "no", "No", "off", "OFF", "0"]
+    for index, alias in enumerate(aliases):
+        for field in ["user-invocable", "disable-model-invocation"]:
+            skill(home, f"{field}-{index}", f"{field}-{index}", f"{field}: {alias}\n")
     target = home / ".claude/skills/manifest-link/SKILL.md"
     target.rename(root / "linked.md")
     target.symlink_to(root / "linked.md")
@@ -115,6 +121,17 @@ def main():
             "scope": "user", "installPath": str(plugin), "version": "1.0.0",
             "installedAt": "2026-10-13T00:00:00Z",
             "lastUpdated": "2026-10-13T00:00:00Z"}]}}))
+    root_plugin = market / "root-demo"
+    write(root_plugin / ".claude-plugin/plugin.json", json.dumps({"name": "root-demo", "version": "1.0.0"}))
+    write(root_plugin / "SKILL.md", "---\nname: root-action\ndescription: ROOT-PLUGIN-SKILL\n---\nInert.\n")
+    marketplace_path = market / ".claude-plugin/marketplace.json"
+    marketplace_data = json.loads(marketplace_path.read_text())
+    marketplace_data["plugins"].append({"name": "root-demo", "source": "./root-demo"})
+    write(marketplace_path, json.dumps(marketplace_data))
+    registry_path = home / ".claude/plugins/installed_plugins.json"
+    registry_data = json.loads(registry_path.read_text())
+    registry_data["plugins"]["root-demo@market"] = [{"scope": "user", "installPath": str(root_plugin), "version": "1.0.0"}]
+    write(registry_path, json.dumps(registry_data))
     user = home / ".claude/settings.json"
     project = cwd / ".claude/settings.json"
     local = cwd / ".claude/settings.local.json"
@@ -127,15 +144,33 @@ def main():
         "TMPDIR": str(root), "DISABLE_TELEMETRY": "1",
         "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
         "ANTHROPIC_BASE_URL": "http://127.0.0.1:9",
+        "XDG_CONFIG_HOME": str(home / ".config"), "XDG_CACHE_HOME": str(home / ".cache"),
+        "XCRUN_CACHE_PATH": str(root / "xcrun-cache"),
+        "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": str(root / "empty-git-config"),
     }
-    sandbox = root / "native-offline.sb"
-    sandbox_text = "(version 1)\n(allow default)\n(deny network*)\n"
-    write(sandbox, sandbox_text)
-    write(output / "native-offline.sb", sandbox_text)
-    prefix = ["/usr/bin/sandbox-exec", "-f", str(sandbox)]
-    args = [options.claude, "--print", "--input-format", "stream-json",
+    write(root / "empty-git-config", "")
+    containment = NativeContainment(root, cwd, environment, options.claude, output)
+    git_template = root / "git-template"
+    git_template.mkdir()
+    utility_profile = root / "git-setup.sb"
+    write(utility_profile, containment.profile.read_text() + '(allow file-write* (literal "/dev/null"))\n')
+    git_command = ["/usr/bin/sandbox-exec", "-f", str(utility_profile),
+                   "/Library/Developer/CommandLineTools/usr/bin/git", "init", "-q",
+                   "--template=" + str(git_template), str(repo)]
+    setup = subprocess.run(git_command, cwd=cwd, env=environment,
+                           capture_output=True, text=True, timeout=10)
+    write(output / "git-setup.stdout", setup.stdout)
+    write(output / "git-setup.stderr", setup.stderr)
+    write(output / "git-setup.json", json.dumps({"argv": git_command,
+          "cwd": str(cwd), "environment": environment, "exit_code": setup.returncode,
+          "profile": utility_profile.read_text(), "limit": "Preparatory Git utility only; Claude profile has no device write exception."}, indent=2) + "\n")
+    setup.check_returncode()
+    args = ["--print", "--input-format", "stream-json",
             "--output-format", "stream-json", "--verbose", "--strict-mcp-config",
             "--mcp-config", '{"mcpServers":{}}', "--no-session-persistence"]
+    version = subprocess.check_output(containment.command(["--version"]),
+                                      cwd=cwd, env=environment, text=True, timeout=25).strip()
+    assert version == "2.1.282 (Claude Code)", ("unsupported native version", version)
     cases = [
         ("baseline", {}, {}, {}),
         ("user-off", {"skillOverrides": {"collision": "off", "explicit": "off"}}, {}, {}),
@@ -160,9 +195,12 @@ def main():
             "model-only": "user-invocable-only", "explicit": "user-invocable-only"}}, {}, {}),
         ("deny", {"permissions": {"deny": ["Skill(collision)"],
                                   "ask": ["Skill(explicit)"]}}, {}, {}),
+        ("root-plugin-enabled", {"enabledPlugins": {"root-demo@market": True}}, {}, {}),
+        ("root-plugin-disabled", {"enabledPlugins": {"root-demo@market": False}}, {}, {}),
     ]
     areas = [home / ".claude/skills", repo / ".claude", cwd / ".claude",
-             plugin, configured / "skills", market / "demo", user,
+             plugin, configured / "skills", market / "demo", root_plugin, marketplace_path,
+             shared.parent, root / "linked.md", user,
              home / ".claude/plugins/installed_plugins.json",
              home / ".claude/plugins/known_marketplaces.json"]
     results = []
@@ -175,10 +213,11 @@ def main():
         environment["CLAUDE_CONFIG_DIR"] = str(
             configured if label == "configured-root" else home / ".claude")
         before = manifest(areas, root)
-        launch = prefix + args
+        launch_args = list(args)
         if label == "plugin-session":
-            launch += ["--plugin-dir", str(plugin)]
-        raw, stderr, response = initialize(launch, cwd, environment)
+            launch_args += ["--plugin-dir", str(plugin)]
+        launch = containment.command(launch_args)
+        raw, stderr, response, exit_code = initialize(launch, cwd, environment)
         write(output / (label + ".json"), raw)
         write(output / (label + ".stderr"), stderr)
         after = manifest(areas, root)
@@ -187,15 +226,16 @@ def main():
         assert before == after, (label, "native fixture content mutated")
         registry_result = None
         if label in ["plugin-enabled", "plugin-disabled"]:
-            completed = subprocess.run(prefix + [options.claude, "plugin", "list", "--json"],
+            completed = subprocess.run(containment.command(["plugin", "list", "--json"]),
                                        cwd=cwd, env=environment, capture_output=True,
                                        text=True, timeout=25)
             write(output / (label + "-registry.json"), completed.stdout)
             write(output / (label + "-registry.stderr"), completed.stderr)
+            completed.check_returncode()
             registry_result = {"exit_code": completed.returncode,
                                "stdout_path": str(output / (label + "-registry.json"))}
         results.append({
-            "case": label, "commands": [command for command in response["commands"]
+            "case": label, "process_exit_after_catalog_termination": exit_code, "commands": [command for command in response["commands"]
                                          if not command.get("builtin")],
             "fixture_unchanged": True, "account": response["account"],
             "command": launch, "settings": {"user": user_data,
@@ -223,9 +263,19 @@ def main():
     assert not any(c["name"] == "model-only" for c in commands["visibility-user-only"])
     assert not any(c["name"] in ["deep", "outside", "below", "reserved-synced"]
                    for c in commands["baseline"])
+    assert any(c["name"] == "root-demo:root-action" and "ROOT-PLUGIN-SKILL" in c["description"]
+               for c in commands["root-plugin-enabled"])
+    assert not any(c["name"] == "root-demo:root-action" for c in commands["root-plugin-disabled"])
+    for index, alias in enumerate(aliases):
+        listed = any(c["name"] == f"user-invocable-{index}" for c in commands["baseline"])
+        assert listed == (alias.lower() in {"true", "yes", "on", "1"}), (alias, listed)
+        # Catalog inclusion observes user invocation only, not model enforcement.
+        assert any(c["name"] == f"disable-model-invocation-{index}" for c in commands["baseline"])
     summary = {
-        "version": subprocess.check_output([options.claude, "--version"], text=True).strip(),
-        "fixture": str(root), "network_denied": True, "model_prompts": 0,
+        "version": version, "requested_binary": options.claude,
+        "helper_sha256": hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest(),
+        "containment_helper_sha256": hashlib.sha256((pathlib.Path(__file__).parent / "claude_containment.py").read_bytes()).hexdigest(),
+        "fixture": str(root), "network_denied": True, "containment": str(output / "containment.json"), "model_prompts": 0,
         "skill_workloads": 0, "environment_keys": sorted(environment), "results": results,
     }
     write(output / "summary.json", json.dumps(summary, indent=2) + "\n")
