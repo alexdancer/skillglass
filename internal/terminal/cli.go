@@ -52,10 +52,10 @@ func encodeProblemsJSON(snapshot *collection.Snapshot, filters collection.Filter
 	})
 }
 
-func encodeReadJSON(snapshot *collection.Snapshot, id collection.SourceID) ([]byte, error) {
+func encodeSourceJSON(snapshot *collection.Snapshot, id collection.SourceID, operation string) ([]byte, error) {
 	source, ok := snapshot.Source(id)
 	envelope := readEnvelope{
-		Operation: "read",
+		Operation: operation,
 		Scope:     snapshot.Scope(),
 		Problems:  snapshot.Problems(),
 	}
@@ -112,6 +112,9 @@ func renderList(snapshot *collection.Snapshot, filters collection.Filters) strin
 		fmt.Fprintf(&output, "  Manifest: %s\n", source.Manifest.Status)
 		fmt.Fprintf(&output, "  Ownership: %s\n", source.Ownership.State)
 		fmt.Fprintf(&output, "  Availability: %s\n", source.Availability.State)
+		if source.Availability.Evidence != nil {
+			fmt.Fprintf(&output, "  Evidence: %s | %s\n", source.Availability.Evidence.Kind, safeInline(source.Availability.Reason))
+		}
 		fmt.Fprintf(&output, "  Resources: %d\n", len(source.Resources))
 		for _, reference := range referencesBySource[source.ID] {
 			matching := ""
@@ -167,6 +170,9 @@ func renderRead(snapshot *collection.Snapshot, id collection.SourceID) (string, 
 	}
 	fmt.Fprintf(&output, "ID: %s\n", safeInline(string(source.ID)))
 	fmt.Fprintf(&output, "Name: %s\n", safeInline(name))
+	for _, line := range availabilitySummaryLines(source.Availability) {
+		fmt.Fprintln(&output, safeInline(line))
+	}
 	fmt.Fprintf(&output, "Description: %s\n", displayOptional(source.Description))
 	fmt.Fprintf(&output, "Source: %s\n", safeInline(source.Directory))
 	for _, reference := range snapshot.References(id) {
@@ -188,6 +194,9 @@ func renderRead(snapshot *collection.Snapshot, id collection.SourceID) (string, 
 		source.Availability.State,
 		safeInline(source.Availability.Reason),
 	)
+	for _, line := range availabilityLines(source.Availability) {
+		fmt.Fprintln(&output, safeInline(line))
+	}
 	fmt.Fprintf(&output, "Manifest: %s\n", source.Manifest.Status)
 	if source.Manifest.IsSymlink {
 		fmt.Fprintf(
@@ -241,6 +250,9 @@ func renderRead(snapshot *collection.Snapshot, id collection.SourceID) (string, 
 }
 
 func renderScope(output *strings.Builder, scope collection.Scope) {
+	for _, line := range scopeAgentLines(scope) {
+		fmt.Fprintln(output, safeInline(line))
+	}
 	if scope.Project.Selected {
 		fmt.Fprintf(output, "Project: %s\n", safeInline(scope.Project.Path))
 	} else {
@@ -260,6 +272,9 @@ func renderScope(output *strings.Builder, scope collection.Scope) {
 }
 
 func renderFilters(output *strings.Builder, filters collection.Filters) {
+	if filters.Availability != "" {
+		fmt.Fprintf(output, "Availability filter: %s\n", filters.Availability)
+	}
 	search := displayOptional(filters.Search)
 	sourceRoot := displayOptional(filters.SourceRoot)
 	problem := displayOptional(string(filters.Problem))

@@ -15,20 +15,23 @@ const usage = `Usage:
   skillglass list [SCOPE] [FILTERS] [--search TEXT] [--json]
   skillglass problems [SCOPE] [FILTERS] [--search TEXT] [--json]
   skillglass read [SCOPE] [--json] SOURCE_ID
+  skillglass explain [SCOPE] [--json] SOURCE_ID
   skillglass compare [SCOPE] [--json] LEFT_SOURCE_ID RIGHT_SOURCE_ID
   skillglass browse [SCOPE]
 
 Scope:
+  --agent codex        inferred native Codex scope and configured availability
   --root ROOT          custom discovery root; repeatable
   --project PROJECT    selected project context
   --project-root ROOT  discovery root associated with --project; repeatable
 
 Filters:
   --source-root ROOT   one selected normalized root
-  --context VALUE      all, project, or custom (default all)
+  --context VALUE      all, project, custom, global, system, or managed (default all)
   --problem CODE       one documented problem code
+  --availability STATE all, available, disabled, explicit-only, ask, shadowed, unavailable, unknown
 
-At least one explicit --root or --project-root is required. Project context never adds an implicit root.
+Without --agent, at least one explicit --root or --project-root is required. Codex adds native roots for the selected project only.
 `
 
 type stringList []string
@@ -48,6 +51,8 @@ type optionalString struct {
 }
 
 type commonOptions struct {
+	agent        string
+	availability string
 	roots        stringList
 	projectRoots stringList
 	project      optionalString
@@ -58,10 +63,12 @@ type commonOptions struct {
 }
 
 func (options *commonOptions) bind(flags *flag.FlagSet, includeFilters, includeJSON bool) {
+	flags.StringVar(&options.agent, "agent", "", "selected agent application (codex)")
 	flags.Var(&options.roots, "root", "explicit custom discovery root; repeatable")
 	flags.Var(&options.projectRoots, "project-root", "explicit project-associated discovery root; repeatable")
 	flags.Var(&options.project, "project", "selected project context")
 	if includeFilters {
+		flags.StringVar(&options.availability, "availability", "", "filter by configured availability")
 		flags.StringVar(&options.sourceRoot, "source-root", "", "filter to one selected root")
 		flags.StringVar(&options.context, "context", "all", "filter by all, project, or custom context")
 		flags.StringVar(&options.problem, "problem", "", "filter by a documented problem code")
@@ -96,8 +103,8 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return runList(args[1:], stdout, stderr)
 	case "problems":
 		return runProblems(args[1:], stdout, stderr)
-	case "read":
-		return runRead(args[1:], stdout, stderr)
+	case "read", "explain":
+		return runSource(args[0], args[1:], stdout, stderr)
 	case "compare":
 		return runCompare(args[1:], stdout, stderr)
 	case "browse":
@@ -133,7 +140,7 @@ func runList(args []string, stdout, stderr io.Writer) int {
 	if snapshot == nil {
 		return code
 	}
-	filters, err := snapshot.NewFilters(*search, options.sourceRoot, options.context, options.problem)
+	filters, err := optionFilters(snapshot, options, *search)
 	if err != nil {
 		writeError(stderr, err)
 		io.WriteString(stderr, usage)
@@ -184,7 +191,7 @@ func runProblems(args []string, stdout, stderr io.Writer) int {
 	if snapshot == nil {
 		return code
 	}
-	filters, err := snapshot.NewFilters(*search, options.sourceRoot, options.context, options.problem)
+	filters, err := optionFilters(snapshot, options, *search)
 	if err != nil {
 		writeError(stderr, err)
 		io.WriteString(stderr, usage)
@@ -210,8 +217,8 @@ func runProblems(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func runRead(args []string, stdout, stderr io.Writer) int {
-	flags := flag.NewFlagSet("read", flag.ContinueOnError)
+func runSource(operation string, args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet(operation, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	var options commonOptions
 	options.bind(flags, false, true)
@@ -225,7 +232,7 @@ func runRead(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if flags.NArg() != 1 {
-		writeError(stderr, errors.New("read requires exactly one SOURCE_ID after the flags"))
+		writeError(stderr, fmt.Errorf("%s requires exactly one SOURCE_ID after the flags", operation))
 		io.WriteString(stderr, usage)
 		return 2
 	}
@@ -239,7 +246,7 @@ func runRead(args []string, stdout, stderr io.Writer) int {
 	var found bool
 	var err error
 	if options.jsonOutput {
-		output, err = encodeReadJSON(snapshot, id)
+		output, err = encodeSourceJSON(snapshot, id, operation)
 		_, found = snapshot.Source(id)
 	} else {
 		var rendered string
@@ -265,7 +272,7 @@ func buildSnapshot(options commonOptions, stderr io.Writer) (*collection.Snapsho
 	if options.project.set {
 		projectValue = &options.project.value
 	}
-	request, err := collection.NewRequest(options.roots, options.projectRoots, projectValue)
+	request, err := collection.NewRequestWithAgent(options.roots, options.projectRoots, projectValue, options.agent)
 	if err != nil {
 		writeError(stderr, err)
 		io.WriteString(stderr, usage)

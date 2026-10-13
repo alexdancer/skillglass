@@ -21,6 +21,9 @@ type ReferenceContext string
 const (
 	ContextCustom  ReferenceContext = "custom"
 	ContextProject ReferenceContext = "project"
+	ContextGlobal  ReferenceContext = "global"
+	ContextSystem  ReferenceContext = "system"
+	ContextManaged ReferenceContext = "managed"
 )
 
 type ContextFilter string
@@ -29,6 +32,9 @@ const (
 	FilterAll     ContextFilter = "all"
 	FilterCustom  ContextFilter = "custom"
 	FilterProject ContextFilter = "project"
+	FilterGlobal  ContextFilter = "global"
+	FilterSystem  ContextFilter = "system"
+	FilterManaged ContextFilter = "managed"
 )
 
 type QueryTarget string
@@ -61,17 +67,29 @@ type ProjectContext struct {
 }
 
 type DiscoveryRoot struct {
-	ID      RootID           `json:"id"`
-	Path    string           `json:"path"`
-	Context ReferenceContext `json:"context"`
+	ID       RootID           `json:"id"`
+	Path     string           `json:"path"`
+	Context  ReferenceContext `json:"context"`
+	Origin   string           `json:"origin,omitempty"`
+	Optional bool             `json:"-"`
 }
 
 type Request struct {
-	Project ProjectContext
-	Roots   []DiscoveryRoot
+	Project   ProjectContext
+	Roots     []DiscoveryRoot
+	Agent     string
+	home      string
+	codexHome string
 }
 
 func NewRequest(rawRoots, rawProjectRoots []string, rawProject *string) (Request, error) {
+	return NewRequestWithAgent(rawRoots, rawProjectRoots, rawProject, "")
+}
+
+func NewRequestWithAgent(rawRoots, rawProjectRoots []string, rawProject *string, agent string) (Request, error) {
+	if agent != "" && agent != "codex" {
+		return Request{}, fmt.Errorf("unknown agent %q; use codex", agent)
+	}
 	request := Request{Roots: make([]DiscoveryRoot, 0, len(rawRoots)+len(rawProjectRoots))}
 	if rawProject != nil {
 		if *rawProject == "" {
@@ -86,7 +104,7 @@ func NewRequest(rawRoots, rawProjectRoots []string, rawProject *string) (Request
 	if len(rawProjectRoots) > 0 && !request.Project.Selected {
 		return Request{}, errors.New("--project-root requires --project")
 	}
-	if len(rawRoots)+len(rawProjectRoots) == 0 {
+	if len(rawRoots)+len(rawProjectRoots) == 0 && agent == "" {
 		return Request{}, errors.New("at least one --root or --project-root is required")
 	}
 	appendRoots := func(rawValues []string, context ReferenceContext, flag string) error {
@@ -112,6 +130,15 @@ func NewRequest(rawRoots, rawProjectRoots []string, rawProject *string) (Request
 	if err := appendRoots(rawProjectRoots, ContextProject, "project-root"); err != nil {
 		return Request{}, err
 	}
+	request.Agent = agent
+	if agent == "codex" {
+		var err error
+		request.home, err = nativeHome()
+		if err != nil {
+			return Request{}, err
+		}
+		request.codexHome = codexHome(request.home)
+	}
 	return request, nil
 }
 
@@ -132,6 +159,7 @@ const (
 	ProblemIdentityUncertain       ProblemCode = "identity-uncertain"
 	ProblemDuplicateName           ProblemCode = "duplicate-name"
 	ProblemSharedManifest          ProblemCode = "shared-manifest"
+	ProblemNativeInput             ProblemCode = "native-input"
 )
 
 var documentedProblemCodes = []ProblemCode{
@@ -149,6 +177,7 @@ var documentedProblemCodes = []ProblemCode{
 	ProblemIdentityUncertain,
 	ProblemDuplicateName,
 	ProblemSharedManifest,
+	ProblemNativeInput,
 }
 
 func ProblemCodes() []ProblemCode {
@@ -187,12 +216,15 @@ type RootReport struct {
 	State        RootState        `json:"state"`
 	SourceCount  int              `json:"source_count"`
 	ProblemCount int              `json:"problem_count"`
+	Origin       string           `json:"origin,omitempty"`
+	Evidence     *Evidence        `json:"evidence,omitempty"`
 }
 
 type Scope struct {
 	Project      ProjectContext `json:"project"`
 	Roots        []RootReport   `json:"roots"`
 	Completeness Completeness   `json:"completeness"`
+	Agent        *AgentScope    `json:"agent,omitempty"`
 }
 
 type Reference struct {
@@ -269,17 +301,17 @@ type Resource struct {
 }
 
 type Source struct {
-	ID           SourceID      `json:"id"`
-	Identity     Identity      `json:"identity"`
-	Directory    string        `json:"source_path"`
-	Name         string        `json:"name,omitempty"`
-	Description  string        `json:"description,omitempty"`
-	Manifest     Manifest      `json:"manifest"`
-	Resources    []Resource    `json:"resources"`
-	References   []ReferenceID `json:"reference_ids"`
-	Problems     []Problem     `json:"problems"`
-	Ownership    EvidenceState `json:"ownership"`
-	Availability EvidenceState `json:"availability"`
+	ID           SourceID                `json:"id"`
+	Identity     Identity                `json:"identity"`
+	Directory    string                  `json:"source_path"`
+	Name         string                  `json:"name,omitempty"`
+	Description  string                  `json:"description,omitempty"`
+	Manifest     Manifest                `json:"manifest"`
+	Resources    []Resource              `json:"resources"`
+	References   []ReferenceID           `json:"reference_ids"`
+	Problems     []Problem               `json:"problems"`
+	Ownership    EvidenceState           `json:"ownership"`
+	Availability AvailabilityExplanation `json:"availability"`
 }
 
 type View struct {
@@ -291,10 +323,11 @@ type View struct {
 }
 
 type Filters struct {
-	Search     string        `json:"search,omitempty"`
-	SourceRoot string        `json:"source_root,omitempty"`
-	Context    ContextFilter `json:"context"`
-	Problem    ProblemCode   `json:"problem,omitempty"`
+	Search       string            `json:"search,omitempty"`
+	SourceRoot   string            `json:"source_root,omitempty"`
+	Context      ContextFilter     `json:"context"`
+	Problem      ProblemCode       `json:"problem,omitempty"`
+	Availability AvailabilityState `json:"availability,omitempty"`
 }
 
 type SelectionChangeState string
@@ -321,7 +354,13 @@ type Snapshot struct {
 }
 
 func Build(ctx context.Context, request Request) (*Snapshot, error) {
-	if len(request.Roots) == 0 {
+	if request.Agent != "" && request.Agent != "codex" {
+		return nil, fmt.Errorf("unknown agent %q", request.Agent)
+	}
+	if request.Agent == "codex" && (request.home == "" || request.codexHome == "") {
+		return nil, errors.New("native scope requires NewRequestWithAgent")
+	}
+	if len(request.Roots) == 0 && request.Agent == "" {
 		return nil, errors.New("collection request has no roots")
 	}
 	for _, root := range request.Roots {
@@ -331,6 +370,9 @@ func Build(ctx context.Context, request Request) (*Snapshot, error) {
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if request.Agent == "codex" {
+		return buildCodex(ctx, request)
 	}
 	return discover(ctx, request)
 }
@@ -353,9 +395,9 @@ func (snapshot *Snapshot) NewFilters(search, rawSourceRoot, rawContext, rawProbl
 		filters.Context = ContextFilter(rawContext)
 	}
 	switch filters.Context {
-	case FilterAll, FilterCustom, FilterProject:
+	case FilterAll, FilterCustom, FilterProject, FilterGlobal, FilterSystem, FilterManaged:
 	default:
-		return Filters{}, fmt.Errorf("unknown context %q; use all, project, or custom", rawContext)
+		return Filters{}, fmt.Errorf("unknown context %q; use all, project, custom, global, system, or managed", rawContext)
 	}
 	problem, err := ParseProblemCode(rawProblem)
 	if err != nil {
@@ -388,6 +430,9 @@ func (snapshot *Snapshot) Query(filters Filters, target QueryTarget) View {
 	selected := make(map[SourceID]struct{}, len(snapshot.order))
 	for _, id := range snapshot.order {
 		source := snapshot.sources[id]
+		if filters.Availability != "" && source.Availability.State != filters.Availability {
+			continue
+		}
 		if !sourceHasMatchingReference(source, matchingReferences) {
 			continue
 		}
@@ -496,10 +541,23 @@ func sortedSourceIDs(sources map[SourceID]Source) []SourceID {
 
 func cloneScope(scope Scope) Scope {
 	scope.Roots = append([]RootReport(nil), scope.Roots...)
+	for i := range scope.Roots {
+		if scope.Roots[i].Evidence != nil {
+			copy := *scope.Roots[i].Evidence
+			scope.Roots[i].Evidence = &copy
+		}
+	}
+	if scope.Agent != nil {
+		copy := *scope.Agent
+		copy.ConfigLayers = cloneLayers(copy.ConfigLayers)
+		copy.Gaps = append([]string(nil), copy.Gaps...)
+		scope.Agent = &copy
+	}
 	return scope
 }
 
 func cloneSource(source Source) Source {
+	source.Availability = cloneAvailability(source.Availability)
 	source.References = append([]ReferenceID(nil), source.References...)
 	source.Resources = append([]Resource(nil), source.Resources...)
 	source.Problems = cloneProblems(source.Problems)

@@ -102,6 +102,7 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 		ID:        root.ID,
 		Requested: root.Path,
 		Context:   root.Context,
+		Origin:    root.Origin,
 		State:     RootSearched,
 	}
 	problemStart := len(builder.problems)
@@ -120,6 +121,10 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 		} else if errors.Is(err, os.ErrNotExist) {
 			code = ProblemRootMissing
 			state = RootMissing
+		}
+		if state == RootMissing && root.Optional {
+			report.State = RootMissing
+			return report
 		}
 		problem := makeProblem(code, root.Path, "selected root could not be opened", err, true)
 		problem.RootIDs = []RootID{root.ID}
@@ -190,6 +195,10 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 		sort.Slice(entries, func(left, right int) bool {
 			return entries[left].Name() < entries[right].Name()
 		})
+		if root.Origin != "" {
+			builder.discoverNativeChildren(ctx, root, root.Path, make(map[string]bool), new(int))
+			entries = nil
+		}
 		for _, entry := range entries {
 			if err := ctx.Err(); err != nil {
 				problem := makeProblem(
@@ -384,7 +393,7 @@ func (builder *discoveryBuilder) discoverCandidate(
 		References:   []ReferenceID{id},
 		Problems:     problems,
 		Ownership:    EvidenceState{State: "unknown", Reason: "an explicit path does not prove ownership"},
-		Availability: EvidenceState{State: "unknown", Reason: "no agent adapter supplied availability evidence"},
+		Availability: AvailabilityExplanation{State: "unknown", Reason: "no agent adapter supplied availability evidence"},
 	}
 	builder.sources[sourceIdentity] = source
 	if identityErr == nil {
