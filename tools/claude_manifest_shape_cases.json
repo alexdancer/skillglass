@@ -1,0 +1,160 @@
+[
+  {
+    "name": "absent",
+    "field": "",
+    "present": false,
+    "value": null,
+    "native_valid": true,
+    "want": "available",
+    "catalog_listed": true,
+    "source_present": true
+  },
+  {
+    "name": "repository-string",
+    "field": "repository",
+    "present": true,
+    "value": "not-an-absolute-url",
+    "native_valid": true,
+    "want": "available",
+    "catalog_listed": true,
+    "source_present": true
+  },
+  {
+    "name": "repository-number",
+    "field": "repository",
+    "present": true,
+    "value": 17,
+    "native_valid": false,
+    "want": "unknown",
+    "catalog_listed": false,
+    "source_present": true
+  },
+  {
+    "name": "repository-null",
+    "field": "repository",
+    "present": true,
+    "value": null,
+    "native_valid": false,
+    "want": "unknown",
+    "catalog_listed": false,
+    "source_present": true
+  },
+  {
+    "name": "repository-object",
+    "field": "repository",
+    "present": true,
+    "value": {
+      "url": "https://example.invalid"
+    },
+    "native_valid": false,
+    "want": "unknown",
+    "catalog_listed": false,
+    "source_present": true
+  },
+  {
+    "name": "version-string",
+    "field": "version",
+    "present": true,
+    "value": "not-semver",
+    "native_valid": true,
+    "want": "available",
+    "catalog_listed": true,
+    "source_present": true
+  },
+  {
+    "name": "version-null",
+    "field": "version",
+    "present": true,
+    "value": null,
+    "native_valid": false,
+    "want": "unknown",
+    "catalog_listed": false,
+    "source_present": true
+  },
+  {
+    "name": "version-number",
+    "field": "version",
+    "present": true,
+    "value": 17,
+    "native_valid": false,
+    "want": "unknown",
+    "catalog_listed": false,
+    "source_present": false
+  },
+  {
+    "name": "skills-dot",
+    "field": "skills",
+    "present": true,
+    "value": ".",
+    "native_valid": true,
+    "want": "available",
+    "catalog_listed": true,
+    "source_present": true
+  },
+  {
+    "name": "skills-null",
+    "field": "skills",
+    "present": true,
+    "value": null,
+    "native_valid": false,
+    "want": "unknown",
+    "catalog_listed": false,
+    "source_present": true
+  },
+  {
+    "name": "skills-null-element",
+    "field": "skills",
+    "present": true,
+    "value": [
+      null
+    ],
+    "native_valid": false,
+    "want": "unknown",
+    "catalog_listed": false,
+    "source_present": true
+  },
+  {
+    "name": "absent-repeat",
+    "field": "",
+    "present": false,
+    "value": null,
+    "native_valid": true,
+    "want": "available",
+    "catalog_listed": true,
+    "source_present": true
+  },
+  {
+    "name": "skills-array-dot",
+    "field": "skills",
+    "present": true,
+    "value": [
+      "."
+    ],
+    "native_valid": true,
+    "catalog_listed": true,
+    "source_present": true,
+    "want": "available"
+  },
+  {
+    "name": "skills-array-empty",
+    "field": "skills",
+    "present": true,
+    "value": [],
+    "native_valid": true,
+    "catalog_listed": false,
+    "source_present": false,
+    "want": "absent"
+  },
+  {
+    "name": "skills-array-dot-repeat",
+    "field": "skills",
+    "present": true,
+    "value": [
+      "."
+    ],
+    "native_valid": true,
+    "catalog_listed": true,
+    "source_present": true,
+    "want": "available"
+  }
+]

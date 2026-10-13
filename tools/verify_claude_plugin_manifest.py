@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate bounded plugin homepage controls without prompts or workloads."""
+"""Validate bounded plugin homepage and field-shape controls without workloads."""
 import argparse
 import hashlib
 import json
@@ -48,14 +48,19 @@ def main():
             "--verbose", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--no-session-persistence"]
     areas = [plugin, root / "market/.claude-plugin", home / ".claude/settings.json",
              home / ".claude/plugins/known_marketplaces.json", home / ".claude/plugins/installed_plugins.json"]
-    cases_path = pathlib.Path(__file__).with_name("claude_homepage_cases.json")
-    cases = json.loads(cases_path.read_text())
+    case_files = {"homepage": pathlib.Path(__file__).with_name("claude_homepage_cases.json"),
+                  "shape": pathlib.Path(__file__).with_name("claude_manifest_shape_cases.json")}
+    cases = [dict(case, family=family) for family, path in case_files.items()
+             for case in json.loads(path.read_text())]
+    case_hashes = {family: hashlib.sha256(path.read_bytes()).hexdigest()
+                   for family, path in case_files.items()}
     results = []
     for case in cases:
-        label, homepage = case["name"], case["homepage"]
+        label = case["family"] + "-" + case["name"]
         metadata = {"name": "demo", "version": "1.0.0"}
+        field = "homepage" if case["family"] == "homepage" else case["field"]
         if case["present"]:
-            metadata["homepage"] = homepage
+            metadata[field] = case["homepage"] if case["family"] == "homepage" else case["value"]
         write(plugin / ".claude-plugin/plugin.json", json.dumps(metadata))
         before = manifest(areas, root)
         validation = subprocess.run(containment.command(["plugin", "validate", str(plugin)]),
@@ -72,21 +77,22 @@ def main():
         commands = [c for c in response["commands"] if not c.get("builtin")]
         invalid = not case["native_valid"]
         listed = any(c["name"] == "demo:root-action" for c in commands)
-        assert listed == (not invalid), (label, commands)
+        assert listed == case.get("catalog_listed", not invalid), (label, commands)
         assert validation.returncode == (1 if invalid else 0), (label, validation.stderr)
         if invalid:
-            assert "homepage" in validation.stdout + validation.stderr
-        results.append({"case": label, "manifest": metadata, "validate_exit": validation.returncode,
+            assert field in validation.stdout + validation.stderr
+        results.append({"case": case["name"], "family": case["family"], "manifest": metadata, "validate_exit": validation.returncode,
                         "commands": commands, "termination_after_catalog_exit": code,
                         "fixture_unchanged": True,
                         "before_sha256": hashlib.sha256(json.dumps(before, sort_keys=True).encode()).hexdigest(),
                         "after_sha256": hashlib.sha256(json.dumps(after, sort_keys=True).encode()).hexdigest()})
     summary = {"version": version.stdout.strip(), "results": results, "fixture": str(root),
                "model_prompts": 0, "skill_workloads": 0,
-               "cases_sha256": hashlib.sha256(cases_path.read_bytes()).hexdigest(),
+               "case_files_sha256": case_hashes,
+               "cases_sha256": hashlib.sha256(json.dumps(case_hashes, sort_keys=True).encode()).hexdigest(),
                "helper_sha256": hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest(),
                "containment_helper_sha256": hashlib.sha256((pathlib.Path(__file__).parent / "claude_containment.py").read_bytes()).hexdigest(),
-               "limits": "Bounded 25-case homepage census only. No full URL/schema equivalence, model enforcement or enterprise-state claim."}
+               "limits": "Bounded 25-case homepage and 15-case field-shape census only. Validation success and command inclusion are separate, including explicit empty skills arrays. No full URL/schema equivalence, model enforcement or enterprise-state claim."}
     write(output / "summary.json", json.dumps(summary, indent=2) + "\n")
     print(json.dumps(summary, indent=2))
 

@@ -278,27 +278,53 @@ func claudePluginManifestLimitation(raw []byte) string {
 	if json.Unmarshal(raw, &fields) != nil {
 		return "plugin manifest cannot be decoded"
 	}
-	if value, present := fields["homepage"]; present {
-		var homepage string
-		if json.Unmarshal(value, &homepage) != nil || string(value) == "null" {
-			return "homepage must be a URL string; this manifest cannot establish native plugin activation"
-		}
-		assessment := assessClaudeHomepage(homepage)
-		if assessment.validity != claudeHomepageSupported {
-			return assessment.reason
-		}
-	}
 	names := make([]string, 0, len(fields))
 	for name := range fields {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	for _, name := range names {
+		value := fields[name]
 		switch name {
-		case "name", "version", "skills", "homepage", "repository":
+		case "name", "version", "repository":
+			if _, ok := claudeManifestString(value); !ok {
+				return name + " must be a non-null string; this manifest cannot establish native plugin activation"
+			}
+		case "homepage":
+			homepage, ok := claudeManifestString(value)
+			if !ok {
+				return "homepage must be a non-null URL string; this manifest cannot establish native plugin activation"
+			}
+			assessment := assessClaudeHomepage(homepage)
+			if assessment.validity != claudeHomepageSupported {
+				return assessment.reason
+			}
+		case "skills":
+			if _, ok := claudeManifestString(value); ok {
+				continue
+			}
+			var paths []json.RawMessage
+			if json.Unmarshal(value, &paths) != nil || paths == nil {
+				return "skills must be a non-null string or array of non-null strings; this manifest cannot establish native plugin activation"
+			}
+			for _, path := range paths {
+				if _, ok := claudeManifestString(path); !ok {
+					return "skills array elements must be non-null strings; this manifest cannot establish native plugin activation"
+				}
+			}
 		default:
 			return "manifest field " + name + " has unmodeled native activation constraints; partial manifest decoding is not full native schema validation"
 		}
 	}
 	return ""
+}
+
+// JSON null successfully decodes into a string zero value, but an explicitly
+// present null does not have the same native contract as an omitted field.
+func claudeManifestString(raw json.RawMessage) (string, bool) {
+	var value *string
+	if json.Unmarshal(raw, &value) != nil || value == nil {
+		return "", false
+	}
+	return *value, true
 }

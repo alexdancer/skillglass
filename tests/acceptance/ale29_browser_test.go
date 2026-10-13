@@ -124,6 +124,36 @@ func TestALE29ClaudeBrowserExplainsFiltersAndRefreshesWithoutWrites(t *testing.T
 			send("g", "Read lines 1-")
 			send("r", "Availability: unknown")
 			collect("09-idna-unmodeled", "Availability: unknown", "unmodeled IDNA validity", "Plugin: demo@market", "unsupported")
+			for index, shape := range []struct {
+				name, field string
+				value       any
+			}{
+				{"repository-number", "repository", 17},
+				{"repository-null", "repository", nil},
+				{"repository-object", "repository", map[string]string{"url": "https://example.invalid"}},
+				{"version-null", "version", nil},
+				{"skills-null", "skills", nil},
+				{"skills-null-element", "skills", []any{nil}},
+			} {
+				claudeSettings(t, filepath.Join(plugin, ".claude-plugin/plugin.json"), map[string]any{"name": "demo", "version": "not-semver", "repository": "not-an-absolute-url"})
+				before = treeManifest(t, fx.base)
+				send("g", "Read lines 1-")
+				send("r", "Availability: available")
+				collect(fmt.Sprintf("10-shape-valid-%02d", index), "Availability: available", "local-marketplace-plugin", "Plugin: demo@market", "not-semver", "unsupported")
+				fields := map[string]any{"name": "demo", "version": "1.0.0"}
+				fields[shape.field] = shape.value
+				claudeSettings(t, filepath.Join(plugin, ".claude-plugin/plugin.json"), fields)
+				before = treeManifest(t, fx.base)
+				send("g", "Read lines 1-")
+				send("r", "Availability: unknown")
+				collect("11-shape-"+shape.name, "Availability: unknown", shape.field, "non-null", "plugin-manifest-unverified", "Plugin: demo@market", "unsupported")
+				assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+			}
+			claudeSettings(t, filepath.Join(plugin, ".claude-plugin/plugin.json"), map[string]any{"name": "demo", "version": "1.0.0", "skills": []string{"."}})
+			before = treeManifest(t, fx.base)
+			send("g", "Read lines 1-")
+			send("r", "Availability: available")
+			collect("12-shape-valid-array", "Availability: available", "local-marketplace-plugin", "Plugin: demo@market", "unsupported")
 			send("Escape", "SKILLGLASS | Sources")
 			scope := send("s", "SKILLGLASS | Scope and filters", "Agent: claude-code", "Validated: Claude Code 2.1.282")
 			assertPaneCells(t, scope, size.width, size.height)
