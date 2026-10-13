@@ -255,22 +255,15 @@ func runSandboxCommand(
 	return result
 }
 
-func runSandboxBrowser(t *testing.T, fx fixture, profile, executable string) []byte {
+func runSandboxBrowser(t *testing.T, fx fixture, profile, executable string, browseArgs ...string) []byte {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	command := exec.CommandContext(
-		ctx,
-		"/usr/bin/sandbox-exec",
-		"-f",
-		profile,
-		executable,
-		"browse",
-		"--root",
-		fx.cleanRoot,
-		"--project",
-		fx.project,
-	)
+	if len(browseArgs) == 0 {
+		browseArgs = []string{"--root", fx.cleanRoot, "--project", fx.project}
+	}
+	commandArgs := append([]string{"-f", profile, executable, "browse"}, browseArgs...)
+	command := exec.CommandContext(ctx, "/usr/bin/sandbox-exec", commandArgs...)
 	command.Dir = canonicalPath(t, fx.project)
 	command.Env = fx.environment()
 	started := time.Now()
@@ -301,16 +294,7 @@ func runSandboxBrowser(t *testing.T, fx fixture, profile, executable string) []b
 		t,
 		"sandboxed-browser-pty",
 		"/usr/bin/sandbox-exec",
-		[]string{
-			"-f",
-			profile,
-			executable,
-			"browse",
-			"--root",
-			fx.cleanRoot,
-			"--project",
-			fx.project,
-		},
+		commandArgs,
 		command.Dir,
 		commandResult{stdout: raw.Bytes(), duration: time.Since(started)},
 	)

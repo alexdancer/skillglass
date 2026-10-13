@@ -112,7 +112,7 @@ func buildCodex(ctx context.Context, request Request) (*Snapshot, error) {
 		snapshot.sources[id] = explainCodexSource(snapshot, id, roots, plugins, &inputs)
 	}
 	applyCodexCoexistence(snapshot)
-	applyCodexProblems(snapshot, inputs.problems, roots)
+	applyNativeInputProblems(snapshot, inputs.problems, roots)
 
 	return snapshot, nil
 }
@@ -323,7 +323,7 @@ func explainCodexSource(snapshot *Snapshot, id SourceID, roots map[RootID]Discov
 	return source
 }
 
-func applyCodexProblems(snapshot *Snapshot, problems []Problem, roots map[RootID]DiscoveryRoot) {
+func applyNativeInputProblems(snapshot *Snapshot, problems []Problem, roots map[RootID]DiscoveryRoot) {
 	merged := make(map[ProblemID]Problem, len(problems))
 	for _, problem := range problems {
 		current, exists := merged[problem.ID]

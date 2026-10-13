@@ -25,6 +25,9 @@ func availabilityLines(value collection.AvailabilityExplanation) []string {
 	}
 	for _, fact := range value.References {
 		lines = append(lines, fmt.Sprintf("Reference %s: %s (%s)", fact.Reference, fact.Participation, fact.Evidence.Kind), "Discovery rule: "+fact.Evidence.Rule+" | "+fact.Evidence.Reason, "Discovery input: "+fact.Evidence.InputPath, fmt.Sprintf("Permission: %s (%s) | %s", fact.Permission.State, fact.Permission.Evidence.Kind, fact.Permission.Evidence.Rule+" | "+fact.Permission.Evidence.Reason))
+		if fact.Evidence.Setting != "" {
+			lines = append(lines, "Discovery setting: "+fact.Evidence.Setting)
+		}
 		if fact.Permission.Evidence.InputPath != "" {
 			lines = append(lines, "Permission input: "+fact.Permission.Evidence.InputPath)
 		}
@@ -50,6 +53,9 @@ func availabilityLines(value collection.AvailabilityExplanation) []string {
 	}
 	if value.Precedence != nil {
 		lines = append(lines, "Precedence: "+string(value.Precedence.State)+" | "+value.Precedence.Evidence.Reason)
+		if value.Precedence.Winner != "" {
+			lines = append(lines, "Winning index source: "+string(value.Precedence.Winner))
+		}
 		for _, id := range value.Precedence.RelatedSources {
 			lines = append(lines, "Related independent source: "+string(id))
 		}

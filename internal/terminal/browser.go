@@ -784,7 +784,7 @@ func (model browserModel) headerLines(mode browserMode) []string {
 		fitLine("Root filter: "+model.rootFilterSummary(), model.width),
 	}, model.width)...)
 	if scope.Agent != nil {
-		header = append(header, fitLine("Agent: codex | Availability filter: "+browserFilterValue(string(model.filters.Availability)), model.width))
+		header = append(header, fitLine("Agent: "+scope.Agent.Application+" | Availability filter: "+browserFilterValue(string(model.filters.Availability)), model.width))
 	}
 	return append(header, model.selectedSummaryLines(mode)...)
 }
@@ -1116,7 +1116,9 @@ func (model browserModel) scopeBodyLines() []string {
 	scope := model.snapshot.Scope()
 	lines := make([]string, 0, 8+len(scope.Roots)*4)
 	if scope.Agent != nil {
-		lines = append(lines, "Agent: codex | Validated: "+scope.Agent.ValidatedVersion, "Session: unknown; local configuration inferred", "")
+		lines = append(lines, wrapLine("Agent: "+scope.Agent.Application+" | Validated: "+scope.Agent.ValidatedVersion, model.width)...)
+		lines = append(lines, wrapLine("Session: unknown; local configuration inferred", model.width)...)
+		lines = append(lines, "")
 	}
 	if scope.Project.Selected {
 		lines = append(lines, "Project:")

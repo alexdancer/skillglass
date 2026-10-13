@@ -6,7 +6,7 @@ Skillglass is a Go terminal tool for browsing, reading, and comparing local agen
 
 ## Status
 
-The production read-only inventory, identity, and comparison slices are implemented. Skillglass discovers explicit custom and project roots, groups references only when they resolve to the same proven directory object, reports collection problems without discarding healthy sources, and exposes the same immutable snapshot through the CLI and keyboard browser. Codex integration adds native scope and factored local configured-availability explanations; existing-session enforcement remains unknown and all controls remain unsupported. Generic explicit-root inventory keeps unknown ownership and availability. The repository also contains the approved specification, ticket breakdown, local agent scheduler, and the [ALE-22 terminal prototype](prototypes/ale-22/README.md) that preceded the production implementation.
+The production read-only inventory, identity, and comparison slices are implemented. Skillglass discovers explicit custom and project roots, groups references only when they resolve to the same proven directory object, reports collection problems without discarding healthy sources, and exposes the same immutable snapshot through the CLI and keyboard browser. Codex and Hermes integrations add native scope and factored local configured-availability explanations; existing-session enforcement remains unknown and all controls remain unsupported. Generic explicit-root inventory keeps unknown ownership and availability. The repository also contains the approved specification, ticket breakdown, local agent scheduler, and the [ALE-22 terminal prototype](prototypes/ale-22/README.md) that preceded the production implementation.
 
 The project was planned as **Skill Viewer**. Existing Linear titles and historical planning documents retain that name; **Skillglass** is the product and repository name.
 
@@ -30,6 +30,7 @@ Planned integrations cover Codex, Claude Code, Hermes, Pi, OpenCode, Gemini CLI,
 - [ALE-24 verification](docs/verification/ale-24.md)
 - [ALE-25 verification](docs/verification/ale-25.md)
 - [ALE-26 Codex verification](docs/verification/ale-26.md)
+- [ALE-31 Hermes verification](docs/verification/ale-31.md)
 
 [Linear](https://linear.app/alex-dancer/project/skill-viewer-58706f175bed) holds live ticket requirements, status, and dependencies. The local copies are references.
 
@@ -42,12 +43,15 @@ Build on macOS with Go 1.27.1. Download the pinned dependencies once with networ
 /opt/homebrew/bin/go build -mod=readonly -trimpath -o bin/skillglass ./cmd/skillglass
 ```
 
-Generic inventory operations require an explicit discovery root; help does not. `--agent codex` selects bounded native roots instead. See [Codex behavior, evidence and limits](docs/verification/ale-26.md). Repeat `--root` for custom locations. Use `--project-root` for roots associated with a selected `--project`; using a project root without `--project` is a usage error. Without `--agent`, project context never selects a root implicitly. Explicit roots containing `SKILL.md` select that bundle; otherwise only direct child bundle candidates are inspected, not nested collections. Explicit directory and manifest symlinks may resolve outside the root, but their siblings are not scanned.
+Generic inventory operations require an explicit discovery root; help does not. `--agent codex` or `--agent hermes` selects bounded native roots instead. See [Codex behavior, evidence and limits](docs/verification/ale-26.md) and [Hermes behavior, evidence and limits](docs/verification/ale-31.md). Hermes resolves the active profile and configured external directories; this validated version does not automatically load project skill folders. Repeat `--root` for custom locations. Use `--project-root` for roots associated with a selected `--project`; using a project root without `--project` is a usage error. Without `--agent`, project context never selects a root implicitly. Explicit roots containing `SKILL.md` select that bundle; otherwise only direct child bundle candidates are inspected, not nested collections. Explicit directory and manifest symlinks may resolve outside the root, but their siblings are not scanned.
 
 ```sh
 bin/skillglass list --agent codex --project /path/to/repository --availability disabled --json
 bin/skillglass explain --agent codex --project /path/to/repository SOURCE_ID
 bin/skillglass browse --agent codex --project /path/to/repository
+bin/skillglass list --agent hermes --project /path/to/repository --availability explicit-only --json
+bin/skillglass explain --agent hermes --project /path/to/repository SOURCE_ID
+bin/skillglass browse --agent hermes --project /path/to/repository
 bin/skillglass list --root /path/to/skills
 bin/skillglass list --root /path/to/custom --project /path/to/project --project-root /path/to/project-skills --context project --problem duplicate-name --search testing --json
 bin/skillglass problems --root /path/to/custom --project /path/to/project --project-root /path/to/project-skills --search broken --json

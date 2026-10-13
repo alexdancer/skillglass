@@ -171,6 +171,9 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 		if builder.discoverCandidate(ctx, root, root.Path, ".") {
 			report.SourceCount++
 		}
+		if strings.HasPrefix(root.Origin, "hermes-") && root.Origin != "hermes-plugin" {
+			builder.discoverHermesChildren(ctx, root, root.Path, make(map[string]bool), new(int))
+		}
 	} else {
 		entries, readErr := os.ReadDir(resolvedRoot)
 		if readErr != nil {
@@ -196,7 +199,11 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 			return entries[left].Name() < entries[right].Name()
 		})
 		if root.Origin != "" {
-			builder.discoverNativeChildren(ctx, root, root.Path, make(map[string]bool), new(int))
+			if strings.HasPrefix(root.Origin, "hermes-") {
+				builder.discoverHermesChildren(ctx, root, root.Path, make(map[string]bool), new(int))
+			} else {
+				builder.discoverNativeChildren(ctx, root, root.Path, make(map[string]bool), new(int))
+			}
 			entries = nil
 		}
 		for _, entry := range entries {
