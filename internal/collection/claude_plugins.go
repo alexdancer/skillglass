@@ -326,16 +326,24 @@ func claudePluginManifestLimitation(raw []byte) string {
 				return assessment.reason
 			}
 		case "skills":
-			if _, ok := claudeManifestString(value); ok {
+			const unsupportedPath = "skills paths must be exactly \".\" or start with \"./\"; this manifest cannot establish native plugin activation"
+			if path, ok := claudeManifestString(value); ok {
+				if path != "." && !strings.HasPrefix(path, "./") {
+					return unsupportedPath
+				}
 				continue
 			}
 			var paths []json.RawMessage
 			if json.Unmarshal(value, &paths) != nil || paths == nil {
 				return "skills must be a non-null string or array of non-null strings; this manifest cannot establish native plugin activation"
 			}
-			for _, path := range paths {
-				if _, ok := claudeManifestString(path); !ok {
+			for _, rawPath := range paths {
+				path, ok := claudeManifestString(rawPath)
+				if !ok {
 					return "skills array elements must be non-null strings; this manifest cannot establish native plugin activation"
+				}
+				if path != "." && !strings.HasPrefix(path, "./") {
+					return unsupportedPath
 				}
 			}
 		default:
