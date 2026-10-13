@@ -87,8 +87,8 @@ func NewRequest(rawRoots, rawProjectRoots []string, rawProject *string) (Request
 }
 
 func NewRequestWithAgent(rawRoots, rawProjectRoots []string, rawProject *string, agent string) (Request, error) {
-	if agent != "" && agent != "codex" {
-		return Request{}, fmt.Errorf("unknown agent %q; use codex", agent)
+	if agent != "" && agent != "codex" && agent != "gemini" {
+		return Request{}, fmt.Errorf("unknown agent %q; use codex or gemini", agent)
 	}
 	request := Request{Roots: make([]DiscoveryRoot, 0, len(rawRoots)+len(rawProjectRoots))}
 	if rawProject != nil {
@@ -131,13 +131,19 @@ func NewRequestWithAgent(rawRoots, rawProjectRoots []string, rawProject *string,
 		return Request{}, err
 	}
 	request.Agent = agent
-	if agent == "codex" {
+	if agent != "" {
 		var err error
-		request.home, err = nativeHome()
+		if agent == "gemini" {
+			request.home, err = geminiHome()
+		} else {
+			request.home, err = nativeHome()
+		}
 		if err != nil {
 			return Request{}, err
 		}
-		request.codexHome = codexHome(request.home)
+		if agent == "codex" {
+			request.codexHome = codexHome(request.home)
+		}
 	}
 	return request, nil
 }
@@ -354,7 +360,7 @@ type Snapshot struct {
 }
 
 func Build(ctx context.Context, request Request) (*Snapshot, error) {
-	if request.Agent != "" && request.Agent != "codex" {
+	if request.Agent != "" && request.Agent != "codex" && request.Agent != "gemini" {
 		return nil, fmt.Errorf("unknown agent %q", request.Agent)
 	}
 	if request.Agent == "codex" && (request.home == "" || request.codexHome == "") {
@@ -373,6 +379,12 @@ func Build(ctx context.Context, request Request) (*Snapshot, error) {
 	}
 	if request.Agent == "codex" {
 		return buildCodex(ctx, request)
+	}
+	if request.Agent == "gemini" {
+		if request.home == "" {
+			return nil, errors.New("native scope requires NewRequestWithAgent")
+		}
+		return buildGemini(ctx, request)
 	}
 	return discover(ctx, request)
 }

@@ -1,0 +1,47 @@
+# ALE-37: browse and explain Gemini CLI skills
+
+`--agent gemini` adds Gemini CLI discovery to the shared collection snapshot and terminal availability presentation. `list`, `read`, `explain`, `problems`, availability filters and `browse` share one calculation. Every writer remains unsupported. Production discovery reads bounded local files, without starting Gemini, evaluating `.env`, connecting to a service or executing skills, extensions or hooks.
+
+## Validated native contract
+
+Reference release: **Gemini CLI 0.63.0**, installed temporarily with `npm install --prefix /private/tmp/ale-37-native --ignore-scripts --no-audit --no-fund @google/gemini-cli@0.63.0`. Nothing was installed globally or into live user configuration. `tools/verify_gemini.py PACKAGE_DIRECTORY ARTIFACT_DIRECTORY` runs the real package's `--version` and `skills list --all` under a macOS sandbox that denies every network operation, with a fresh credential-free environment and inert fixtures outside all Git checkouts. It never submits a prompt or activates a skill. The actual bundle SHA-256, Node version, arguments, exit codes and native output appear in `native/receipt.json` and its adjacent text artifacts in the assigned run directory.
+
+The 14 native checks cover: version; workspace alias winner; untrusted user alias winner; no workspace ancestor inheritance; case-insensitive union of disabled names; workspace scalar override; insecure system-settings rejection; root and child manifests, name sanitation and shared aliases; registered extension versus orphan folder; inactive extension exclusion; last matching extension override; persisted trust; persisted distrust; configured `GEMINI_CLI_HOME`.
+
+Native roots are `HOME/.gemini/skills` and `HOME/.agents/skills`, or the corresponding locations under `GEMINI_CLI_HOME`. A selected workspace adds exactly `WORKSPACE/.gemini/skills` and `WORKSPACE/.agents/skills`. Git markers do not alter Gemini discovery. Omitting `--project` adds no workspace roots, regardless of the viewer's working directory. Extra viewer roots are inspection-only; they do not invent native runtime search paths. Gemini discovers `SKILL.md` at a root and one directory below it, including both when a root manifest exists. Hidden folders, `node_modules` and deeper containers do not participate. Generic explicit-root behavior is unchanged.
+
+Native precedence is built-in < extension < user `.gemini` < user `.agents` < workspace `.gemini` < workspace `.agents`. Names remain case-sensitive for conflicts. Disabled-name matching is case-insensitive. Definitions are selected before disabled-name filtering, so disabling a winning name does not restore a lower definition. Different copies retain separate source IDs, related-source links and the winning source ID. Several references to one proven directory remain one shared source. Ordering among independent same-name definitions within one tier is unspecified and yields unknown, rather than a guessed winner.
+
+The native loader requires frontmatter on the first line and both name and description fields. Its native simple-field fallback and punctuation sanitation are represented separately from generic manifest diagnostics. Names replace `:`, backslash, slash, `<`, `>`, `*`, `?`, double quote and `|` with `-`. A manifest file symlink remains acceptable to this version. Unverified environment-expanded native names remain unknown.
+
+## Settings and trust
+
+Relevant JSONC settings are read as system defaults < user < trusted selected workspace < system overrides. Scalars use the last layer; `skills.disabled` arrays are unioned. An empty workspace disabled list does not re-enable a user-disabled name. `skills.enabled=false` disables the subsystem. Permission explanations retain each layer and only relevant selectors, without exposing unrelated settings or credentials. Invalid types, malformed, oversized, unreadable, nonregular or broken-link native inputs make calculated permission unknown and coverage incomplete.
+
+System files default to `/Library/Application Support/GeminiCli/system-defaults.json` and `settings.json` on macOS. `GEMINI_CLI_SYSTEM_DEFAULTS_PATH` and `GEMINI_CLI_SYSTEM_SETTINGS_PATH` select alternate native inputs. Gemini requires root ownership, no group/other writes and securely owned symlinks on the file, all lexical parents and resolved parents. Insecure inputs are visibly ignored. The disposable native fixture proves this rejection. Secure root-owned system scalar precedence is verified from pinned official source, not from a native privileged fixture. No ownership or permissions on the user's machine were modified for validation.
+
+Workspace participation requires trust. `security.folderTrust.enabled=false` permits workspace skills; `GEMINI_CLI_TRUST_WORKSPACE=true` permits them; `GEMINI_CLI_TRUST_WORKSPACE=false` or `GEMINI_RESTRICTED_MODE=true` excludes them. Otherwise `.gemini/trustedFolders.json`, or `GEMINI_CLI_TRUSTED_FOLDERS_PATH`, supplies `TRUST_FOLDER`, `TRUST_PARENT` and `DO_NOT_TRUST` choices. Canonical paths and the longest matching rule govern trust. An absent choice excludes workspace skills until trust is established. IDE trust is not inspected. Untrusted workspace settings are reported as ignored, while its bundles remain browsable as unavailable.
+
+## Extensions, consent and limits
+
+Extension candidates are bounded to `.gemini/extensions/*/skills`. Eligibility requires a valid `gemini-extension.json` with native name/version registration. A folder or cache alone is unavailable. `extension-enablement.json` overrides are evaluated in order against the selected workspace; the last matching rule wins, including `!/*` and exact project re-enablement. Inactive registrations are unavailable. Missing or wrongly typed override arrays are unknown. Linked extension install sources are inspectable, but native activation of linked installations remains unverified. Duplicate extension registrations, extension allow/block security policy and environment-expanded names remain unknown. Project-specific extension overrides without a selected workspace remain unknown. Registered plugin provenance identifies name and version, while canonical directory containment determines managed content ownership; a reference escaping a managed directory does not grant ownership to its target.
+
+Ordinary eligible skills are **ask**, because native `activate_skill` normally asks for consent. Built-in skills are pre-approved and may be available. Built-in roots are recognized only when a local `gemini` executable resolves beside its `builtin` bundle directory. Other packaging layouts remain unverified. The probe observes built-in listing; consent behavior is verified from native source, without activation. Viewer filters do not convert consent into enablement. Policy overrides, approval modes, IDE decisions, remote admin restrictions and already activated running-session state are not observed, so those gaps and session/reload unknowns remain explicit. The viewer does not claim that a local calculation proves model-session behavior.
+
+Enable, disable, project-override and delete capabilities stay unsupported. Native name-level controls cannot isolate independent copies. Managed content and whole-extension control require their native manager; this browsing slice supplies no mutation interface.
+
+## Verification and acceptance
+
+Public executable fixtures cover selected scope, four-tier conflicts, sharing, winning/shadowed/ask/unknown filters, native sanitation, disabled-name union, scalar workspace precedence, persisted trust, stale/inactive extensions, malformed and missing native inputs, FIFO/size/link containment and immutable fixture trees. A runtime sandbox runs Gemini list/read/explain and browser journeys with network, child execution and filesystem writes denied. Existing positive/negative containment controls independently verify that the sandbox enforces those denials.
+
+Focused tmux interactions at 48x24 and 80x24 inspect actual rendered cells, open and scroll source explanations, externally disable a skill, refresh its proven identity, recover it through availability filters and inspect application/version scope. Every page is checked for terminal-cell bounds. Existing generic/Codex journeys and scheduler checks remain part of the complete suite. Exact final-head commands and exit codes are recorded in the assigned `checks.json`; build/review custody stays with the coordinator.
+
+## Pinned primary sources
+
+- [Skill manager and tier precedence](https://github.com/google-gemini/gemini-cli/blob/v0.63.0/packages/core/src/skills/skillManager.ts)
+- [Native loader and frontmatter fallback](https://github.com/google-gemini/gemini-cli/blob/v0.63.0/packages/core/src/skills/skillLoader.ts)
+- [Settings merge and system ownership enforcement](https://github.com/google-gemini/gemini-cli/blob/v0.63.0/packages/cli/src/config/settings.ts)
+- [Settings schema and disabled-name union](https://github.com/google-gemini/gemini-cli/blob/v0.63.0/packages/cli/src/config/settingsSchema.ts)
+- [Extension registration](https://github.com/google-gemini/gemini-cli/blob/v0.63.0/packages/cli/src/config/extension-manager.ts)
+- [Extension enablement](https://github.com/google-gemini/gemini-cli/blob/v0.63.0/packages/cli/src/config/extensions/extensionEnablement.ts)
+- [Activation consent](https://github.com/google-gemini/gemini-cli/blob/v0.63.0/packages/core/src/tools/activate-skill.ts)

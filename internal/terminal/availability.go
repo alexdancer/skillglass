@@ -50,6 +50,9 @@ func availabilityLines(value collection.AvailabilityExplanation) []string {
 	}
 	if value.Precedence != nil {
 		lines = append(lines, "Precedence: "+string(value.Precedence.State)+" | "+value.Precedence.Evidence.Reason)
+		if value.Precedence.Winner != "" {
+			lines = append(lines, "Winning source: "+string(value.Precedence.Winner))
+		}
 		for _, id := range value.Precedence.RelatedSources {
 			lines = append(lines, "Related independent source: "+string(id))
 		}
