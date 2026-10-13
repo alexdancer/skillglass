@@ -321,3 +321,24 @@ func TestALE37ConfiguredHomeAndManagedAliases(t *testing.T) {
 		t.Fatal("wrongly typed enablement promoted availability")
 	}
 }
+
+func TestALE37ExtensionDirectoryAliasDoesNotGrantTargetOwnership(t *testing.T) {
+	fx := geminiFixture(t)
+	external := filepath.Join(fx.base, "allowed", "external-extension")
+	writeFile(t, filepath.Join(external, "gemini-extension.json"), []byte(`{"name":"external","version":"1.0.0"}`), 0600)
+	codexSkill(t, filepath.Join(external, "skills"), "source", "external-registration-target")
+	registry := filepath.Join(fx.home, ".gemini", "extensions")
+	if err := os.MkdirAll(registry, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(external, filepath.Join(registry, "external")); err != nil {
+		t.Fatal(err)
+	}
+	source := codexNamed(t, geminiListResult(t, fx, 0), "external-registration-target")
+	if source.Availability.State != "ask" {
+		t.Fatalf("registered native reference lost: %+v", source)
+	}
+	if source.Ownership.State == "managed" {
+		t.Fatalf("registration alias granted ownership to external content: %+v", source)
+	}
+}

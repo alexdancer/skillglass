@@ -91,7 +91,11 @@ def main():
         skill(extension / 'skills/extension', 'extension-skill')
         stale = home / '.gemini/extensions/stale'
         skill(stale / 'skills/stale', 'stale-skill')
-        run('registered-extension-only', expected=('extension-skill [Enabled]',), absent=('stale-skill [Enabled]',))
+        outside = base / 'external-extension'
+        write(outside / 'gemini-extension.json', '{"name":"external","version":"1.0.0"}')
+        skill(outside / 'skills/external', 'external-alias-skill')
+        os.symlink(outside, home / '.gemini/extensions/external-alias')
+        run('registered-extension-only', expected=('extension-skill [Enabled]', 'external-alias-skill [Enabled]'), absent=('stale-skill [Enabled]',))
         write(home / '.gemini/extensions/extension-enablement.json', '{"sample":{"overrides":["!/*"]}}')
         run('inactive-extension-excluded', absent=('extension-skill [Enabled]',))
         write(home / '.gemini/extensions/extension-enablement.json', json.dumps({'sample': {'overrides': ['!/*', str(project) + '/']}}))

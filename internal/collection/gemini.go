@@ -87,7 +87,7 @@ func buildGemini(ctx context.Context, request Request) (*Snapshot, error) {
 					}
 					fact.Evidence = nameEvidence
 				}
-				if (native.provenance.Kind == "plugin" || native.provenance.Kind == "system") && geminiManagedLocation(root.Path, source.Directory) {
+				if (native.provenance.Kind == "plugin" || native.provenance.Kind == "system") && geminiManagedLocation(root.Path, source.Directory, native.provenance.Kind, in.home) {
 					source.Ownership = EvidenceState{State: "managed", Reason: "Gemini extension or package manager owns this content"}
 				}
 				if fact.Participation == ParticipationUnknown && valid && native.rank > possible {
@@ -104,8 +104,7 @@ func buildGemini(ctx context.Context, request Request) (*Snapshot, error) {
 					if native.provenance.Kind != "plugin" {
 						continue
 					}
-					managedRoot := filepath.Dir(roots[rootID].Path)
-					if resolved, err := filepath.EvalSymlinks(managedRoot); err == nil && geminiWithin(resolved, source.Directory) {
+					if geminiManagedLocation(roots[rootID].Path, source.Directory, "plugin", in.home) {
 						fact.Provenance = native.provenance
 						source.Ownership = EvidenceState{State: "managed", Reason: "canonical source lies within a Gemini extension"}
 						break
@@ -263,7 +262,16 @@ func applyGeminiPrecedence(snapshot *Snapshot, ranks map[SourceID]int, groups ma
 	}
 }
 
-func geminiManagedLocation(root, path string) bool {
+func geminiManagedLocation(root, path, kind, home string) bool {
 	target, err := filepath.EvalSymlinks(filepath.Dir(root))
-	return err == nil && geminiWithin(target, path)
+	if err != nil || !geminiWithin(target, path) {
+		return false
+	}
+	if kind == "plugin" {
+		registry, err := filepath.EvalSymlinks(filepath.Join(home, ".gemini", "extensions"))
+		if err != nil || !geminiWithin(registry, target) || registry == target {
+			return false
+		}
+	}
+	return true
 }
