@@ -69,6 +69,11 @@ func (inputs *codeafInputs) problem(path, reason string) {
 }
 func (inputs *codeafInputs) addRoot(request *Request, path string, context ReferenceContext, plugin, version string, permission PermissionExplanation, installRoot string) {
 	root := DiscoveryRoot{ID: RootID(stableID("root_codeaf", fmt.Sprint(len(inputs.roots)), path)), Path: path, Context: context, Origin: "codeaf-" + string(context), Optional: true, childrenOnly: plugin == ""}
+	if plugin != "" {
+		_, err := os.Stat(filepath.Join(path, "SKILL.md"))
+		root.childrenOnly = err != nil
+		root.inspectRootManifest = err != nil
+	}
 	inputs.roots[root.ID] = codeafRoot{DiscoveryRoot: root, rank: len(inputs.roots), plugin: plugin, version: version, permission: permission, installRoot: installRoot}
 	request.Roots = append(request.Roots, root)
 }

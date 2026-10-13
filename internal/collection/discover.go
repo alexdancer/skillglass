@@ -168,6 +168,15 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 
 	rootIsBundle, manifestErr := hasManifest(resolvedRoot)
 	if root.childrenOnly {
+		if root.inspectRootManifest {
+			if rootIsBundle {
+				builder.discoverCandidate(ctx, root, root.Path, ".")
+			} else if manifestErr != nil {
+				problem := manifestPresenceProblem(resolvedRoot, manifestErr)
+				problem.RootIDs = []RootID{root.ID}
+				builder.addProblem(problem)
+			}
+		}
 		rootIsBundle = false
 		manifestErr = nil
 	}

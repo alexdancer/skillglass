@@ -194,9 +194,9 @@ func TestALE39CodeAFOfflineContainment(t *testing.T) {
 	codexSkill(t, filepath.Join(fx.home, ".agents/skills"), "contained", "contained-native")
 	before := treeManifest(t, fx.base)
 	profile := filepath.Join(fx.base, "deny-network.sb")
-	writeFile(t, profile, []byte(runtimeProfile(skillglassBinary, fx.base)), 0600)
+	writeFile(t, profile, []byte(runtimeProfile(rawSkillglassBinary, fx.base)), 0600)
 	before = treeManifest(t, fx.base)
-	result := runSandboxCommand(t, fx, profile, skillglassBinary, "list", "--agent", "codeaf", "--project", fx.project, "--json")
+	result := runSandboxCommand(t, fx, profile, rawSkillglassBinary, "list", "--agent", "codeaf", "--project", fx.project, "--json")
 	assertExit(t, result, 0)
 	var list codexList
 	decodeJSON(t, result.stdout, &list)

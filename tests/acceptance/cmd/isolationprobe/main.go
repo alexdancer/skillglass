@@ -17,7 +17,7 @@ type result struct {
 }
 
 func main() {
-	if len(os.Args) != 5 {
+	if len(os.Args) != 5 && len(os.Args) != 6 {
 		os.Exit(2)
 	}
 	allowed, allowedError := os.ReadFile(os.Args[1])
@@ -39,6 +39,19 @@ func main() {
 		"file_write_denied":    os.IsPermission(writeError),
 		"network_denied":       denied(networkError),
 		"child_exec_denied":    os.IsPermission(childError),
+	}
+	if len(os.Args) == 6 {
+		_, statError := os.Stat(os.Args[2])
+		_, listingError := os.ReadDir(os.Args[5])
+		_, configStatError := os.Stat("/etc/codex/config.toml")
+		_, configReadError := os.ReadFile("/etc/codex/config.toml")
+		_, systemStatError := os.Stat("/etc/codex/skills")
+		_, systemListingError := os.ReadDir("/etc/codex/skills")
+		checks["excluded_read_denied"] = os.IsNotExist(excludedError)
+		checks["model_stat_absent"] = os.IsNotExist(statError)
+		checks["model_listing_absent"] = os.IsNotExist(listingError)
+		checks["system_config_absent"] = os.IsNotExist(configStatError) && os.IsNotExist(configReadError)
+		checks["system_skills_absent"] = os.IsNotExist(systemStatError) && os.IsNotExist(systemListingError)
 	}
 	passed := true
 	for _, check := range checks {

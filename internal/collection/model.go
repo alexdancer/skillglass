@@ -67,12 +67,13 @@ type ProjectContext struct {
 }
 
 type DiscoveryRoot struct {
-	ID           RootID           `json:"id"`
-	Path         string           `json:"path"`
-	Context      ReferenceContext `json:"context"`
-	Origin       string           `json:"origin,omitempty"`
-	Optional     bool             `json:"-"`
-	childrenOnly bool
+	ID                  RootID           `json:"id"`
+	Path                string           `json:"path"`
+	Context             ReferenceContext `json:"context"`
+	Origin              string           `json:"origin,omitempty"`
+	Optional            bool             `json:"-"`
+	childrenOnly        bool
+	inspectRootManifest bool
 }
 
 type Request struct {

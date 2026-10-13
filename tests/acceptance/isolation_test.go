@@ -43,7 +43,7 @@ func TestRuntimeContentIsolation(t *testing.T) {
 	positive := runPositiveControls(t, allowedSentinel, liveHomeSentinel, blockedWrite, listener)
 
 	canonicalAllowed := canonicalPath(t, filepath.Join(fx.base, "allowed"))
-	canonicalProduct := canonicalPath(t, skillglassBinary)
+	canonicalProduct := canonicalPath(t, rawSkillglassBinary)
 	canonicalProbe := canonicalPath(t, isolationProbeBinary)
 	profiles := filepath.Join(fx.base, "allowed", "sandbox-profiles")
 	productProfile := filepath.Join(profiles, "product.sb")

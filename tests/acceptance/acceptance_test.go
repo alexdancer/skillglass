@@ -23,6 +23,7 @@ import (
 
 var (
 	skillglassBinary     string
+	rawSkillglassBinary  string
 	isolationProbeBinary string
 	repositoryRoot       string
 	builtBinaryDir       string
@@ -85,6 +86,19 @@ func TestMain(testMain *testing.M) {
 		if err := command.Run(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.RemoveAll(builtBinaryDir)
+			os.Exit(1)
+		}
+	}
+	rawSkillglassBinary = skillglassBinary
+	if runtime.GOOS == "darwin" {
+		if _, err := os.Stat("/usr/bin/sandbox-exec"); err != nil {
+			fmt.Fprintln(os.Stderr, "fixture containment unavailable:", err)
+			os.Exit(1)
+		}
+		skillglassBinary = filepath.Join(builtBinaryDir, "fixture-skillglass")
+		wrapper := fixtureLauncherScript(rawSkillglassBinary)
+		if err := os.WriteFile(skillglassBinary, []byte(wrapper), 0o700); err != nil {
+			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 	}
@@ -791,6 +805,11 @@ func newFixture(t *testing.T) fixture {
 	writeFile(t, filepath.Join(malformed, "SKILL.md"), []byte(
 		"---\nname: [unterminated\nMALFORMED_RAW_SENTINEL\n",
 	), 0o644)
+	if runtime.GOOS == "darwin" {
+		profile := fixtureRuntimeProfile(canonicalPath(t, rawSkillglassBinary), canonicalPath(t, fx.base))
+		writeFile(t, filepath.Join(fx.temporary, "runtime.sb"), []byte(profile), 0600)
+		writeEvidence(t, "fixture-boundary/runtime.sb", []byte(profile))
+	}
 	return fx
 }
 
@@ -828,6 +847,7 @@ func (fx fixture) run(t *testing.T, args ...string) commandResult {
 func (fx fixture) environment() []string {
 	return []string{
 		"HOME=" + fx.home,
+		"SKILLGLASS_FIXTURE_PROFILE=" + filepath.Join(fx.temporary, "runtime.sb"),
 		"XDG_CONFIG_HOME=" + fx.xdgConfig,
 		"XDG_DATA_HOME=" + fx.xdgData,
 		"XDG_CACHE_HOME=" + fx.xdgCache,
@@ -1015,6 +1035,7 @@ func recordEvidenceCommand(
 		Argv:             argv,
 		WorkingDirectory: workingDirectory,
 		EnvironmentKeys: []string{
+			"SKILLGLASS_FIXTURE_PROFILE",
 			"COLUMNS",
 			"HOME",
 			"LC_ALL",

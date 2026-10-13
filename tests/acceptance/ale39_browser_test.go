@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -77,6 +78,43 @@ func TestALE39CodeAFBrowserExplanationAndPluginRefresh(t *testing.T) {
 			send("s", "SKILLGLASS | Scope", "Agent: codeaf")
 			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 			send("Escape", "SKILLGLASS | Sources")
+			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "q")
+		})
+	}
+}
+
+func TestALE39BrokenPluginBrowser(t *testing.T) {
+	tmux, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, width := range []int{48, 80} {
+		t.Run(strconv.Itoa(width), func(t *testing.T) {
+			fx := codeafFixture(t)
+			manifest, _ := codeafPluginFixture(t, fx)
+			container := filepath.Dir(filepath.Dir(manifest))
+			writeFile(t, filepath.Join(fx.base, "plugin/.claude-plugin/plugin.json"), []byte(`{"skills":"skills"}`), 0600)
+			if err := os.Symlink("missing-target.md", filepath.Join(container, "SKILL.md")); err != nil {
+				t.Fatal(err)
+			}
+			before := treeManifest(t, fx.base)
+			socket := fmt.Sprintf("ale39-broken-%d-%d", os.Getpid(), width)
+			defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
+			command := "exec " + shellQuote(skillglassBinary) + " browse --agent codeaf --project " + shellQuote(fx.project)
+			runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", strconv.Itoa(width), "-y", "30", "-s", "browser", command)
+			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
+			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(width), "-y", "30")
+			frame := waitForPane(t, tmux, fx, socket, false, "plugin-skill", "Coverage: incomplete")
+			assertPaneCells(t, frame, width, 30)
+			writeEvidence(t, fmt.Sprintf("tmux/ale39-broken/%d/01-sources.txt", width), []byte(frame))
+			actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "/") }, "Enter keep")
+			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "plugin-skill")
+			waitForPane(t, tmux, fx, socket, false, "Focus: 1/1")
+			actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter") }, "Enter read")
+			frame = actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter") }, "Availability: available", "Session: unknown", "Read lines")
+			assertPaneCells(t, frame, width, 30)
+			writeEvidence(t, fmt.Sprintf("tmux/ale39-broken/%d/02-detail.txt", width), []byte(frame))
+			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "q")
 		})
 	}
