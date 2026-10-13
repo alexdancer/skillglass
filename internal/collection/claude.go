@@ -88,11 +88,11 @@ func explainClaudeSource(snapshot *Snapshot, id SourceID, roots map[RootID]Disco
 				fact.NativeName = plugins[root.Path].name + ":" + name
 			}
 			fact.Permission = inputs.permission(fact.NativeName)
-			if !claudeSkillName.MatchString(name) || (!isPlugin && strings.HasPrefix(filepath.Base(ref.DiscoveredPath), ".")) {
+			if fact.Participation != ParticipationExcluded && (!claudeSkillName.MatchString(name) || (!isPlugin && strings.HasPrefix(filepath.Base(ref.DiscoveredPath), "."))) {
 				fact.Participation = ParticipationUnknown
 				fact.Evidence = claudeEvidence(EvidenceUnknown, "unverified-native-manifest-form", source.Manifest.Path, "name", "native loading of noncanonical command names or hidden ordinary bundles was not validated")
 			}
-			if source.Manifest.Status != ManifestParsed {
+			if fact.Participation != ParticipationExcluded && source.Manifest.Status != ManifestParsed {
 				fact.Participation = ParticipationUnknown
 				fact.Evidence = claudeEvidence(EvidenceUnknown, "manifest-eligibility", source.Manifest.Path, "", "native loading of unreadable or malformed frontmatter is not established")
 			}
@@ -111,7 +111,7 @@ func explainClaudeSource(snapshot *Snapshot, id SourceID, roots map[RootID]Disco
 		}
 		if managed {
 			fact.Provenance = pluginFact.provenance
-			if root.Origin != "claude-plugin-cache" && root.Origin != "claude-plugin-local" && root.Origin != "" {
+			if fact.Participation != ParticipationExcluded && root.Origin != "claude-plugin-cache" && root.Origin != "claude-plugin-local" && root.Origin != "" {
 				fact.Participation = ParticipationUnknown
 				fact.Evidence = claudeEvidence(EvidenceUnknown, "managed-alias-unverified", ref.DiscoveredPath, "", "an ordinary alias into managed plugin content does not establish independently validated activation")
 			}

@@ -176,7 +176,9 @@ func discoverClaudePlugins(request *Request, inputs *claudeInputs) map[string]cl
 				extras = []string{one}
 			} else if json.Unmarshal(manifest.Skills, &extras) != nil {
 				inputs.problem(manifestPath, "plugin skills paths must be string or array")
-				fact.participation = ParticipationUnknown
+				if fact.participation != ParticipationExcluded {
+					fact.participation = ParticipationUnknown
+				}
 			}
 			for _, extra := range extras {
 				candidate := filepath.Clean(filepath.Join(directory, extra))

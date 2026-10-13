@@ -105,6 +105,7 @@ func TestMain(testMain *testing.M) {
 }
 
 type fixture struct {
+	claudeSafeMode bool
 	policy         string
 	base           string
 	home           string
@@ -837,7 +838,7 @@ func (fx fixture) run(t *testing.T, args ...string) commandResult {
 }
 
 func (fx fixture) environment() []string {
-	return []string{
+	environment := []string{
 		"HOME=" + fx.home,
 		"XDG_CONFIG_HOME=" + fx.xdgConfig,
 		"XDG_DATA_HOME=" + fx.xdgData,
@@ -850,6 +851,10 @@ func (fx fixture) environment() []string {
 		"COLUMNS=80",
 		"LINES=24",
 	}
+	if fx.claudeSafeMode {
+		environment = append(environment, "CLAUDE_CODE_SAFE_MODE=1")
+	}
+	return environment
 }
 
 func sourceNamed(t *testing.T, sources []publicSource, name string) publicSource {
