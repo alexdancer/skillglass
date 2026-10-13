@@ -41,6 +41,7 @@ type codexAvailability struct {
 	Precedence struct {
 		State, Winner  string
 		RelatedSources []string `json:"related_sources"`
+		Evidence       codexEvidence
 	}
 	Invocation, Session, Reload struct {
 		State    string
