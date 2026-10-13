@@ -34,7 +34,7 @@ A definition without description is listed by the installed debug command and re
 
 ## Precedence and managed sources
 
-The installed v1 discovery path stores one definition per name, but loads discovered manifests using unbounded concurrent Effect.forEach. Pinned source and repeated native observations therefore do not establish deterministic project/global precedence. Equal-name eligible independent sources remain separate, with related-source IDs, unknown precedence and an explicit concurrent-overwrite reason. The viewer does not invent a winning source or label another source shadowed. This version-specific limitation is the acceptance exception agreed with the coordinator; known unique local names retain their configured permissions.
+The installed v1 discovery path stores one definition per name, but loads discovered manifests using unbounded concurrent Effect.forEach. Pinned source and repeated native observations therefore do not establish deterministic project/global precedence. Equal-name eligible independent sources remain separate, with related-source IDs, unknown precedence and an explicit concurrent-overwrite reason. The viewer does not invent a winning source or label another source shadowed. This is a recorded version-specific limitation, subject to independent Spec review; known unique local names retain their configured permissions.
 
 The native debug skill command returns raw definitions before agent permission filtering. Its presence alone cannot prove allow, ask or deny. The native agent's resolved ordered rules were validated separately. No inference session or tool call was started.
 
