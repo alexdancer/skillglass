@@ -111,6 +111,10 @@ func explainOpencodeSource(snapshot *Snapshot, id SourceID, roots map[RootID]Dis
 			if root.Origin == "opencode-remote-cache" {
 				fact.Participation = ParticipationExcluded
 				fact.Evidence = opencodeEvidence(EvidenceInferred, "inactive-cache", root.Path, "skills.urls", "cache alone is not a fresh successful native index activation")
+				if in.uncertain {
+					fact.Participation = ParticipationUnknown
+					fact.Evidence = opencodeEvidence(EvidenceUnknown, "unverified-cache-activation", root.Path, "skills.urls / plugin hooks", "native configuration or remote/plugin activation is unverified; cache presence proves neither active nor inactive state")
+				}
 			}
 			if source.Manifest.Status != ManifestParsed {
 				fact.Participation = ParticipationUnknown

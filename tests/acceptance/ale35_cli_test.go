@@ -336,3 +336,15 @@ func TestALE35InvalidDefaultAgentRemainsUnknown(t *testing.T) {
 		})
 	}
 }
+
+func TestALE35UnverifiedCacheActivationRemainsUnknown(t *testing.T) {
+	fx, _ := codexFixture(t)
+	codexSkill(t, filepath.Join(fx.xdgCache, "opencode", "skills"), "cached", "cached")
+	opencodeConfig(t, filepath.Join(fx.xdgConfig, "opencode", "opencode.json"), `{"skills":{"urls":["https://127.0.0.1:9/index"]}}`)
+	before := treeManifest(t, fx.base)
+	list := opencodeListResult(t, fx, 1)
+	if got := codexNamed(t, list, "cached").Availability.State; got != "unknown" {
+		t.Fatalf("unverified native activation became %s", got)
+	}
+	assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+}
