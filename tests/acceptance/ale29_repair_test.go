@@ -242,6 +242,9 @@ func TestALE29PluginManifestActivationLimits(t *testing.T) {
 				t.Fatalf("activation/provenance: %+v", source)
 			}
 			if tc.state == "unknown" {
+				if source.Availability.Evidence.Rule != "plugin-manifest-unverified" {
+					t.Fatalf("manifest diagnostic lost from main explanation: %+v", source.Availability)
+				}
 				for _, ref := range source.Availability.References {
 					if ref.Participation == "eligible" {
 						t.Fatal("unvalidated manifest granted eligibility")
