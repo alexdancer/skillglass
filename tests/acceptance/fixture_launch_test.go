@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -23,6 +24,11 @@ func (fx fixture) productProfile(t *testing.T) string {
 		return path
 	}
 	// Keep the profile stable across refreshes and fixture immutability checks.
+	var ancestors []string
+	for path := filepath.Dir(canonicalPath(t, fx.base)); path != "/"; path = filepath.Dir(path) {
+		ancestors = append(ancestors, "(literal "+sandboxString(path)+")")
+	}
+	// Comparison uses openat from / through these exact fixture ancestors.
 	profile := fmt.Sprintf(`(version 1)
 (allow default)
 (deny network*)
@@ -30,12 +36,12 @@ func (fx fixture) productProfile(t *testing.T) string {
 (allow file-write* (literal "/dev/null") (literal "/dev/tty"))
 (deny file-read* (with errno ENOENT) (subpath "/etc/codex") (subpath "/private/etc/codex"))
 (deny file-read-data (require-not (require-any
- (literal "/") (literal %s) (literal %s)
+ (literal "/") %s (literal %s) (literal %s)
  (subpath %s) (subpath "/System") (subpath "/usr/lib") (subpath "/dev"))))
 (deny file-read-data (subpath %s))
 (deny file-read* (with errno ENOENT) (subpath %s))
 (deny process-exec (require-not (require-any (literal %s) (literal %s))))
-`, sandboxString(canonicalPath(t, skillglassBinary)), sandboxString(canonicalPath(t, isolationProbeBinary)), sandboxString(canonicalPath(t, fx.base)),
+`, strings.Join(ancestors, " "), sandboxString(canonicalPath(t, skillglassBinary)), sandboxString(canonicalPath(t, isolationProbeBinary)), sandboxString(canonicalPath(t, fx.base)),
 		sandboxString(filepath.Join(canonicalPath(t, fx.base), "excluded", "live-home")),
 		sandboxString(filepath.Join(canonicalPath(t, fx.base), "excluded", "system")),
 		sandboxString(canonicalPath(t, skillglassBinary)), sandboxString(canonicalPath(t, isolationProbeBinary)))

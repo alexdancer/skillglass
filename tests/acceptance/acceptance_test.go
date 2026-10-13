@@ -1020,6 +1020,8 @@ func recordEvidenceCommand(
 		EnvironmentKeys: []string{
 			"COLUMNS",
 			"HOME",
+			"GEMINI_CLI_SYSTEM_SETTINGS_PATH",
+			"GEMINI_CLI_SYSTEM_DEFAULTS_PATH",
 			"LC_ALL",
 			"LINES",
 			"PATH",
