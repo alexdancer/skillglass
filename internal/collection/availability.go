@@ -94,6 +94,7 @@ type Provenance struct {
 	Evidence Evidence `json:"evidence"`
 }
 type ReferenceAvailability struct {
+	NativeName    string                `json:"native_name,omitempty"`
 	Reference     ReferenceID           `json:"reference_id"`
 	Participation ParticipationState    `json:"participation"`
 	Evidence      Evidence              `json:"evidence"`
