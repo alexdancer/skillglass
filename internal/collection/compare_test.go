@@ -8,6 +8,80 @@ import (
 	"testing"
 )
 
+func TestReviewComparisonUnavailableSourceMembership(t *testing.T) {
+	for _, kind := range []string{"missing", "unreadable"} {
+		t.Run(kind, func(t *testing.T) {
+			root, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			a, b := filepath.Join(root, "a"), filepath.Join(root, "b")
+			for _, p := range []string{a, b} {
+				if err := os.Mkdir(p, 0700); err != nil {
+					t.Fatal(err)
+				}
+				for _, name := range []string{"SKILL.md", "resource"} {
+					if err := os.WriteFile(filepath.Join(p, name), []byte("same bytes\n"), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			req, err := NewRequest([]string{root}, nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			snapshot, err := Build(context.Background(), req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var left, right SourceID
+			for id, source := range snapshot.sources {
+				if source.Directory == a {
+					left = id
+				}
+				if source.Directory == b {
+					right = id
+				}
+			}
+			if kind == "missing" {
+				if err := os.Rename(a, a+"-old"); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if err := os.Chmod(a, 0111); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = os.Chmod(a, 0700) })
+				if f, err := os.Open(a); err == nil {
+					f.Close()
+					t.Fatal("unreadable source control opened directory")
+				} else if !os.IsPermission(err) {
+					t.Fatalf("permission control: %v", err)
+				}
+			}
+			for _, pair := range [][2]SourceID{{left, right}, {right, left}} {
+				report, err := snapshot.Compare(context.Background(), pair[0], pair[1])
+				if err != nil {
+					t.Fatal(err)
+				}
+				if report.Coverage != Incomplete || report.Outcome != OutcomeIndeterminate {
+					t.Fatalf("unavailable source result: %+v", report)
+				}
+				found := false
+				for _, change := range report.Changes {
+					if change.Status != "unknown" || change.Kind != "unknown" || len(change.Diff) != 0 {
+						t.Fatalf("unavailable source membership claimed: %+v", change)
+					}
+					found = found || change.Path == "resource"
+				}
+				if !found {
+					t.Fatalf("missing unknown resource membership: %+v", report)
+				}
+			}
+		})
+	}
+}
+
 func TestComparisonDetectsDeterministicChanges(t *testing.T) {
 	for _, kind := range []string{"rewrite", "rename", "add", "remove", "manifest-link-swap", "parent-link-substitution", "mid-read-rewrite", "mid-read-rename"} {
 		t.Run(kind, func(t *testing.T) {

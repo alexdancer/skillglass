@@ -74,13 +74,14 @@ type bundleEntry struct {
 	Known  bool
 }
 type bundleObservation struct {
-	proven   bool
-	entries  map[string]bundleEntry
-	issues   []ComparisonIssue
-	bytes    int64
-	side     string
-	ctx      context.Context
-	observer func(string, string)
+	proven      bool
+	entries     map[string]bundleEntry
+	directories map[string]bool
+	issues      []ComparisonIssue
+	bytes       int64
+	side        string
+	ctx         context.Context
+	observer    func(string, string)
 }
 
 // Compare observes current bundle contents. It never executes content or follows supporting links.
@@ -138,7 +139,10 @@ func (snapshot *Snapshot) compare(ctx context.Context, left, right SourceID, obs
 			c.RightKind = ""
 			c.Status = "removed"
 		}
-		if (!xok || x.Known) && (!yok || y.Known) && (x.Stamp.Mode&unix.S_IFMT == unix.S_IFREG || y.Stamp.Mode&unix.S_IFMT == unix.S_IFREG || (p == "SKILL.md" && (x.Target.Mode&unix.S_IFMT == unix.S_IFREG || y.Target.Mode&unix.S_IFMT == unix.S_IFREG))) {
+		if (!xok && !first[0].absenceKnown(p)) || (!yok && !first[1].absenceKnown(p)) {
+			c.Status = "unknown"
+			c.Kind = "unknown"
+		} else if (!xok || x.Known) && (!yok || y.Known) && (x.Stamp.Mode&unix.S_IFMT == unix.S_IFREG || y.Stamp.Mode&unix.S_IFMT == unix.S_IFREG || (p == "SKILL.md" && (x.Target.Mode&unix.S_IFMT == unix.S_IFREG || y.Target.Mode&unix.S_IFMT == unix.S_IFREG))) {
 			if safeText(x.Data) && safeText(y.Data) {
 				c.Kind = "text"
 				c.Diff, c.DiffTruncated = boundedDiff(p, x.Data, y.Data)
@@ -184,7 +188,7 @@ func (snapshot *Snapshot) compare(ctx context.Context, left, right SourceID, obs
 	return r, nil
 }
 func sameObservation(a, b bundleObservation) bool {
-	if len(a.entries) != len(b.entries) {
+	if len(a.entries) != len(b.entries) || !reflect.DeepEqual(a.directories, b.directories) {
 		return false
 	}
 	for p, x := range a.entries {
@@ -195,11 +199,24 @@ func sameObservation(a, b bundleObservation) bool {
 	}
 	return true
 }
+func (o bundleObservation) absenceKnown(p string) bool {
+	for p != "." {
+		parent := filepath.Dir(p)
+		if o.directories[parent] {
+			return true
+		}
+		if _, exists := o.entries[parent]; exists {
+			return false
+		}
+		p = parent
+	}
+	return false
+}
 func (o *bundleObservation) issue(p string, err error) {
 	o.issues = append(o.issues, ComparisonIssue{o.side, p, err.Error()})
 }
 func observeBundle(ctx context.Context, s Source, side string, observer func(string, string)) bundleObservation {
-	o := bundleObservation{entries: map[string]bundleEntry{}, side: side, ctx: ctx, observer: observer}
+	o := bundleObservation{entries: map[string]bundleEntry{}, directories: map[string]bool{}, side: side, ctx: ctx, observer: observer}
 	token, err := directoryObjectToken(s.Directory)
 	if err != nil || s.Identity.Certainty != "proven" || sourceID(token) != s.ID {
 		reason := "selected directory identity is no longer proven"
@@ -232,8 +249,17 @@ func observeBundle(ctx context.Context, s Source, side string, observer func(str
 		o.proven = false
 		o.issue(".", fmt.Errorf("selected directory changed during comparison"))
 	}
-	if _, ok := o.entries["SKILL.md"]; !ok {
-		o.issue("SKILL.md", fmt.Errorf("manifest missing"))
+	manifest, ok := o.entries["SKILL.md"]
+	if !ok {
+		if o.absenceKnown("SKILL.md") {
+			o.issue("SKILL.md", fmt.Errorf("manifest missing"))
+		} else {
+			o.issue("SKILL.md", fmt.Errorf("manifest could not be observed"))
+		}
+	} else if !manifest.Known || (manifest.Stamp.Mode&unix.S_IFMT != unix.S_IFREG && (manifest.Stamp.Mode&unix.S_IFMT != unix.S_IFLNK || manifest.Target.Mode&unix.S_IFMT != unix.S_IFREG)) {
+		manifest.Known = false
+		o.entries["SKILL.md"] = manifest
+		o.issue("SKILL.md", fmt.Errorf("manifest is not a readable regular file"))
 	}
 	return o
 }
@@ -274,7 +300,8 @@ func (o *bundleObservation) walk(dir *os.File, prefix, root string) {
 		o.issue(prefix, err)
 		return
 	}
-	if len(names) > remaining {
+	complete := len(names) <= remaining
+	if !complete {
 		o.issue(prefix, fmt.Errorf("entry limit %d reached; directory inventory truncated", compareEntryLimit))
 		names = names[:remaining]
 	}
@@ -283,11 +310,13 @@ func (o *bundleObservation) walk(dir *os.File, prefix, root string) {
 		p := filepath.Join(prefix, name)
 		if len(o.entries) >= compareEntryLimit {
 			o.issue(p, fmt.Errorf("entry limit %d reached", compareEntryLimit))
+			complete = false
 			break
 		}
 		var st unix.Stat_t
 		if err := unix.Fstatat(int(dir.Fd()), name, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 			o.issue(p, err)
+			complete = false
 			continue
 		}
 		e := bundleEntry{Stamp: st, Known: true}
@@ -376,6 +405,10 @@ func (o *bundleObservation) walk(dir *os.File, prefix, root string) {
 	var after unix.Stat_t
 	if err := unix.Fstat(int(dir.Fd()), &after); err != nil || !sameStamp(before, after) {
 		o.issue(prefix, fmt.Errorf("directory changed during traversal"))
+		complete = false
+	}
+	if complete {
+		o.directories[filepath.Clean(prefix)] = true
 	}
 }
 func (o *bundleObservation) read(f *os.File, p string, st unix.Stat_t) ([]byte, bool) {
@@ -439,6 +472,7 @@ func boundedDiff(p string, a, b []byte) ([]string, bool) {
 			truncated = true
 			return
 		}
+		hasNewline := strings.HasSuffix(line, "\n")
 		if len(line) > 4096 {
 			limit := 4096
 			for limit > 0 && !utf8.ValidString(line[:limit]) {
@@ -448,7 +482,7 @@ func boundedDiff(p string, a, b []byte) ([]string, bool) {
 			truncated = true
 		}
 		lines = append(lines, marker+strings.TrimSuffix(line, "\n"))
-		if !strings.HasSuffix(line, "\n") {
+		if !hasNewline {
 			lines = append(lines, "\\ No newline at end of file")
 		}
 	}

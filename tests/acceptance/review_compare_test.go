@@ -1,0 +1,191 @@
+package acceptance_test
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestReviewComparisonRequiresRegularManifest(t *testing.T) {
+	for _, kind := range []string{"directory", "linked-directory", "linked-file"} {
+		t.Run(kind, func(t *testing.T) {
+			linked := kind != "directory"
+			regular := kind == "linked-file"
+			fx, root, a, b := compareFixture(t)
+			for _, p := range []string{a, b} {
+				manifest := filepath.Join(p, "SKILL.md")
+				if err := os.Remove(manifest); err != nil {
+					t.Fatal(err)
+				}
+				target := manifest
+				if linked {
+					target = filepath.Join(p, "instructions")
+				}
+				if regular {
+					writeFile(t, target, []byte("readable instructions\n"), 0600)
+				} else if err := os.Mkdir(target, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if linked {
+					if err := os.Symlink("instructions", manifest); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			left, right := compareIDs(t, fx, root)
+			before := treeManifest(t, fx.base)
+			r := fx.run(t, "compare", "--root", root, "--json", left, right)
+			c := compareReport(t, r)
+			if regular {
+				assertExit(t, r, 0)
+				if c.Report.Coverage != "complete" || c.Report.Outcome != "identical" || len(c.Report.Issues) != 0 {
+					t.Fatalf("readable linked manifest rejected: %s", r.stdout)
+				}
+				assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+				return
+			}
+			assertExit(t, r, 1)
+			if c.Report.Coverage != "incomplete" || c.Report.Outcome != "indeterminate" {
+				t.Fatalf("unreadable manifest accepted: %s", r.stdout)
+			}
+			for _, side := range []string{"left", "right"} {
+				found := false
+				for _, issue := range c.Report.Issues {
+					found = found || (issue.Side == side && issue.Path == "SKILL.md")
+				}
+				if !found {
+					t.Fatalf("missing manifest issue for %s: %s", side, r.stdout)
+				}
+			}
+			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+		})
+	}
+}
+
+func TestReviewComparisonUnobservedMembership(t *testing.T) {
+	for _, cause := range []string{"unreadable-directory", "entry-limit"} {
+		t.Run(cause, func(t *testing.T) {
+			fx, root, a, b := compareFixture(t)
+			path := "scripts/run.sh"
+			if cause == "unreadable-directory" {
+				for _, p := range []string{a, b} {
+					writeFile(t, filepath.Join(p, path), []byte("same script\n"), 0600)
+					writeFile(t, filepath.Join(p, "scripts/nested/run.sh"), []byte("same nested script\n"), 0600)
+					writeFile(t, filepath.Join(p, "visible.txt"), []byte("same\n"), 0600)
+				}
+				writeFile(t, filepath.Join(b, "proven-added.txt"), []byte("added\n"), 0600)
+				writeFile(t, filepath.Join(b, "new-directory/nested/added.txt"), []byte("nested added\n"), 0600)
+				dir := filepath.Join(a, "scripts")
+				if err := os.Chmod(dir, 0000); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = os.Chmod(dir, 0700) })
+				if f, err := os.Open(dir); err == nil {
+					f.Close()
+					t.Fatal("unreadable-directory control opened directory")
+				} else if !os.IsPermission(err) {
+					t.Fatalf("permission control: %v", err)
+				}
+			} else {
+				path = "unproven.txt"
+				for i := 0; i < 10001; i++ {
+					writeFile(t, filepath.Join(a, fmt.Sprintf("entry-%05d", i)), nil, 0600)
+				}
+				writeFile(t, filepath.Join(b, path), []byte("unproven membership\n"), 0600)
+			}
+			list := fx.run(t, "list", "--root", root, "--json")
+			var inventory publicList
+			decodeJSON(t, list.stdout, &inventory)
+			var left, right string
+			for _, source := range inventory.Sources {
+				if source.SourcePath == canonicalPath(t, a) {
+					left = source.ID
+				}
+				if source.SourcePath == canonicalPath(t, b) {
+					right = source.ID
+				}
+			}
+			if left == "" || right == "" {
+				t.Fatalf("missing selected copies: %s", list.stdout)
+			}
+			for _, pair := range [][2]string{{left, right}, {right, left}} {
+				r := fx.run(t, "compare", "--root", root, "--json", pair[0], pair[1])
+				assertExit(t, r, 1)
+				c := compareReport(t, r)
+				found, proven, nested, ancestor := false, false, false, false
+				for _, change := range c.Report.Changes {
+					if change.Path == path {
+						found = true
+						if change.Status != "unknown" || change.Kind != "unknown" || len(change.Diff) != 0 {
+							t.Fatalf("unobserved membership claimed: %+v", change)
+						}
+					}
+					if change.Path == "scripts/nested/run.sh" {
+						nested = true
+						if change.Status != "unknown" || change.Kind != "unknown" || len(change.Diff) != 0 {
+							t.Fatalf("unobserved nested membership claimed: %+v", change)
+						}
+					}
+					if change.Path == "visible.txt" {
+						t.Fatalf("equal visible file changed: %+v", change)
+					}
+					if change.Path == "proven-added.txt" || change.Path == "new-directory/nested/added.txt" {
+						if change.Path == "proven-added.txt" {
+							proven = true
+						} else {
+							ancestor = true
+						}
+						status := "added"
+						if pair[0] == right {
+							status = "removed"
+						}
+						if change.Status != status || change.Kind != "text" || len(change.Diff) == 0 {
+							t.Fatalf("proven absence lost: %+v", change)
+						}
+					}
+				}
+				if !found || (cause == "unreadable-directory" && (!proven || !nested || !ancestor)) || c.Report.Coverage != "incomplete" {
+					t.Fatalf("membership report: %s", r.stdout)
+				}
+			}
+		})
+	}
+}
+
+func TestReviewComparisonLongLineNewlineEvidence(t *testing.T) {
+	for _, endings := range [][2]string{{"\n", "\n"}, {"", "\n"}, {"\n", ""}, {"", ""}} {
+		t.Run(fmt.Sprintf("%q-%q", endings[0], endings[1]), func(t *testing.T) {
+			fx, root, a, b := compareFixture(t)
+			writeFile(t, filepath.Join(a, "long-line.txt"), []byte(strings.Repeat("left", 1100)+endings[0]), 0600)
+			writeFile(t, filepath.Join(b, "long-line.txt"), []byte(strings.Repeat("right", 1100)+endings[1]), 0600)
+			left, right := compareIDs(t, fx, root)
+			before := treeManifest(t, fx.base)
+			r := fx.run(t, "compare", "--root", root, "--json", left, right)
+			assertExit(t, r, 0)
+			c := compareReport(t, r)
+			found := false
+			for _, change := range c.Report.Changes {
+				if change.Path != "long-line.txt" {
+					continue
+				}
+				found = true
+				want := 0
+				for _, ending := range endings {
+					if ending == "" {
+						want++
+					}
+				}
+				got := strings.Count(strings.Join(change.Diff, "\n"), "No newline at end of file")
+				if got != want || !change.DiffTruncated || change.Kind != "text" {
+					t.Fatalf("newline evidence: markers=%d, want %d; %+v", got, want, change)
+				}
+			}
+			if !found || c.Report.Coverage != "complete" || c.Report.Outcome != "different" {
+				t.Fatalf("long-line comparison: %s", r.stdout)
+			}
+			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+		})
+	}
+}
