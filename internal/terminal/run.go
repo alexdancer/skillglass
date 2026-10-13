@@ -15,6 +15,7 @@ const usage = `Usage:
   skillglass list [SCOPE] [FILTERS] [--search TEXT] [--json]
   skillglass problems [SCOPE] [FILTERS] [--search TEXT] [--json]
   skillglass read [SCOPE] [--json] SOURCE_ID
+  skillglass compare [SCOPE] [--json] LEFT_SOURCE_ID RIGHT_SOURCE_ID
   skillglass browse [SCOPE]
 
 Scope:
@@ -97,6 +98,8 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return runProblems(args[1:], stdout, stderr)
 	case "read":
 		return runRead(args[1:], stdout, stderr)
+	case "compare":
+		return runCompare(args[1:], stdout, stderr)
 	case "browse":
 		return runBrowse(args[1:], stdin, stdout, stderr)
 	default:
