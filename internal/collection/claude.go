@@ -55,7 +55,7 @@ func explainClaudeSource(snapshot *Snapshot, id SourceID, roots map[RootID]Disco
 	result := AvailabilityExplanation{State: AvailabilityUnknown, Reason: e.Reason, Evidence: &e}
 	invocation := SessionExplanation{State: "unknown", Evidence: e}
 	eligible, excluded := false, false
-	var activationDiagnostic *Evidence
+	var activationDiagnostic, unresolvedDiagnostic *Evidence
 	nativeName := ""
 	nativeNames := map[string]bool{}
 	pluginFact, managed := managedClaudeSource(source.Directory, plugins)
@@ -123,17 +123,31 @@ func explainClaudeSource(snapshot *Snapshot, id SourceID, roots map[RootID]Disco
 			diagnostic := fact.Evidence
 			activationDiagnostic = &diagnostic
 		}
+		if fact.Participation == ParticipationUnknown {
+			diagnostic := fact.Evidence
+			unresolvedDiagnostic = &diagnostic
+		}
 		eligible = eligible || fact.Participation == ParticipationEligible
 		excluded = excluded || fact.Participation == ParticipationExcluded
 		result.References = append(result.References, fact)
+	}
+	for _, fact := range result.References {
+		if fact.Participation == ParticipationEligible && fact.NativeName != "" {
+			nativeName = fact.NativeName
+			break
+		}
 	}
 	if nativeName != "" {
 		result.NativeName = nativeName
 		nameEvidence := claudeEvidence(EvidenceInferred, "skill-command-name", source.Manifest.Path, "name", "frontmatter name is used when set; otherwise the discovered folder name; plugin commands are namespaced")
 		result.NativeNameEvidence = &nameEvidence
 	}
-	if !eligible && !excluded && activationDiagnostic != nil {
-		e = *activationDiagnostic
+	if !eligible {
+		if activationDiagnostic != nil && (!excluded || unresolvedDiagnostic != nil) {
+			e = *activationDiagnostic
+		} else if unresolvedDiagnostic != nil {
+			e = *unresolvedDiagnostic
+		}
 		result.Reason = e.Reason
 		invocation.Evidence = e
 	}
@@ -237,7 +251,7 @@ func explainClaudeSource(snapshot *Snapshot, id SourceID, roots map[RootID]Disco
 		}
 		result.Evidence = &controlling
 		invocation.Evidence = controlling
-	} else if excluded {
+	} else if excluded && unresolvedDiagnostic == nil {
 		result.State = AvailabilityUnavailable
 		result.Reason = "native reference excluded by reserved namespace, inactive plugin, or customization policy"
 		e = claudeEvidence(EvidenceInferred, "excluded-native-reference", source.Directory, "", result.Reason)
@@ -248,6 +262,7 @@ func explainClaudeSource(snapshot *Snapshot, id SourceID, roots map[RootID]Disco
 		e = claudeEvidence(EvidenceUnknown, "shared-native-name", source.Directory, "name", result.Reason)
 		result.Evidence = &e
 		result.NativeNameEvidence = &e
+		invocation = SessionExplanation{State: "unknown", Evidence: e}
 	}
 	result.Invocation = &invocation
 	result.Precedence = &PrecedenceExplanation{State: PrecedenceUnknown, Evidence: claudeEvidence(EvidenceUnknown, "native-name-precedence", source.Directory, "", "no eligible native reference established")}

@@ -15,7 +15,7 @@ func TestDecisionALE29InvocationControls(t *testing.T) {
 		{"alias-no", "user-invocable: no\n", "available", "model-only"},
 		{"alias-yes", "user-invocable: yes\n", "available", "automatic-and-user"},
 		{"alias-disable-yes", "disable-model-invocation: yes\n", "explicit-only", "explicit-only"},
-		{"invalid", "user-invocable: sometimes\n", "unknown", "automatic-and-user"},
+		{"invalid", "user-invocable: sometimes\n", "unknown", "unknown"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.label, func(t *testing.T) {
