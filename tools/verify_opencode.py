@@ -140,7 +140,8 @@ def main():
         (project/'.opencode/skills/alias').symlink_to(shared.parent, target_is_directory=True)
         link = config/'opencode/skills/file-link/SKILL.md'
         link.parent.mkdir(parents=True)
-        link.symlink_to(shared)
+        file_shared = skill(base/'file-shared','source','file-shared-target')
+        link.symlink_to(file_shared)
         write(config/'opencode/opencode.json',{'skills':{'paths':[str(base/'extra')]},'permission':{'skill':{'*':'allow','project-*':'ask','agents-*':'deny'}}})
         all_skills = listed('discovery')
         names = {x['name'] for x in all_skills}
@@ -207,7 +208,7 @@ def main():
         check('native validates rejected earlier layer before merge', True)
 
     finally:
-        (out/'receipts.json').write_text(json.dumps({'version':locals().get('version'),'git_version':locals().get('git_version'),'git_runtime':{'source':str(source_git),'sha256':git_hash,'fixture_copy':str(git_binary)},'fixture':str(base),'binary':binary,'source_binary':str(source_binary),'source_binary_sha256':source_hash,'environment':env,'profile':policy,'runtime_data':runtime_data,'network':'sandbox denies network*','write_boundary':'canonical fixture only','read_boundary':'fixture, exact executable and OS runtime paths; live homes and managed inputs excluded with controlled ENOENT','commands':receipts,'checks':checks,'gaps':['No inference or tool execution.','Debug skill lists raw definitions without permissions.','Concurrent collision winner cannot be generalized.','Native built-in is omitted from local bundle inventory.','Running session, remote policy, plugin hooks and writers remain unverified.','Actual system/enterprise and other user inputs excluded; fixture managed override only.','Historical outside-fixture effects remain unknown.']},indent=2)+'\n')
+        (out/'receipts.json').write_text(json.dumps({'version':locals().get('version'),'git_version':locals().get('git_version'),'git_runtime':{'source':str(source_git),'sha256':git_hash,'fixture_copy':str(git_binary)},'fixture':str(base),'binary':binary,'source_binary':str(source_binary),'source_binary_sha256':source_hash,'environment':env,'profile':policy,'runtime_data':runtime_data,'network':'sandbox denies network*','write_boundary':'canonical fixture plus nonpersistent /dev/null discard','read_boundary':'fixture, exact executable and OS runtime paths; live homes and managed inputs excluded with controlled ENOENT','commands':receipts,'checks':checks,'gaps':['No inference or tool execution.','Debug skill lists raw definitions without permissions.','Concurrent collision winner cannot be generalized.','Native built-in is omitted from local bundle inventory.','Running session, remote policy, plugin hooks and writers remain unverified.','Actual system/enterprise and other user inputs excluded; fixture managed override only.','Historical outside-fixture effects remain unknown.']},indent=2)+'\n')
         shutil.rmtree(base)
     print(json.dumps({'checks':len(checks),'passed':all(x['passed'] for x in checks),'out':str(out)}))
 

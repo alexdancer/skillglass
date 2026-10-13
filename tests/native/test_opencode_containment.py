@@ -78,6 +78,8 @@ func main(){
         (evidence/'helper.stderr').write_bytes(result.stderr)
         self.assertEqual(result.returncode,1)
         self.assertIn(b'reference version 1.17.15', result.stderr)
+        helper_receipts=json.loads((evidence/'helper/receipts.json').read_text())
+        self.assertEqual(helper_receipts['write_boundary'],'canonical fixture plus nonpersistent /dev/null discard')
         child = json.loads((evidence/'helper/version.stdout').read_text())
         for key in ['null_rw_discard','fixture_write','fixture_read','excluded_read_denied','outside_write_denied','symlink_created','symlink_escape_denied','network_denied','inherited_child_denied']:
             self.assertTrue(child[key], key)
