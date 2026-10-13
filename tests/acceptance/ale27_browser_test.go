@@ -62,7 +62,11 @@ func TestALE27BrowserCancelConfirmStaleAndExit(t *testing.T) {
 			if !strings.Contains(string(readBytes(t, config)), "enabled = false") {
 				t.Fatal("PTY confirmation did not persist")
 			}
-			send("Escape", "SKILLGLASS | Source", "Configured permission: denied")
+			back := send("Enter", "SKILLGLASS | Source", "Configured permission: denied", "Result: applied | persistence: verified")
+			writeEvidence(t, fmt.Sprintf("tmux/ale27/%d/05-return-after-apply.txt", width), []byte(back))
+			if paneContains(back, "Cancelled. No settings changed.") {
+				t.Fatal("committed result returned as cancellation")
+			}
 			send("e", "Select the setting scope explicitly")
 			send("g", "ready", "y Apply global enable")
 			writeFile(t, config, append(readBytes(t, config), []byte("\n# external while preview held\n")...), 0600)
@@ -137,7 +141,11 @@ func TestALE27BrowserAppliedUnmetExitsNonzeroAfterCancellation(t *testing.T) {
 		t.Fatal("applied persistence missing")
 	}
 	before := treeManifest(t, fx.base)
-	send("Escape", "SKILLGLASS | Source")
+	back := send("Escape", "SKILLGLASS | Source", "Result: applied | persistence: verified")
+	writeEvidence(t, "tmux/ale27/unmet/02-return-after-unmet.txt", []byte(back))
+	if paneContains(back, "Cancelled. No settings changed.") {
+		t.Fatal("unmet committed result returned as cancellation")
+	}
 	send("e", "Select the setting scope explicitly")
 	send("g", "ready")
 	send("Escape", "Cancelled. No settings changed.")

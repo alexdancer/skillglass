@@ -41,9 +41,13 @@ func (model browserModel) updateChange(key tea.KeyPressMsg) (tea.Model, tea.Cmd)
 	layout := model.changePage().layout()
 	switch key.String() {
 	case "esc", "enter":
+		if model.mode == browserChangeResult {
+			model.feedback = fmt.Sprintf("Result: %s | persistence: %s", model.changeOutcome.State, model.changeOutcome.Persistence)
+		} else {
+			model.feedback = "Cancelled. No settings changed."
+		}
 		model.mode = browserSourceDetail
 		model.changePreview = nil
-		model.feedback = "Cancelled. No settings changed."
 	case "y":
 		if model.mode == browserChangePreview && model.changePreview != nil && model.changePreview.View().State == "ready" {
 			held := model.changePreview
