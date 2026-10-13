@@ -11,7 +11,6 @@ import (
 
 type codexPluginFact struct {
 	directory     string
-	namespace     string
 	activation    Evidence
 	participation ParticipationState
 	provenance    Provenance
@@ -144,9 +143,6 @@ func discoverCodexPlugins(request *Request, inputs *codexInputs, ancestors []str
 					}
 				}
 				fact.directory, _ = filepath.EvalSymlinks(versionDir)
-				if manifestErr == nil {
-					fact.namespace = installed.Name
-				}
 				fact.activation = fact.provenance.Evidence
 				fact.provenance.Evidence = codexEvidence(EvidenceInferred, "managed-cache-boundary", fact.directory, "", "canonical bundle is within a versioned Codex plugin cache; manager ownership is distinct from native discovery participation")
 				facts[root] = fact

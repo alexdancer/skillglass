@@ -42,37 +42,51 @@ func TestALE26BrowserAvailabilityExplanationFilterAndRefresh(t *testing.T) {
 			topSummary := send("Enter", "Read lines", "Availability: available", "Configured permission: allowed", "Session: unknown")
 			assertPaneCells(t, topSummary, width, height)
 			collect := func(prefix string, needles ...string) string {
-				var all strings.Builder
 				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "g")
-				top := waitForPane(t, tmux, fx, socket, false, "Read lines 1-")
-				all.WriteString(top)
-				assertPaneCells(t, top, width, height)
-				writeEvidence(t, fmt.Sprintf("tmux/ale26/%dx%d/%s-top.txt", width, height, prefix), []byte(top))
-				for i := 0; i < 25; i++ {
-					pane = capturePane(t, tmux, fx, socket, false)
-					joined := capturePane(t, tmux, fx, socket, true)
-					all.WriteString("\n")
-					all.WriteString(joined)
+				frame := waitForPane(t, tmux, fx, socket, false, "Read lines 1-")
+				rows := make(map[int]string)
+				var collected string
+				for page := 0; page < 25; page++ {
+					assertPaneCells(t, frame, width, height)
+					first, last, total, body := sourceDetailBody(t, frame)
+					for index, row := range body {
+						rows[first+index] = row
+					}
+					ordered := make([]string, total)
+					for index := range ordered {
+						var seen bool
+						ordered[index], seen = rows[index+1]
+						if !seen {
+							ordered[index] = "<unobserved row>"
+						}
+					}
+					collected = strings.Join(ordered, "\n")
+					writeEvidence(t, fmt.Sprintf("tmux/ale26/%dx%d/%s-page-%02d.txt", width, height, prefix, page), []byte(frame))
+					if page == 0 {
+						writeEvidence(t, fmt.Sprintf("tmux/ale26/%dx%d/%s-top.txt", width, height, prefix), []byte(frame))
+					}
 					found := true
 					for _, needle := range needles {
-						found = found && paneContains(all.String(), needle)
+						found = found && paneContains(collected, needle)
 					}
 					if found {
+						return collected
+					}
+					if last == total {
 						break
 					}
-					next := actOnPane(t, tmux, fx, socket, "browser:0.0", func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "PageDown") }, func(next paneSnapshot) bool { return next.cells != pane }).cells
-					assertPaneCells(t, next, width, height)
-					if next == pane {
-						t.Fatalf("detail end without %v\n%s", needles, all.String())
-					}
-					writeEvidence(t, fmt.Sprintf("tmux/ale26/%dx%d/%s-page-%02d.txt", width, height, prefix, i), []byte(next))
+					previousFirst := first
+					frame = actOnPane(t, tmux, fx, socket, "browser:0.0", func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "PageDown") }, func(next paneSnapshot) bool {
+						first, _, _ := sourceDetailRange(next.cells)
+						return first > previousFirst
+					}).cells
 				}
 				for _, needle := range needles {
-					if !paneContains(all.String(), needle) {
-						t.Fatalf("missing detail %q\n%s", needle, all.String())
+					if !paneContains(collected, needle) {
+						t.Fatalf("missing detail %q from observed body rows:\n%s", needle, collected)
 					}
 				}
-				return all.String()
+				return collected
 			}
 			collect("02-before", "Availability: available", "Permission: allowed", "Session: unknown", "Reload: unknown")
 			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
@@ -134,4 +148,44 @@ func TestALE26BrowserContextCycleRecoversGenericAndPreservesNativeOrder(t *testi
 			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "q")
 		})
 	}
+}
+
+// Reconstruct the visible read body by its public numbered pager. Chrome between
+// pages must not interrupt words wrapped across two adjacent body rows.
+func sourceDetailBody(t *testing.T, cells string) (first, last, total int, body []string) {
+	t.Helper()
+	rows := strings.Split(strings.TrimSuffix(cells, "\n"), "\n")
+	start := -1
+	for index, row := range rows {
+		if strings.HasPrefix(row, "Selected:") {
+			start = index + 1
+			break
+		}
+	}
+	if start < 0 {
+		t.Fatalf("source detail lacks selection header:\n%s", cells)
+	}
+	if start < len(rows) && strings.HasPrefix(rows[start], "Selector:") {
+		start++
+	}
+	if start < len(rows) && strings.HasPrefix(rows[start], "Selection:") {
+		start++
+	}
+	first, last, total = sourceDetailRange(cells)
+	count := last - first + 1
+	if first < 1 || count < 1 || start+count > len(rows) {
+		t.Fatalf("invalid source pager/body bounds:\n%s", cells)
+	}
+	return first, last, total, rows[start : start+count]
+}
+
+func sourceDetailRange(cells string) (first, last, total int) {
+	for _, row := range strings.Split(cells, "\n") {
+		if strings.HasPrefix(row, "Read lines ") {
+			if count, err := fmt.Sscanf(row, "Read lines %d-%d of %d", &first, &last, &total); err == nil && count == 3 {
+				return first, last, total
+			}
+		}
+	}
+	return 0, 0, 0
 }

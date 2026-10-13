@@ -11,6 +11,9 @@ func availabilityLines(value collection.AvailabilityExplanation) []string {
 		return nil
 	}
 	lines := []string{fmt.Sprintf("Evidence: %s | %s | validated %s", value.Evidence.Kind, value.Evidence.Rule, value.Evidence.AgentVersion)}
+	if value.NativeNameEvidence != nil {
+		lines = append(lines, "Native name evidence: "+string(value.NativeNameEvidence.Kind)+" | "+value.NativeNameEvidence.Rule+" | "+value.NativeNameEvidence.InputPath+" | "+value.NativeNameEvidence.Reason)
+	}
 	if value.NativeName != "" {
 		lines = append(lines, "Native name: "+value.NativeName)
 	}

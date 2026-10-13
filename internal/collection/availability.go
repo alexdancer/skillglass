@@ -117,16 +117,17 @@ type Capability struct {
 	Evidence  Evidence `json:"evidence"`
 }
 type AvailabilityExplanation struct {
-	NativeName   string                  `json:"native_name,omitempty"`
-	State        AvailabilityState       `json:"state"`
-	Reason       string                  `json:"reason"`
-	Evidence     *Evidence               `json:"evidence,omitempty"`
-	References   []ReferenceAvailability `json:"references,omitempty"`
-	Precedence   *PrecedenceExplanation  `json:"precedence,omitempty"`
-	Invocation   *SessionExplanation     `json:"invocation,omitempty"`
-	Session      *SessionExplanation     `json:"session,omitempty"`
-	Reload       *SessionExplanation     `json:"reload,omitempty"`
-	Capabilities []Capability            `json:"capabilities,omitempty"`
+	NativeNameEvidence *Evidence               `json:"native_name_evidence,omitempty"`
+	NativeName         string                  `json:"native_name,omitempty"`
+	State              AvailabilityState       `json:"state"`
+	Reason             string                  `json:"reason"`
+	Evidence           *Evidence               `json:"evidence,omitempty"`
+	References         []ReferenceAvailability `json:"references,omitempty"`
+	Precedence         *PrecedenceExplanation  `json:"precedence,omitempty"`
+	Invocation         *SessionExplanation     `json:"invocation,omitempty"`
+	Session            *SessionExplanation     `json:"session,omitempty"`
+	Reload             *SessionExplanation     `json:"reload,omitempty"`
+	Capabilities       []Capability            `json:"capabilities,omitempty"`
 }
 type AgentScope struct {
 	Evidence         Evidence          `json:"evidence"`
@@ -145,6 +146,10 @@ func cloneLayers(layers []PermissionLayer) []PermissionLayer {
 	return result
 }
 func cloneAvailability(value AvailabilityExplanation) AvailabilityExplanation {
+	if value.NativeNameEvidence != nil {
+		copy := *value.NativeNameEvidence
+		value.NativeNameEvidence = &copy
+	}
 	if value.Evidence != nil {
 		copy := *value.Evidence
 		value.Evidence = &copy

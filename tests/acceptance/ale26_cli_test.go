@@ -18,7 +18,8 @@ type codexEvidence struct {
 	AgentVersion string `json:"agent_version"`
 }
 type codexAvailability struct {
-	NativeName string `json:"native_name"`
+	NativeNameEvidence codexEvidence `json:"native_name_evidence"`
+	NativeName         string        `json:"native_name"`
 
 	State      string
 	Evidence   codexEvidence

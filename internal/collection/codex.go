@@ -284,9 +284,13 @@ func explainCodexSource(snapshot *Snapshot, id SourceID, roots map[RootID]Discov
 		explanation.Precedence.Evidence = codexEvidence(EvidenceUnknown, "native-precedence", source.Directory, "", "source has no eligible native occurrence")
 	}
 	if eligible {
-		explanation.NativeName = source.Name
-		if managed && managedPlugin.namespace != "" {
-			explanation.NativeName = managedPlugin.namespace + ":" + source.Name
+		name, nameEvidence, problem := codexNativeName(source)
+		explanation.NativeName = name
+		explanation.NativeNameEvidence = &nameEvidence
+		if problem != nil {
+			inputs.problems = append(inputs.problems, *problem)
+			explanation.Precedence.State = PrecedenceUnknown
+			explanation.Precedence.Evidence = nameEvidence
 		}
 	}
 

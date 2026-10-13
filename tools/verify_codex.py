@@ -95,6 +95,12 @@ case('disabled-plugin-canonical-manifest-denied', disabled + override(cachedskil
 case('disabled-plugin-alias-manifest-denied', disabled + override(userroot / 'registered-cache-alias/SKILL.md'))
 case('enabled-plugin-with-user-aliases', trust + '[plugins."probe-plugin@probe-market"]\nenabled = true\n')
 
+# A local source outside the installed cache gains the same ancestor-manifest namespace.
+(userroot / 'local-source-alias').symlink_to(plugskill.parent)
+case('disabled-plugin-with-source-alias', disabled)
+case('source-alias-cached-manifest-denied', disabled + override(cachedskill))
+case('enabled-plugin-with-source-alias', trust + '[plugins."probe-plugin@probe-market"]\nenabled = true\n')
+
 # A skills/list observation is not evidence that an inference thread adopted changes.
 config()
 s = Server()
@@ -133,6 +139,9 @@ checks = {
     'orphan user alias remains plain and eligible': named('disabled-plugin-with-user-aliases', 'orphan-alias')[0]['enabled'] is True,
     'canonical selector disables independent alias route': named('disabled-plugin-canonical-manifest-denied', 'probe-plugin:plugin-skill')[0]['enabled'] is False,
     'alias selector disables independent alias route': named('disabled-plugin-alias-manifest-denied', 'probe-plugin:plugin-skill')[0]['enabled'] is False,
+    'outside-cache source alias uses ancestor namespace': any(s['path'] == str(plugskill) and s['enabled'] for s in named('disabled-plugin-with-source-alias', 'probe-plugin:plugin-skill')),
+    'independent source and cache aliases coexist natively': len(named('disabled-plugin-with-source-alias', 'probe-plugin:plugin-skill')) == 2,
+    'cached manifest denial leaves independent source enabled': {s['path']: s['enabled'] for s in named('source-alias-cached-manifest-denied', 'probe-plugin:plugin-skill')} == {str(plugskill): True, str(cachedskill): False},
 }
 (OUT / 'native-checks.json').write_text(json.dumps(checks, indent=2) + '\n')
 print('Saved', OUT / 'native-output.json')
