@@ -288,6 +288,9 @@ func claudePluginManifestLimitation(raw []byte) string {
 		if err != nil || !parsed.IsAbs() {
 			return "homepage is not an absolute URL; Claude 2.1.282 rejects the recorded invalid form"
 		}
+		if parsed.Host == "" && strings.HasPrefix(strings.ToLower(homepage), strings.ToLower(parsed.Scheme)+"://") {
+			return "homepage hierarchical URL has no authority; this edge form cannot establish native plugin activation"
+		}
 	}
 	names := make([]string, 0, len(fields))
 	for name := range fields {

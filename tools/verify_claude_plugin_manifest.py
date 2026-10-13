@@ -49,7 +49,7 @@ def main():
     areas = [plugin, root / "market/.claude-plugin", home / ".claude/settings.json",
              home / ".claude/plugins/known_marketplaces.json", home / ".claude/plugins/installed_plugins.json"]
     results = []
-    for label, homepage in [("absent", None), ("valid", "https://example.invalid/docs"), ("invalid", "not-an-absolute-url")]:
+    for label, homepage in [("absent", None), ("valid", "https://example.invalid/docs"), ("invalid", "not-an-absolute-url"), ("invalid-hierarchical", "https://")]:
         metadata = {"name": "demo", "version": "1.0.0"}
         if homepage is not None:
             metadata["homepage"] = homepage
@@ -67,10 +67,11 @@ def main():
         write(output / (label + "-after.json"), json.dumps(after, indent=2) + "\n")
         assert before == after, label
         commands = [c for c in response["commands"] if not c.get("builtin")]
+        invalid = label.startswith("invalid")
         listed = any(c["name"] == "demo:root-action" for c in commands)
-        assert listed == (label != "invalid"), (label, commands)
-        assert validation.returncode == (1 if label == "invalid" else 0), (label, validation.stderr)
-        if label == "invalid":
+        assert listed == (not invalid), (label, commands)
+        assert validation.returncode == (1 if invalid else 0), (label, validation.stderr)
+        if invalid:
             assert "homepage" in validation.stdout + validation.stderr
         results.append({"case": label, "manifest": metadata, "validate_exit": validation.returncode,
                         "commands": commands, "termination_after_catalog_exit": code,
@@ -81,7 +82,7 @@ def main():
                "model_prompts": 0, "skill_workloads": 0,
                "helper_sha256": hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest(),
                "containment_helper_sha256": hashlib.sha256((pathlib.Path(__file__).parent / "claude_containment.py").read_bytes()).hexdigest(),
-               "limits": "Only absent/valid HTTPS/invalid literal homepage controls observed. No full native schema equivalence, model enforcement or enterprise-state claim."}
+               "limits": "Only absent/valid HTTPS/invalid literal and malformed hierarchical homepage controls observed. No full native schema equivalence, model enforcement or enterprise-state claim."}
     write(output / "summary.json", json.dumps(summary, indent=2) + "\n")
     print(json.dumps(summary, indent=2))
 

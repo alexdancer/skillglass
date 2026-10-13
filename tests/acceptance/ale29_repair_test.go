@@ -221,6 +221,7 @@ func TestALE29PluginManifestActivationLimits(t *testing.T) {
 		{"absent", nil, "available", "local-marketplace-plugin"},
 		{"valid", map[string]any{"homepage": "https://example.invalid/docs"}, "available", "local-marketplace-plugin"},
 		{"invalid", map[string]any{"homepage": "not-an-absolute-url"}, "unknown", "homepage"},
+		{"invalid-hierarchical", map[string]any{"homepage": "https://"}, "unknown", "homepage"},
 		{"invalid-type", map[string]any{"homepage": 17}, "unknown", "homepage"},
 		{"invalid-null", map[string]any{"homepage": nil}, "unknown", "homepage"},
 		{"repository", map[string]any{"repository": "not-an-absolute-url"}, "available", "local-marketplace-plugin"},
