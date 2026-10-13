@@ -285,8 +285,8 @@ func claudeLocalPluginSources(request *Request, inputs *claudeInputs) map[string
 			continue
 		}
 		for _, plugin := range manifest.Plugins {
-			var relative string
-			if json.Unmarshal(plugin.Source, &relative) != nil || filepath.IsAbs(relative) {
+			relative, supported := claudeManifestString(plugin.Source)
+			if !supported || filepath.IsAbs(relative) {
 				inputs.scope.Gaps = append(inputs.scope.Gaps, "unverified local plugin source form: "+plugin.Name+"@"+name)
 				continue
 			}
