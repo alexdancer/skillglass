@@ -532,8 +532,10 @@ func (model *browserModel) cycleContext() {
 	if model.snapshot.Scope().Agent != nil {
 		states = append(states, collection.FilterGlobal, collection.FilterSystem, collection.FilterManaged)
 	}
+	current := model.filters.Context
+	model.filters.Context = collection.FilterAll
 	for index, state := range states {
-		if model.filters.Context == state {
+		if current == state {
 			model.filters.Context = states[(index+1)%len(states)]
 			break
 		}

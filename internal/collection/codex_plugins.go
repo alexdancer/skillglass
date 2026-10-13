@@ -11,6 +11,8 @@ import (
 
 type codexPluginFact struct {
 	directory     string
+	namespace     string
+	activation    Evidence
 	participation ParticipationState
 	provenance    Provenance
 }
@@ -141,7 +143,12 @@ func discoverCodexPlugins(request *Request, inputs *codexInputs, ancestors []str
 						fact.provenance.Evidence = codexEvidence(EvidenceInferred, "local-plugin-installation", registration.registry, "plugins."+id+".enabled=true", "local marketplace, source manifest, installed cache manifest and exact version agree; inference-session enforcement is unverified")
 					}
 				}
-				fact.directory, _ = filepath.EvalSymlinks(root)
+				fact.directory, _ = filepath.EvalSymlinks(versionDir)
+				if manifestErr == nil {
+					fact.namespace = installed.Name
+				}
+				fact.activation = fact.provenance.Evidence
+				fact.provenance.Evidence = codexEvidence(EvidenceInferred, "managed-cache-boundary", fact.directory, "", "canonical bundle is within a versioned Codex plugin cache; manager ownership is distinct from native discovery participation")
 				facts[root] = fact
 			}
 		}
@@ -155,4 +162,16 @@ func discoverCodexPlugins(request *Request, inputs *codexInputs, ancestors []str
 		appendNativeRoot(request, path, ContextManaged, "codex-plugin-cache")
 	}
 	return facts
+}
+
+func managedCodexSource(directory string, plugins map[string]codexPluginFact) (codexPluginFact, bool) {
+	for _, fact := range plugins {
+		if fact.directory == "" {
+			continue
+		}
+		if relative, err := filepath.Rel(fact.directory, directory); err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return fact, true
+		}
+	}
+	return codexPluginFact{}, false
 }

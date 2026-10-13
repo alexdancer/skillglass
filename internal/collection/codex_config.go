@@ -162,7 +162,7 @@ func (inputs *codexInputs) loadConfig(path, scope string, trusted bool) codexCon
 	return parsed
 }
 func readCodexInputs(request Request, ancestors []string, boundary string) codexInputs {
-	inputs := codexInputs{scope: AgentScope{Evidence: codexEvidence(EvidenceObserved, "recorded-native-verification", "tools/verify_codex.py", "", "disposable app-server verification recorded 14 passing native outcomes; this is reference-version evidence"), Application: "codex", ValidatedVersion: codexValidatedVersion, VersionEvidence: "recorded disposable native verification; installed executable and active session are not inspected", Gaps: []string{
+	inputs := codexInputs{scope: AgentScope{Evidence: codexEvidence(EvidenceObserved, "recorded-native-verification", "tools/verify_codex.py", "", "disposable app-server verification recorded native outcomes, including independent cache-alias discovery; this is reference-version evidence"), Application: "codex", ValidatedVersion: codexValidatedVersion, VersionEvidence: "recorded disposable native verification; installed executable and active session are not inspected", Gaps: []string{
 		"configured permission is a local inference; project enforcement in an inference session is unverified",
 		"CLI overrides, runtime extra roots, selected profiles, cloud policy and active-session state are not supplied",
 		"native recursion is verified; exact depth and metadata limits remain unverified; hidden folders and file manifest links are omitted",

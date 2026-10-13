@@ -203,6 +203,10 @@ func explainCodexSource(snapshot *Snapshot, id SourceID, roots map[RootID]Discov
 	explanation := AvailabilityExplanation{State: AvailabilityUnknown, Reason: "no eligible native reference is established"}
 	evidence := codexEvidence(EvidenceUnknown, "native-participation", source.Directory, "", explanation.Reason)
 	explanation.Evidence = &evidence
+	managedPlugin, managed := managedCodexSource(source.Directory, plugins)
+	if managed {
+		source.Ownership = EvidenceState{State: "managed", Reason: "canonical bundle lies within a versioned plugin cache; plugin manager owns content"}
+	}
 	permission := inputs.permission(canonicalManifest(filepath.Join(source.Directory, "SKILL.md")))
 	invocation := SessionExplanation{State: "unknown", Evidence: codexEvidence(EvidenceUnknown, "inspection-only", source.Directory, "", "native invocation participation is not established")}
 	for _, rid := range source.References {
@@ -227,24 +231,9 @@ func explainCodexSource(snapshot *Snapshot, id SourceID, roots map[RootID]Discov
 				fact.Provenance.Kind = "system"
 				source.Ownership = EvidenceState{State: "managed", Reason: "Codex or administrator managed system source"}
 			}
-			plugin, managed := plugins[root.Path]
-			if !managed {
-				for _, value := range plugins {
-					if value.directory == "" {
-						continue
-					}
-					if rel, err := filepath.Rel(value.directory, source.Directory); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-						plugin = value
-						managed = true
-						break
-					}
-				}
-			}
-			if managed {
+			if plugin, cacheRoute := plugins[root.Path]; cacheRoute && root.Origin == "codex-plugin-cache" {
 				fact.Participation = plugin.participation
-				fact.Provenance = plugin.provenance
-				fact.Evidence = plugin.provenance.Evidence
-				source.Ownership = EvidenceState{State: "managed", Reason: "versioned plugin cache; plugin manager owns content"}
+				fact.Evidence = plugin.activation
 			}
 			if source.Manifest.Status != ManifestParsed || source.Description == "" || source.Manifest.IsSymlink || (strings.HasPrefix(filepath.Base(ref.DiscoveredPath), ".") && root.Origin != "codex-builtins") {
 				fact.Participation = ParticipationUnknown
@@ -259,6 +248,9 @@ func explainCodexSource(snapshot *Snapshot, id SourceID, roots map[RootID]Discov
 		// A source reached through an inspection alias also has the proven native reference facts.
 		if fact.Participation == ParticipationInspection {
 			fact.Permission = PermissionExplanation{State: PermissionUnknown, Evidence: codexEvidence(EvidenceUnknown, "inspection-only", ref.DiscoveredPath, "", "no native reference participation established")}
+		}
+		if managed {
+			fact.Provenance = managedPlugin.provenance
 		}
 		eligible = eligible || fact.Participation == ParticipationEligible
 		excluded = excluded || fact.Participation == ParticipationExcluded
@@ -293,13 +285,11 @@ func explainCodexSource(snapshot *Snapshot, id SourceID, roots map[RootID]Discov
 	}
 	if eligible {
 		explanation.NativeName = source.Name
-		for _, fact := range explanation.References {
-			if fact.Provenance.PluginID != "" {
-				explanation.NativeName = strings.SplitN(fact.Provenance.PluginID, "@", 2)[0] + ":" + source.Name
-				break
-			}
+		if managed && managedPlugin.namespace != "" {
+			explanation.NativeName = managedPlugin.namespace + ":" + source.Name
 		}
 	}
+
 	explanation.Session = &SessionExplanation{State: "unknown", Evidence: codexEvidence(EvidenceUnknown, "session-not-observed", "", "", "no existing inference session was inspected")}
 	explanation.Reload = &SessionExplanation{State: "unknown", Evidence: codexEvidence(EvidenceUnknown, "session-reload", "", "", "refresh rereads local files only; fresh load or restart may be required for a session")}
 	controlScope := "source"

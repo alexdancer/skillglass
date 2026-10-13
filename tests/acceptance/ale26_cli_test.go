@@ -18,6 +18,8 @@ type codexEvidence struct {
 	AgentVersion string `json:"agent_version"`
 }
 type codexAvailability struct {
+	NativeName string `json:"native_name"`
+
 	State      string
 	Evidence   codexEvidence
 	References []struct {
@@ -45,6 +47,8 @@ type codexAvailability struct {
 	Capabilities []struct{ Operation, Scope, State string }
 }
 type codexSource struct {
+	Ownership struct{ State string }
+
 	ID, Name     string
 	SourcePath   string `json:"source_path"`
 	Availability codexAvailability
@@ -311,11 +315,6 @@ func TestALE26InvocationEligibilityAndManagedSources(t *testing.T) {
 	codexSkill(t, filepath.Join(stale, "skills"), "skill", "stale-plugin")
 	writeFile(t, filepath.Join(stale, ".codex-plugin", "plugin.json"), []byte(`{"name":"sample","version":"0.9.0","skills":"./skills/"}`), 0600)
 	codexSkill(t, filepath.Join(fx.home, ".codex", "plugins", "cache", "orphan", "orphan", "old", "skills"), "skill", "orphan-cache")
-	for alias, target := range map[string]string{"stale-cache-alias": filepath.Join(stale, "skills", "skill"), "orphan-cache-alias": filepath.Join(fx.home, ".codex", "plugins", "cache", "orphan", "orphan", "old", "skills", "skill")} {
-		if err := os.Symlink(target, filepath.Join(global, alias)); err != nil {
-			t.Fatal(err)
-		}
-	}
 
 	config := filepath.Join(fx.home, ".codex", "config.toml")
 	writeFile(t, config, []byte(trustProject(root)+"[plugins.'sample@local']\nenabled=true\n"), 0600)

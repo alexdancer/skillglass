@@ -94,3 +94,44 @@ func TestALE26BrowserAvailabilityExplanationFilterAndRefresh(t *testing.T) {
 		})
 	}
 }
+
+func TestALE26BrowserContextCycleRecoversGenericAndPreservesNativeOrder(t *testing.T) {
+	tmux, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, initial := range []string{"global", "system", "managed", "native"} {
+		t.Run(initial, func(t *testing.T) {
+			fx := newFixture(t)
+			scope := "--root " + shellQuote(fx.cleanRoot) + " --context " + initial
+			if initial == "native" {
+				fx, _ = codexFixture(t)
+				scope = "--agent codex --project " + shellQuote(fx.project)
+			}
+			socket := fmt.Sprintf("ale26-context-%d-%s", os.Getpid(), initial)
+			defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
+			runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", "48", "-y", "24", "-s", "browser", "exec "+shellQuote(skillglassBinary)+" browse "+scope)
+			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
+			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", "48", "-y", "24")
+			current := initial
+			if initial == "native" {
+				current = "all"
+			}
+			before := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "Context filter: "+current)
+			writeEvidence(t, "tmux/ale26/context/"+initial+"-before.txt", []byte(before))
+			next := []string{"all"}
+			if initial == "native" {
+				next = []string{"project", "custom", "global", "system", "managed", "all"}
+			}
+			for _, context := range next {
+				after := actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "c") }, "Context filter: "+context)
+				assertPaneCells(t, after, 48, 24)
+				if initial != "native" && !paneContains(after, "normal-skill") {
+					t.Fatal("context control failed to reveal generic fixture")
+				}
+				writeEvidence(t, "tmux/ale26/context/"+initial+"-"+context+".txt", []byte(after))
+			}
+			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "q")
+		})
+	}
+}
