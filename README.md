@@ -6,7 +6,7 @@ Skillglass is a Go terminal tool for browsing, reading, and comparing local agen
 
 ## Status
 
-The production read-only inventory, identity, and comparison slices are implemented. Skillglass discovers explicit custom and project roots, groups references only when they resolve to the same proven directory object, reports collection problems without discarding healthy sources, and exposes the same immutable snapshot through the CLI and keyboard browser. Codex integration adds native scope and factored local configured-availability explanations; existing-session enforcement remains unknown and all controls remain unsupported. Generic explicit-root inventory keeps unknown ownership and availability. The repository also contains the approved specification, ticket breakdown, local agent scheduler, and the [ALE-22 terminal prototype](prototypes/ale-22/README.md) that preceded the production implementation.
+The production read-only inventory, identity, and comparison slices are implemented. Skillglass discovers explicit custom and project roots, groups references only when they resolve to the same proven directory object, reports collection problems without discarding healthy sources, and exposes the same immutable snapshot through the CLI and keyboard browser. Codex integration adds native scope and factored local configured-availability explanations; existing-session enforcement remains unknown. Validated global Codex enable and disable controls now use explicit source-bound preview and confirmation. Project overrides and deletion remain unsupported. Generic explicit-root inventory keeps unknown ownership and availability. The repository also contains the approved specification, ticket breakdown, local agent scheduler, and the [ALE-22 terminal prototype](prototypes/ale-22/README.md) that preceded the production implementation.
 
 The project was planned as **Skill Viewer**. Existing Linear titles and historical planning documents retain that name; **Skillglass** is the product and repository name.
 
@@ -30,6 +30,7 @@ Planned integrations cover Codex, Claude Code, Hermes, Pi, OpenCode, Gemini CLI,
 - [ALE-24 verification](docs/verification/ale-24.md)
 - [ALE-25 verification](docs/verification/ale-25.md)
 - [ALE-26 Codex verification](docs/verification/ale-26.md)
+- [ALE-27 global Codex control verification](docs/verification/ale-27.md)
 
 [Linear](https://linear.app/alex-dancer/project/skill-viewer-58706f175bed) holds live ticket requirements, status, and dependencies. The local copies are references.
 
@@ -55,6 +56,18 @@ bin/skillglass read --root /path/to/custom --project /path/to/project --project-
 bin/skillglass compare --root /path/to/custom --json LEFT_SOURCE_ID RIGHT_SOURCE_ID
 bin/skillglass browse --root /path/to/custom --project /path/to/project --project-root /path/to/project-skills
 ```
+
+To change one source's global Codex choice, obtain its ID from `list`, inspect a preview, then repeat the exact request with its confirmation token:
+
+```sh
+bin/skillglass disable --agent codex --scope global --json SOURCE_ID
+bin/skillglass disable --agent codex --scope global --confirm c1:PREVIEW_TOKEN SOURCE_ID
+bin/skillglass enable --agent codex --scope global SOURCE_ID
+```
+
+Preview changes no settings. Add `--project /path/to/repository` to inspect the effective result in that project while explicitly saving a global choice. A higher project rule can keep the source blocked after the global choice is saved. That result reports verified persistence and unmet effective achievement, then exits 1. Use `--scope project` to receive the unsupported explanation without a global fallback. See [global Codex control behavior and limits](docs/verification/ale-27.md).
+
+In browser source detail, press `d` to disable or `e` to enable, then `g` to select global scope. Inspect the paged preview. Press `y` to apply the displayed choice, or Enter or Escape to cancel. Long paths remain accessible by scrolling.
 
 `list` and `problems` accept `--source-root`, `--context all|project|custom|global|system|managed`, `--availability STATE`, and `--problem CODE`; `browse` accepts the same filters for its initial view, with search entered interactively. Use `bin/skillglass help` for supported availability values; the default is all. All supplied filters combine with AND. The source-root value must be one of the selected normalized absolute roots and never expands discovery. Search is case-insensitive. `list --search` matches source names and descriptions. `problems --search` matches problem codes, summaries, details, reported diagnostic paths, and all associated original discovery and requested-root paths. Context and source-root must match the same associated reference or root, but search may match any known provenance of that eligible problem. Availability filters match a source's overall configured state, not an individual reference's participation. Source-associated problems require a related source with that state and a reference matching the context/root filters; diagnostics without an associated source remain visible under availability filtering. Filters change the view of the selected snapshot, not its completeness or exit status. Each CLI invocation performs a fresh scan.
 

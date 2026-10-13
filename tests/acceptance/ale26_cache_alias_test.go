@@ -83,6 +83,12 @@ func TestALE26CacheAliasOwnershipAndDiscoveryRoute(t *testing.T) {
 				expectedScope = "global"
 			}
 			for _, capability := range got.Availability.Capabilities {
+				if capability.Operation == "enable" || capability.Operation == "disable" {
+					if capability.Scope != "global" || capability.State != "supported" {
+						t.Fatalf("precise managed per-skill control: %+v", capability)
+					}
+					continue
+				}
 				if capability.State != "unsupported" || (capability.Operation != "project-override" && capability.Scope != expectedScope) {
 					t.Fatalf("managed capability: %+v", capability)
 				}

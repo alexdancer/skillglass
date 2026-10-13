@@ -1,6 +1,6 @@
 # ALE-26: browse and explain Codex skills
 
-This slice adds read-only Codex discovery and local configured-availability explanations to the existing immutable collection snapshot. It does not complete the wider Skillglass specification. All enable, disable, project-override and delete capabilities remain unsupported. Production commands never launch Codex, invoke a model, install plugins, execute skill content, or write agent configuration.
+This historical slice adds read-only Codex discovery and local configured-availability explanations to the existing immutable collection snapshot. It does not complete the wider Skillglass specification. The ALE-26 slice introduced no writers. [ALE-27](ale-27.md) subsequently validates and adds global enable and disable. Project-override and delete remain unsupported. Production commands never launch Codex, invoke a model, install plugins, execute skill content, or write agent configuration.
 
 ## Use
 

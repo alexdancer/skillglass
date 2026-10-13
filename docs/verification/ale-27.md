@@ -1,0 +1,39 @@
+# ALE-27 global Codex controls
+
+`enable` and `disable` preview a choice for one exact source. A matching `--confirm` saves the global Codex setting and reinspects its persisted permission and contextual availability. The CLI and browser use the same `Snapshot.PreviewChange` and opaque `ChangePreview.Apply` module.
+
+## Command contract
+
+Both verbs require `--agent codex`, explicit `--scope global`, and a source ID after all flags. Preview is the default. JSON exposes the same preview and result as text. A separately invoked confirmation rebuilds the preview from ordinary arguments. Its token acknowledges the current observations and proposed setting. The token supplies no path, patch or executable plan.
+
+The native target is an absolute canonical `SKILL.md` path in user `CODEX_HOME/config.toml`, with explicit boolean `enabled`. Directory aliases share the canonical target. Independent same-name sources retain separate IDs and settings. Global setting scope is distinct from source origin. A project-origin manifest can receive a deliberately chosen global setting. A validated managed manifest can receive a precise per-skill setting. Neither operation edits project configuration, plugin activation, registrations, caches or skill content.
+
+Project scope remains unsupported and never falls back to global. Custom-root-only inspection cannot establish native eligibility. Manifest file symlinks or hardlinks, duplicate canonical selectors, name-based selectors, relative selectors and uncertain relevant configuration receive concrete no-write refusals.
+
+## Persistence and outcomes
+
+Normal array-of-tables and inline-array settings use parsed source spans. Only the chosen boolean or new exact manifest entry changes. Comments, unknown fields, line endings, unrelated entries and their order survive. The proposed document is parsed again and compared semantically with the intended single change. A new user array is refused if it would discard unrelated lower-layer selectors. Higher trusted project arrays remain intact.
+
+Existing single-link regular config preserves its supported mode, ownership and bounded extended attributes through an exclusive same-directory clone. New config uses mode 0600. ACL metadata, file flags, unsafe ownership, final config-file aliases and unpreservable metadata are refused. The Darwin writer uses no-follow bounded reads, pins parent descriptors, locks the config directory, syncs staging bytes, checks freshness again and atomically installs the postimage. Absent files use exclusive no-replace installation. A missing `CODEX_HOME` can be created as one previewed mode-0700 directory beneath an existing safe immediate parent. No recursive directory creation occurs.
+
+Directory locks coordinate Skillglass writers. Other editors may ignore that lock. The final existing-file check and rename cannot provide universal compare-and-swap against an uncooperative editor. Atomic installation publishes a complete file. It does not eliminate that final external-edit interval. Precommit cleanup removes only owned temporary objects. Failed cleanup reports retained artifacts. After commit, failed durability or verification retains the committed fact and never claims rollback or cancellation.
+
+A ready preview exits 0 and changes no settings. Unsupported or refused requests exit 1. Applied results report write state, persistence, requested effective achievement and the fresh existing availability explanation. Verified persistence with a contextual blocker or unknown effective result exits 1. Explicit-only remains an enabled state with reduced automatic invocation. Unknown adoption by an existing session does not invalidate an achieved local configuration result. The tool never launches or restarts agent sessions.
+
+The browser opens a control from source detail with `d` or `e`. Scope selection requires `g` for global. `p` displays unsupported project control. The preview uses `y` for the displayed global action and Enter or Escape for cancellation. Submission runs asynchronously and prevents duplicate input. A confirmed failure or unmet result remains a non-success process exit after later browsing or cancellation. A subsequent successfully confirmed resolution can clear that outstanding result.
+
+## Native evidence
+
+The independently consumed product output is validated on **codex-cli 0.155.1**. The recorded native binary SHA256 is `8eaf1ad12fe6bf89b1710330f58900014322c7c5af677e43be116d8ac5fc0a9e`. Disposable app-server inspection proves product disable and enable for ordinary global sources, shared directory aliases, project-origin sources, installed managed plugin manifests and native bundled manifests. It also checks inline settings, independent same-name preservation, stable config-root aliases and unchanged skill, project and plugin bytes.
+
+`tools/verify_codex_control.py` accepts a built product, a local native Codex binary and an evidence directory. It creates a credential-free home and genuine Git project beneath `/private/tmp`. Every native invocation, including version, runs in a child OS sandbox that denies network, live-home reads and writes outside that disposable fixture. The product runs in the same sandbox. Native inspection sends initialize, skills/list and config/read. Plugin setup installs only a fixture local plugin. No inference thread, turn or skill workload starts.
+
+The pinned [Codex skill configuration source](https://raw.githubusercontent.com/openai/codex/rust-v0.155.1/codex-rs/config/src/skills_config.rs) defines canonical path selectors and ordered native rules. This writer emits only the independently proved manifest-path representation. Changing native versions requires fresh evidence. Existing inference-session adoption remains unobserved. Native inspect-list behavior and the local configured project-array explanation are distinct, as documented in [ALE-26](ale-26.md).
+
+## Verification coverage
+
+The public executable suite covers actual writes, byte and mode preservation, extended attributes, inline and array-of-tables forms, CRLF, quoted keys, misleading strings and trailing comments. It checks shared aliases, independent copies, project-origin targets, higher project denial and empty arrays, explicit-only state, absent config/root, no-op and old-token replay. External source, manifest, policy, configuration, same-byte replacement and directory-alias retargeting invalidate consent. Unsafe config links, ACLs, manifest hardlinks, malformed selectors and duplicates leave files intact. Network-denied write failure and competing product processes exercise actual filesystem effects.
+
+Real tmux sessions at 48 and 80 columns cover preview, cancellation, confirmation, stale edits, unsupported project control and process exit. A saved global enable with a higher project deny remains applied and verified, reports unmet achievement and exits 1 even after another cancellation. Narrow private tests induce staging, sync, rename, postread and cleanup failures, plus edits at the final available freshness check. The inherited-system-array guard has a narrow contract test because safely replacing host `/etc/codex/config.toml` is outside the fixture boundary. System-layer precedence remains conservatively uncertain in the existing reader.
+
+The standard checks and standalone acceptance runner use fixture `TMPDIR` and `GOTMPDIR` outside every checkout. Final evidence records exact commands, exit codes, native transcripts, built binary, terminal cells and the clean candidate commit. The local build report keeps preliminary failures separate from final results. Independent review and pipeline gates remain coordinator-owned.
