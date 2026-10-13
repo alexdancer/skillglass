@@ -20,6 +20,9 @@ func TestALE31ProfileEnvironmentPolicyControls(t *testing.T) {
 		{"session-fallback", "HERMES_PLATFORM=\nHERMES_SESSION_PLATFORM=telegram\n", []string{"HERMES_PLATFORM=discord"}, "disabled", 0},
 		{"platform-wins", "HERMES_PLATFORM=discord\nHERMES_SESSION_PLATFORM=telegram\n", nil, "available", 0},
 		{"unsupported-interpolation", "HERMES_PLATFORM=${PRIVATE_POLICY}\n", []string{"PRIVATE_POLICY=telegram"}, "unknown", 1},
+		{"irrelevant-multiline", "INERT_CERT=\"inert\nHERMES_PLATFORM=telegram\n\"\n", []string{"HERMES_PLATFORM=discord"}, "unknown", 1},
+		{"quoted-policy-key", "'HERMES_PLATFORM'=telegram\n", []string{"HERMES_PLATFORM=discord"}, "unknown", 1},
+		{"tab-export", "export\tHERMES_PLATFORM=telegram\n", []string{"HERMES_PLATFORM=discord"}, "disabled", 0},
 		{"unsupported-multiline", "HERMES_PLATFORM=\"telegram\n\"\n", nil, "unknown", 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -100,4 +103,18 @@ func TestALE31ManagedPluginPolicyControls(t *testing.T) {
 			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 		})
 	}
+}
+
+func TestALE31ExternalRootUsesResolvedBehavioralPolicy(t *testing.T) {
+	fx, profile := hermesFixture(t)
+	writeFile(t, filepath.Join(profile, "config.yaml"), []byte("skills:\n  external_dirs: ['$HERMES_PLATFORM']\n"), 0600)
+	writeFile(t, filepath.Join(profile, ".env"), []byte("HERMES_PLATFORM=telegram\n"), 0600)
+	codexSkill(t, filepath.Join(profile, "telegram"), "resolved", "profile-external")
+	codexSkill(t, filepath.Join(profile, "discord"), "stale", "shell-external")
+	before := treeManifest(t, fx.base)
+	list := hermesList(t, fx, 0, []string{"HERMES_PLATFORM=discord"})
+	if len(list.Sources) != 1 || list.Sources[0].Name != "profile-external" {
+		t.Fatalf("external root uses stale shell policy: %+v", list.Sources)
+	}
+	assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 }

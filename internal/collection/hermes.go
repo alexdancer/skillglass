@@ -22,6 +22,7 @@ type hermesInputs struct {
 	pluginConfigPath       string
 	pluginUncertain        bool
 	policyEnv              map[string]string
+	policyDeclared         map[string]bool
 	uncertain              bool
 	problems               []Problem
 	plugins                map[RootID]hermesPlugin
@@ -174,6 +175,16 @@ func (inputs *hermesInputs) roots(request *Request) {
 		}
 		// Python expandvars leaves unknown variables intact. Never replace them with empty text.
 		value = os.Expand(value, func(key string) string {
+			if hermesPolicyKeys[key] {
+				if value, exists := inputs.policyEnv[key]; exists {
+					return value
+				}
+				return "${" + key + "}"
+			}
+			if inputs.policyDeclared[key] {
+				inputs.problem(inputs.config, "external directory references unsupported persisted environment policy; credential values are not evaluated")
+				return "${" + key + "}"
+			}
 			if value, exists := os.LookupEnv(key); exists {
 				return value
 			}

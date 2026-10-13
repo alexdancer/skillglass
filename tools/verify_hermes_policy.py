@@ -42,9 +42,9 @@ before=manifest()
 from hermes_cli import __version__
 from hermes_cli.env_loader import load_hermes_dotenv
 from hermes_cli.plugins import _get_enabled_plugins,_get_disabled_plugins
-from agent.skill_utils import get_disabled_skill_names
+from agent.skill_utils import get_disabled_skill_names,get_external_skills_dirs
 loaded=load_hermes_dotenv(hermes_home=Path(os.environ["HERMES_HOME"]))
-result={"version":__version__,"controls":checks,"loaded_envs":[str(p) for p in loaded],"platform":os.environ.get("HERMES_PLATFORM"),"session_platform":os.environ.get("HERMES_SESSION_PLATFORM"),"disabled_skills":sorted(get_disabled_skill_names()),"enabled_plugins":sorted(_get_enabled_plugins() or []),"disabled_plugins":sorted(_get_disabled_plugins()),"fixtures_unchanged":before==manifest()}
+result={"version":__version__,"controls":checks,"loaded_envs":[str(p) for p in loaded],"platform":os.environ.get("HERMES_PLATFORM"),"session_platform":os.environ.get("HERMES_SESSION_PLATFORM"),"disabled_skills":sorted(get_disabled_skill_names()),"enabled_plugins":sorted(_get_enabled_plugins() or []),"disabled_plugins":sorted(_get_disabled_plugins()),"external_roots":[str(p) for p in get_external_skills_dirs()],"fixtures_unchanged":before==manifest()}
 assert result["fixtures_unchanged"],"fixture bytes changed"
 print(json.dumps(result))
 '''
@@ -68,6 +68,9 @@ def run(source, output):
     modeled=root/"modeled-system"; modeled.mkdir(); (modeled/"config.yaml").write_text("OWNED_SYSTEM_POLICY_CANARY")
     cases=[
         ("profile-managed", "HERMES_PLATFORM=telegram\n", "disabled: [portable]", "", ["dotenv-denied"], ["portable"], ["portable"]),
+        ("inert-multiline", 'INERT_CERT="inert\nHERMES_PLATFORM=telegram\n"\n', "", "", [], ["portable"], []),
+        ("tab-export", "export\tHERMES_PLATFORM=telegram\n", "", "", ["dotenv-denied"], ["portable"], []),
+        ("quoted-key", "'HERMES_PLATFORM'=telegram\n", "", "", ["dotenv-denied"], ["portable"], []),
         ("shell-fallback", None, "", "", [], ["portable"], []),
         ("quoted-literal", "export HERMES_PLATFORM='telegram' # inert\n", "disabled: []", "", ["dotenv-denied"], ["portable"], []),
         ("session-fallback", "HERMES_PLATFORM=\nHERMES_SESSION_PLATFORM=telegram\n", "", "", ["dotenv-denied"], ["portable"], []),
@@ -78,10 +81,10 @@ def run(source, output):
     for name,dotenv,managed_cfg,managed_env,skills,enabled,disabled in cases:
         fixture=root/name;home=fixture/"home";profile=home/".hermes/profiles/research";managed=fixture/"managed";project=fixture/"project"
         for path in (profile,project,managed,fixture/"tmp",fixture/"xdg"):path.mkdir(parents=True,exist_ok=True)
-        for subdir in ("cron","sessions","logs/curator","memories","pairing","hooks","image_cache","audio_cache","skills"):(profile/subdir).mkdir(parents=True,exist_ok=True)
+        for subdir in ("telegram","discord","cron","sessions","logs/curator","memories","pairing","hooks","image_cache","audio_cache","skills"):(profile/subdir).mkdir(parents=True,exist_ok=True)
         (profile/"SOUL.md").write_text("Inert fixture identity.\n")
         user_disabled="  disabled: [portable]\n" if name=="managed-leaf-replacement" else ""
-        (profile/"config.yaml").write_text("skills:\n  platform_disabled:\n    telegram: [dotenv-denied]\nplugins:\n  enabled: [portable]\n"+user_disabled)
+        (profile/"config.yaml").write_text("skills:\n  platform_disabled:\n    telegram: [dotenv-denied]\n  external_dirs: ['$HERMES_PLATFORM']\nplugins:\n  enabled: [portable]\n"+user_disabled)
         if dotenv is not None:(profile/".env").write_text(dotenv)
         if managed_cfg:(managed/"config.yaml").write_text("skills:\n  disabled: [managed-must-not-be-raw]\nplugins:\n  "+managed_cfg+"\n")
         if managed_env:(managed/".env").write_text(managed_env)
@@ -113,6 +116,7 @@ def run(source, output):
         (output/(name+"-command.json")).write_text(json.dumps(record,indent=2)+"\n")
         if completed.returncode:raise RuntimeError("contained native case failed: "+name)
         result=json.loads(completed.stdout)
+        assert result["external_roots"]==[str(profile/(result["platform"] or ""))],result
         assert result["version"]=="0.20.0",result
         assert (result["disabled_skills"],result["enabled_plugins"],result["disabled_plugins"])==(skills,enabled,disabled),result
         results.append(dict(record,result=result))

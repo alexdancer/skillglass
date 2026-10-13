@@ -31,6 +31,7 @@ func (inputs *hermesInputs) pluginProblem(path, reason string) {
 }
 func (inputs *hermesInputs) readPolicy(request Request) {
 	inputs.policyEnv = make(map[string]string)
+	inputs.policyDeclared = make(map[string]bool)
 	for key := range hermesPolicyKeys {
 		if value, ok := os.LookupEnv(key); ok {
 			inputs.policyEnv[key] = value
@@ -120,14 +121,28 @@ func (inputs *hermesInputs) readPolicyEnv(path string, managed bool) {
 			continue
 		}
 		if !managed {
-			line = strings.TrimPrefix(line, "export ")
+			line = hermesDotenvExport.ReplaceAllString(line, "")
 		}
 		key, value, present := strings.Cut(line, "=")
 		key = strings.TrimSpace(key)
-		if !hermesPolicyKeys[key] || !present {
+		value = strings.TrimSpace(value)
+		if !present {
 			continue
 		}
-		value = strings.TrimSpace(value)
+		inputs.policyDeclared[key] = true
+		if !managed && !hermesDotenvQuoteClosed(value) {
+			uncertain = true
+			inputs.problem(path, "multiline or unclosed environment binding is outside the bounded inert parser")
+			break // A later line may be part of this value rather than another assignment.
+		}
+		if !managed && key != strings.Trim(key, `"'`) && hermesPolicyKeys[strings.Trim(key, `"'`)] {
+			uncertain = true
+			inputs.problem(path, "quoted behavioral policy key is outside the supported syntax")
+			continue
+		}
+		if !hermesPolicyKeys[key] {
+			continue
+		}
 		if managed {
 			value = strings.Trim(value, `"'`)
 		} else {
@@ -146,6 +161,25 @@ func (inputs *hermesInputs) readPolicyEnv(path string, managed bool) {
 		state, reason = "unknown", "a relevant environment policy assignment cannot be interpreted"
 	}
 	inputs.policyLayer(path, scope, state, reason)
+}
+
+var hermesDotenvExport = regexp.MustCompile(`^export\s+`)
+
+func hermesDotenvQuoteClosed(value string) bool {
+	if len(value) == 0 || (value[0] != '\'' && value[0] != '"') {
+		return true
+	}
+	quote := value[0]
+	for index := 1; index < len(value); index++ {
+		if value[index] == '\\' && index+1 < len(value) {
+			index++
+			continue
+		}
+		if value[index] == quote {
+			return true
+		}
+	}
+	return false
 }
 func hermesDotenvLiteral(value string) (string, bool) {
 	if strings.Contains(value, "${") {
