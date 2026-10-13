@@ -16,7 +16,7 @@ func TestReviewALE29RootPluginSkillIsInventoried(t *testing.T) {
 	}
 	claudeSettings(t, filepath.Join(market, ".claude-plugin", "marketplace.json"), map[string]any{"name": "market", "owner": map[string]string{"name": "Fixture"}, "plugins": []map[string]string{{"name": "demo", "source": "./demo"}}})
 	plugins := filepath.Join(fx.home, ".claude", "plugins")
-	claudeSettings(t, filepath.Join(plugins, "known_marketplaces.json"), map[string]any{"market": map[string]any{"source": map[string]string{"source": "directory", "path": market}, "installLocation": market}})
+	claudeSettings(t, filepath.Join(plugins, "known_marketplaces.json"), map[string]any{"market": map[string]any{"source": map[string]string{"source": "directory", "path": market}, "installLocation": market, "lastUpdated": "2026-10-13T00:00:00Z"}})
 	claudeSettings(t, filepath.Join(plugins, "installed_plugins.json"), map[string]any{"version": 2, "plugins": map[string]any{"demo@market": []map[string]string{{"scope": "user", "installPath": cached, "version": "1.0.0"}}}})
 	claudeSettings(t, filepath.Join(fx.home, ".claude", "settings.json"), map[string]any{"enabledPlugins": map[string]bool{"demo@market": true}})
 	list := claudeListResult(t, fx, 0)

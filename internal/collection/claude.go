@@ -55,7 +55,7 @@ func explainClaudeSource(snapshot *Snapshot, id SourceID, roots map[RootID]Disco
 	result := AvailabilityExplanation{State: AvailabilityUnknown, Reason: e.Reason, Evidence: &e}
 	invocation := SessionExplanation{State: "unknown", Evidence: e}
 	eligible, excluded := false, false
-	var manifestDiagnostic *Evidence
+	var activationDiagnostic *Evidence
 	nativeName := ""
 	nativeNames := map[string]bool{}
 	pluginFact, managed := managedClaudeSource(source.Directory, plugins)
@@ -119,9 +119,9 @@ func explainClaudeSource(snapshot *Snapshot, id SourceID, roots map[RootID]Disco
 		if fact.Participation == ParticipationEligible && fact.NativeName != "" {
 			nativeNames[fact.NativeName] = true
 		}
-		if fact.Evidence.Rule == "plugin-manifest-unverified" {
+		if fact.Evidence.Rule == "plugin-manifest-unverified" || fact.Evidence.Rule == "local-marketplace-unverified" {
 			diagnostic := fact.Evidence
-			manifestDiagnostic = &diagnostic
+			activationDiagnostic = &diagnostic
 		}
 		eligible = eligible || fact.Participation == ParticipationEligible
 		excluded = excluded || fact.Participation == ParticipationExcluded
@@ -132,8 +132,8 @@ func explainClaudeSource(snapshot *Snapshot, id SourceID, roots map[RootID]Disco
 		nameEvidence := claudeEvidence(EvidenceInferred, "skill-command-name", source.Manifest.Path, "name", "frontmatter name is used when set; otherwise the discovered folder name; plugin commands are namespaced")
 		result.NativeNameEvidence = &nameEvidence
 	}
-	if !eligible && !excluded && manifestDiagnostic != nil {
-		e = *manifestDiagnostic
+	if !eligible && !excluded && activationDiagnostic != nil {
+		e = *activationDiagnostic
 		result.Reason = e.Reason
 		invocation.Evidence = e
 	}

@@ -312,7 +312,7 @@ func TestALE29ClaudeLocalMarketplaceSourceWinsOverIndependentCache(t *testing.T)
 	}
 	claudeSettings(t, filepath.Join(market, ".claude-plugin", "marketplace.json"), map[string]any{"name": "market", "plugins": []map[string]string{{"name": "demo", "source": "./demo"}}})
 	plugins := filepath.Join(fx.home, ".claude", "plugins")
-	claudeSettings(t, filepath.Join(plugins, "known_marketplaces.json"), map[string]any{"market": map[string]any{"source": map[string]string{"source": "directory", "path": market}, "installLocation": market}})
+	claudeSettings(t, filepath.Join(plugins, "known_marketplaces.json"), map[string]any{"market": map[string]any{"source": map[string]string{"source": "directory", "path": market}, "installLocation": market, "lastUpdated": "2026-10-13T00:00:00Z"}})
 	claudeSettings(t, filepath.Join(plugins, "installed_plugins.json"), map[string]any{"version": 2, "plugins": map[string]any{"demo@market": []map[string]string{{"scope": "user", "installPath": cachedPlugin, "version": "1"}}}})
 	user := filepath.Join(fx.home, ".claude", "settings.json")
 	project := filepath.Join(fx.project, ".claude", "settings.json")

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 type claudePluginFact struct {
@@ -14,6 +15,9 @@ type claudePluginFact struct {
 	participation ParticipationState
 	activation    Evidence
 	provenance    Provenance
+}
+type claudeLocalPluginSource struct {
+	path, limitation string
 }
 type claudeInstallation struct {
 	Scope       string          `json:"scope"`
@@ -35,8 +39,8 @@ func discoverClaudePlugins(request *Request, inputs *claudeInputs) map[string]cl
 	}
 	localSources := claudeLocalPluginSources(request, inputs)
 	directories := map[string]string{}
-	for id, path := range localSources {
-		directories[path] = id
+	for id, source := range localSources {
+		directories[source.path] = id
 	}
 	for id, entries := range installed.Plugins {
 		for _, entry := range entries {
@@ -120,9 +124,12 @@ func discoverClaudePlugins(request *Request, inputs *claudeInputs) map[string]cl
 			fact.provenance.Evidence.Kind = EvidenceUnknown
 			fact.provenance.Evidence.Reason = "cache or registry indicates managed provenance; matching plugin manifest is not established"
 		}
+		localSource := localSources[id]
 		if setting, ok := inputs.plugins[id]; ok && setting.value == "false" {
 			fact.participation = ParticipationExcluded
 			fact.activation = claudeEvidence(EvidenceInferred, "plugin-disabled", setting.path, "enabledPlugins."+id+"=false", "configured plugin is inactive; cached content remains")
+		} else if localSource.limitation != "" {
+			fact.activation = claudeEvidence(EvidenceUnknown, "local-marketplace-unverified", filepath.Join(request.claudeHome, "plugins", "known_marketplaces.json"), "lastUpdated", localSource.limitation)
 		} else {
 			active, applicable, registered := false, false, false
 			for _, entry := range installed.Plugins[id] {
@@ -136,17 +143,16 @@ func discoverClaudePlugins(request *Request, inputs *claudeInputs) map[string]cl
 					}
 				}
 			}
-			localSource := localSources[id]
-			if localSource != "" && sameClaudePath(localSource, directory) && topologyMatches && manifestLimitation == "" && applicable && !inputs.uncertain {
+			if localSource.path != "" && sameClaudePath(localSource.path, directory) && topologyMatches && manifestLimitation == "" && applicable && !inputs.uncertain {
 				setting, enabled := inputs.plugins[id]
 				if enabled && setting.value == "true" {
 					fact.participation = ParticipationEligible
 					fact.activation = claudeEvidence(EvidenceInferred, "local-marketplace-plugin", setting.path, "enabledPlugins."+id+"=true", "Claude 2.1.282 native initialization loads the registered local marketplace source, not its independent installed cache copy; known marketplace, source manifest, applicable installation and enabled setting agree")
 				}
-			} else if localSource != "" && !sameClaudePath(localSource, directory) && registered && applicable && !inputs.uncertain {
+			} else if localSource.path != "" && !sameClaudePath(localSource.path, directory) && registered && applicable && !inputs.uncertain {
 				fact.participation = ParticipationExcluded
 				fact.activation = claudeEvidence(EvidenceInferred, "local-plugin-cache-copy", registry, "installPath", "local marketplace source is the native plugin source; this independent cache copy does not supply another command")
-			} else if registered && !inputs.uncertain && (!applicable || (localSource == "" && !active)) {
+			} else if registered && !inputs.uncertain && (!applicable || (localSource.path == "" && !active)) {
 				fact.participation = ParticipationExcluded
 				fact.activation = claudeEvidence(EvidenceInferred, "inactive-plugin-installation", registry, "installPath / projectPath", "this cached version or project-scoped installation is not the applicable registered installation")
 			}
@@ -192,7 +198,7 @@ func discoverClaudePlugins(request *Request, inputs *claudeInputs) map[string]cl
 			}
 			facts[root] = fact
 			origin := "claude-plugin-cache"
-			if sameClaudePath(localSources[id], directory) {
+			if sameClaudePath(localSources[id].path, directory) {
 				origin = "claude-plugin-local"
 			}
 			appendClaudeRoot(request, root, ContextManaged, origin)
@@ -230,8 +236,8 @@ func managedClaudeSource(directory string, plugins map[string]claudePluginFact) 
 	return claudePluginFact{}, false
 }
 
-func claudeLocalPluginSources(request *Request, inputs *claudeInputs) map[string]string {
-	result := map[string]string{}
+func claudeLocalPluginSources(request *Request, inputs *claudeInputs) map[string]claudeLocalPluginSource {
+	result := map[string]claudeLocalPluginSource{}
 	path := filepath.Join(request.claudeHome, "plugins", "known_marketplaces.json")
 	raw, err := nativeBytes(path)
 	if nativeAbsent(path, err) {
@@ -239,7 +245,8 @@ func claudeLocalPluginSources(request *Request, inputs *claudeInputs) map[string
 	}
 	var markets map[string]struct {
 		Source          struct{ Source, Path string }
-		InstallLocation string `json:"installLocation"`
+		InstallLocation string          `json:"installLocation"`
+		LastUpdated     json.RawMessage `json:"lastUpdated"`
 	}
 	if err != nil || json.Unmarshal(raw, &markets) != nil || markets == nil {
 		inputs.problem(path, "known plugin marketplaces could not be interpreted")
@@ -248,6 +255,14 @@ func claudeLocalPluginSources(request *Request, inputs *claudeInputs) map[string
 	for name, market := range markets {
 		if market.Source.Source != "directory" {
 			continue
+		}
+		// Claude 2.1.282 can select the installed cache when this timestamp is
+		// absent. Retain discovery, but do not infer the local source winner.
+		updated, supported := claudeManifestString(market.LastUpdated)
+		limitation := ""
+		if _, err := time.Parse(time.RFC3339, updated); !supported || err != nil {
+			limitation = "local marketplace lastUpdated is missing or unsupported: " + name + "; native local-source selection is unverified"
+			inputs.problems = append(inputs.problems, makeProblem(ProblemNativeInput, path, limitation, nil, true))
 		}
 		directory := market.Source.Path
 		if !filepath.IsAbs(directory) || !sameClaudePath(directory, market.InstallLocation) {
@@ -278,7 +293,7 @@ func claudeLocalPluginSources(request *Request, inputs *claudeInputs) map[string
 				inputs.scope.Gaps = append(inputs.scope.Gaps, "local plugin source escapes marketplace: "+plugin.Name+"@"+name)
 				continue
 			}
-			result[plugin.Name+"@"+name] = source
+			result[plugin.Name+"@"+name] = claudeLocalPluginSource{source, limitation}
 		}
 	}
 	return result
