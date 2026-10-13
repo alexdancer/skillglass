@@ -140,7 +140,14 @@ func (snapshot *Snapshot) compare(ctx context.Context, left, right SourceID, obs
 			c.RightKind = ""
 			c.Status = "removed"
 		}
-		if (!xok && !first[0].absenceKnown(p)) || (!yok && !first[1].absenceKnown(p)) {
+		leftUnknown := !xok && !first[0].absenceKnown(p)
+		rightUnknown := !yok && !first[1].absenceKnown(p)
+		if leftUnknown || rightUnknown {
+			for side, unknown := range [2]bool{leftUnknown, rightUnknown} {
+				if unknown {
+					r.Issues = append(r.Issues, ComparisonIssue{[]string{"left", "right"}[side], p, "resource membership unknown: excluded or unobserved subtree"})
+				}
+			}
 			c.Status = "unknown"
 			c.Kind = "unknown"
 		} else if (!xok || x.Known) && (!yok || y.Known) && (x.Stamp.Mode&unix.S_IFMT == unix.S_IFREG || y.Stamp.Mode&unix.S_IFMT == unix.S_IFREG || (p == "SKILL.md" && (x.Target.Mode&unix.S_IFMT == unix.S_IFREG || y.Target.Mode&unix.S_IFMT == unix.S_IFREG))) {

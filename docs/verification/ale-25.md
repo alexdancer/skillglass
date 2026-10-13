@@ -12,6 +12,8 @@ Regular reads use nonblocking, no-follow descriptor-relative traversal anchored 
 
 Comparison completion carries a generation token, and a canceled or superseded request cannot replace the current browser view.
 
+An unknown missing-counterpart membership makes comparison coverage incomplete with a side/path explanation, even when an internal link target is inventoried elsewhere; identical internal links alone do not force incomplete coverage.
+
 ## Reproduce
 
 Follow the [current combined-suite procedure](ale-24.md#reproduce-the-acceptance-evidence), including prerequisites, fresh evidence, terminal inspection and repository checks. It runs the inherited suite alongside the ALE-25 journeys below. The [ALE-23 containment boundary](ale-23.md#runtime-containment-boundary) owns the runtime restrictions and their limits.

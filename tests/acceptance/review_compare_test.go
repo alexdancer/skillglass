@@ -277,7 +277,7 @@ func TestReviewComparisonAncestorTypeProvesMembership(t *testing.T) {
 				r := fx.run(t, "compare", "--root", root, "--json", pair[0], pair[1])
 				c := compareReport(t, r)
 				exit, coverage := 1, "incomplete"
-				if cause == "regular-file" || cause == "internal-directory-link" || cause == "regular-file-link" {
+				if cause == "regular-file" {
 					exit = 0
 					coverage = "complete"
 				}
@@ -325,4 +325,77 @@ func TestReviewComparisonAncestorTypeProvesMembership(t *testing.T) {
 			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 		})
 	}
+}
+
+func TestReviewComparisonUnknownChildLimitsCoverage(t *testing.T) {
+	fx, root, a, b := compareFixture(t)
+	writeFile(t, filepath.Join(a, "scripts/run.sh"), []byte("physical script\n"), 0600)
+	writeFile(t, filepath.Join(b, "target/run.sh"), []byte("known target script\n"), 0600)
+	if err := os.Symlink("target", filepath.Join(b, "scripts")); err != nil {
+		t.Fatal(err)
+	}
+	inventory := fx.run(t, "list", "--root", root, "--json")
+	var list publicList
+	decodeJSON(t, inventory.stdout, &list)
+	var left, right string
+	for _, s := range list.Sources {
+		if s.SourcePath == canonicalPath(t, a) {
+			left = s.ID
+		}
+		if s.SourcePath == canonicalPath(t, b) {
+			right = s.ID
+		}
+	}
+	if left == "" || right == "" {
+		t.Fatal("missing physical sources")
+	}
+	before := treeManifest(t, fx.base)
+	for _, pair := range [][2]string{{left, right}, {right, left}} {
+		r := fx.run(t, "compare", "--root", root, "--json", pair[0], pair[1])
+		c := compareReport(t, r)
+		if r.code != 1 || c.Report.Coverage != "incomplete" || c.Report.Outcome != "indeterminate" {
+			t.Errorf("unknown membership claimed complete: exit=%d report=%+v", r.code, c.Report)
+		}
+		uncertainSide := "right"
+		knownStatus := "added"
+		if pair[0] == right {
+			uncertainSide = "left"
+			knownStatus = "removed"
+		}
+		child, known, issue := false, false, false
+		for _, change := range c.Report.Changes {
+			if change.Path == "scripts/run.sh" {
+				child = change.Status == "unknown" && change.Kind == "unknown" && len(change.Diff) == 0
+			}
+			if change.Path == "target/run.sh" {
+				known = change.Status == knownStatus && change.Kind == "text" && strings.Contains(strings.Join(change.Diff, "\n"), "known target script")
+			}
+		}
+		for _, problem := range c.Report.Issues {
+			issue = issue || (problem.Side == uncertainSide && problem.Path == "scripts/run.sh" && strings.Contains(problem.Reason, "membership") && strings.Contains(problem.Reason, "excluded or unobserved subtree"))
+		}
+		if !child || !known || !issue {
+			t.Errorf("child=%t known=%t uncertainty explanation=%t: %s", child, known, issue, r.stdout)
+		}
+	}
+	assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+}
+
+func TestReviewComparisonIdenticalInternalLinksComplete(t *testing.T) {
+	fx, root, a, b := compareFixture(t)
+	for _, path := range []string{a, b} {
+		writeFile(t, filepath.Join(path, "target/run.sh"), []byte("same script\n"), 0600)
+		if err := os.Symlink("target", filepath.Join(path, "scripts")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	left, right := compareIDs(t, fx, root)
+	before := treeManifest(t, fx.base)
+	r := fx.run(t, "compare", "--root", root, "--json", left, right)
+	assertExit(t, r, 0)
+	c := compareReport(t, r)
+	if c.Report.Coverage != "complete" || c.Report.Outcome != "identical" || len(c.Report.Issues) != 0 || len(c.Report.Changes) != 0 {
+		t.Fatalf("identical internal links made coverage incomplete: %s", r.stdout)
+	}
+	assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 }
