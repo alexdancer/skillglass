@@ -83,7 +83,7 @@ func TestReviewComparisonUnavailableSourceMembership(t *testing.T) {
 }
 
 func TestComparisonDetectsDeterministicChanges(t *testing.T) {
-	for _, kind := range []string{"rewrite", "rename", "add", "remove", "manifest-link-swap", "parent-link-substitution", "mid-read-rewrite", "mid-read-rename"} {
+	for _, kind := range []string{"rewrite", "rename", "add", "remove", "manifest-link-swap", "parent-link-substitution", "mid-read-rewrite", "mid-read-rename", "ancestor-type-replacement"} {
 		t.Run(kind, func(t *testing.T) {
 			root := t.TempDir()
 			root, _ = filepath.EvalSymlinks(root)
@@ -96,6 +96,17 @@ func TestComparisonDetectsDeterministicChanges(t *testing.T) {
 					t.Fatal(err)
 				}
 				if err := os.WriteFile(filepath.Join(p, "resource"), []byte("aaaa"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if kind == "ancestor-type-replacement" {
+				if err := os.WriteFile(filepath.Join(a, "scripts"), []byte("file ancestor\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.MkdirAll(filepath.Join(b, "scripts/nested"), 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(b, "scripts/nested/run.sh"), []byte("script contents\n"), 0600); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -132,6 +143,9 @@ func TestComparisonDetectsDeterministicChanges(t *testing.T) {
 			done := false
 			observer := func(side, p string) {
 				wanted := "SKILL.md"
+				if kind == "ancestor-type-replacement" {
+					wanted = "scripts"
+				}
 				if strings.HasPrefix(kind, "mid-read-") {
 					wanted = "SKILL.md:read"
 				}
@@ -140,6 +154,11 @@ func TestComparisonDetectsDeterministicChanges(t *testing.T) {
 				}
 				done = true
 				switch kind {
+				case "ancestor-type-replacement":
+					err = os.Remove(filepath.Join(a, "scripts"))
+					if err == nil {
+						err = os.Mkdir(filepath.Join(a, "scripts"), 0700)
+					}
 				case "rewrite", "mid-read-rewrite":
 					err = os.WriteFile(filepath.Join(a, "SKILL.md"), []byte("---\nname: fixture\n---\nxxxx\n"), 0600)
 				case "rename", "mid-read-rename":
@@ -169,6 +188,20 @@ func TestComparisonDetectsDeterministicChanges(t *testing.T) {
 			}
 			if !done || r.Coverage != Incomplete || r.Outcome != "indeterminate" {
 				t.Fatalf("race result: %+v", r)
+			}
+			if kind == "ancestor-type-replacement" {
+				found := false
+				for _, entry := range r.Changes {
+					if entry.Path == "scripts/nested/run.sh" {
+						found = true
+						if entry.Status != "unknown" || entry.Kind != "unknown" || len(entry.Diff) != 0 {
+							t.Fatalf("unstable ancestor proved absence: %+v", entry)
+						}
+					}
+				}
+				if !found {
+					t.Fatalf("missing unknown child: %+v", r)
+				}
 			}
 			change := false
 			for _, issue := range r.Issues {

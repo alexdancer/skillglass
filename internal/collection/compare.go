@@ -66,12 +66,13 @@ type Comparison struct {
 	Issues    []ComparisonIssue  `json:"issues"`
 }
 type bundleEntry struct {
-	Target unix.Stat_t
-	Stamp  unix.Stat_t
-	Link   string
-	Hash   [32]byte
-	Data   []byte
-	Known  bool
+	Target    unix.Stat_t
+	Stamp     unix.Stat_t
+	Link      string
+	Hash      [32]byte
+	Data      []byte
+	Known     bool
+	TypeKnown bool
 }
 type bundleObservation struct {
 	proven      bool
@@ -193,7 +194,7 @@ func sameObservation(a, b bundleObservation) bool {
 	}
 	for p, x := range a.entries {
 		y, ok := b.entries[p]
-		if !ok || !sameStamp(x.Stamp, y.Stamp) || x.Hash != y.Hash || x.Link != y.Link || !sameStamp(x.Target, y.Target) || x.Known != y.Known {
+		if !ok || !sameStamp(x.Stamp, y.Stamp) || x.Hash != y.Hash || x.Link != y.Link || !sameStamp(x.Target, y.Target) || x.Known != y.Known || x.TypeKnown != y.TypeKnown {
 			return false
 		}
 	}
@@ -205,8 +206,12 @@ func (o bundleObservation) absenceKnown(p string) bool {
 		if o.directories[parent] {
 			return true
 		}
-		if _, exists := o.entries[parent]; exists {
-			return false
+		if entry, exists := o.entries[parent]; exists {
+			// A stable non-directory entry cannot contain descendants. Byte
+			// readability is independent of this observed type evidence, while
+			// untraversed links and directories leave membership unknown.
+			kind := entry.Stamp.Mode & unix.S_IFMT
+			return entry.TypeKnown && kind != unix.S_IFDIR && kind != unix.S_IFLNK
 		}
 		p = parent
 	}
@@ -242,7 +247,7 @@ func observeBundle(ctx context.Context, s Source, side string, observer func(str
 		return o
 	}
 	o.proven = true
-	o.entries["."] = bundleEntry{Stamp: st, Known: true}
+	o.entries["."] = bundleEntry{Stamp: st, Known: true, TypeKnown: true}
 	o.walk(f, "", s.Directory)
 	token, err = directoryObjectToken(s.Directory)
 	if err != nil || sourceID(token) != s.ID {
@@ -319,7 +324,7 @@ func (o *bundleObservation) walk(dir *os.File, prefix, root string) {
 			complete = false
 			continue
 		}
-		e := bundleEntry{Stamp: st, Known: true}
+		e := bundleEntry{Stamp: st, Known: true, TypeKnown: true}
 		o.entries[p] = e
 		if o.observer != nil {
 			o.observer(o.side, p)
@@ -383,11 +388,17 @@ func (o *bundleObservation) walk(dir *os.File, prefix, root string) {
 				if !sameStamp(st, actual) {
 					o.issue(p, fmt.Errorf("entry changed before open"))
 					e.Known = false
+					e.TypeKnown = false
 				} else if st.Mode&unix.S_IFMT == unix.S_IFDIR {
 					o.walk(f, p, root)
 				} else {
 					e.Data, e.Known = o.read(f, p, st)
 					e.Hash = sha256.Sum256(e.Data)
+				}
+				if err := unix.Fstat(fd, &actual); err != nil || !sameStamp(st, actual) {
+					o.issue(p, fmt.Errorf("entry descriptor changed during read"))
+					e.Known = false
+					e.TypeKnown = false
 				}
 				f.Close()
 			}
@@ -399,6 +410,7 @@ func (o *bundleObservation) walk(dir *os.File, prefix, root string) {
 		if err := unix.Fstatat(int(dir.Fd()), name, &after, unix.AT_SYMLINK_NOFOLLOW); err != nil || !sameStamp(st, after) {
 			o.issue(p, fmt.Errorf("entry changed during read"))
 			e.Known = false
+			e.TypeKnown = false
 		}
 		o.entries[p] = e
 	}
