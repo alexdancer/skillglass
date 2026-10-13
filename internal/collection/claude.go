@@ -143,6 +143,8 @@ func explainClaudeSource(snapshot *Snapshot, id SourceID, roots map[RootID]Disco
 		invocation = SessionExplanation{State: "automatic-and-user", Evidence: claudeEvidence(EvidenceInferred, "invocation-frontmatter", source.Manifest.Path, "", "defaults permit model and user invocation; user-invocable=false hides only the user command")}
 		disable, disableOK := claudeInvocationBoolean(source.Manifest.Metadata["disable-model-invocation"])
 		user, userOK := claudeInvocationBoolean(source.Manifest.Metadata["user-invocable"])
+		_, userPresent := source.Manifest.Metadata["user-invocable"]
+		userKnown := userOK || !userPresent
 		if !userOK {
 			user = true
 		}
@@ -162,10 +164,12 @@ func explainClaudeSource(snapshot *Snapshot, id SourceID, roots map[RootID]Disco
 		}
 		if _, present := source.Manifest.Metadata["disable-model-invocation"]; present && !disableOK {
 			result.State = AvailabilityUnknown
+			invocation.State = "unknown"
 			result.Reason = "disable-model-invocation is not a boolean"
 		}
-		if _, present := source.Manifest.Metadata["user-invocable"]; present && !userOK {
+		if !userKnown {
 			result.State = AvailabilityUnknown
+			invocation.State = "unknown"
 			result.Reason = "user-invocable is not a boolean"
 		}
 		controlling := claudeEvidence(EvidenceInferred, "invocation-frontmatter", source.Manifest.Path, "disable-model-invocation / user-invocable", result.Reason)
@@ -186,7 +190,11 @@ func explainClaudeSource(snapshot *Snapshot, id SourceID, roots map[RootID]Disco
 				result.State = AvailabilityExplicitOnly
 				invocation.State = "explicit-only"
 				result.Reason = "settings hide the skill from Claude while preserving explicit invocation"
-				if !user {
+				if !userKnown {
+					result.State = AvailabilityUnknown
+					invocation.State = "unknown"
+					result.Reason = "settings hide model invocation but user invocation is unverified"
+				} else if !user {
 					result.State = AvailabilityUnavailable
 					invocation.State = "no-invoker"
 					result.Reason = "settings hide model invocation and frontmatter hides user invocation"
@@ -201,13 +209,20 @@ func explainClaudeSource(snapshot *Snapshot, id SourceID, roots map[RootID]Disco
 		permission := inputs.permission(nativeName)
 		if permission.State == PermissionUnknown || inputs.uncertain {
 			result.State = AvailabilityUnknown
+			invocation.State = "unknown"
 			result.Reason = "native settings could not be reliably interpreted"
 			controlling = permission.Evidence
 		} else if result.State != AvailabilityDisabled && permission.State == PermissionDenied {
 			result.State = AvailabilityExplicitOnly
+			invocation.State = "explicit-only"
 			result.Reason = "Skill tool deny restricts model invocation; explicit slash invocation is not full disable"
-			if !user {
+			if !userKnown {
+				result.State = AvailabilityUnknown
+				invocation.State = "unknown"
+				result.Reason = "model Skill tool is denied but user invocation is unverified"
+			} else if !user {
 				result.State = AvailabilityUnavailable
+				invocation.State = "no-invoker"
 				result.Reason = "model Skill tool is denied and user invocation is hidden"
 			}
 			controlling = permission.Evidence
@@ -216,11 +231,12 @@ func explainClaudeSource(snapshot *Snapshot, id SourceID, roots map[RootID]Disco
 			result.Reason = "model Skill tool invocation requires permission; explicit invocation remains available"
 			controlling = permission.Evidence
 		}
+		if result.State == AvailabilityUnknown {
+			controlling.Kind = EvidenceUnknown
+			controlling.Reason = result.Reason
+		}
 		result.Evidence = &controlling
 		invocation.Evidence = controlling
-		if result.State == AvailabilityUnknown {
-			result.Evidence.Kind = EvidenceUnknown
-		}
 	} else if excluded {
 		result.State = AvailabilityUnavailable
 		result.Reason = "native reference excluded by reserved namespace, inactive plugin, or customization policy"

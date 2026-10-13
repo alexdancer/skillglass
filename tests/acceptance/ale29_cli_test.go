@@ -153,7 +153,7 @@ func TestALE29ClaudeNativeInvocationSettingsAndPermissionStates(t *testing.T) {
 	claudeSettings(t, local, map[string]any{"skillOverrides": map[string]string{"ordinary": "user-invocable-only", "model-only": "user-invocable-only", "explicit": "name-only"}})
 	list := assertStates(map[string]string{"ordinary": "explicit-only", "model-only": "unavailable", "explicit": "explicit-only"})
 	source := claudeAt(t, list, filepath.Dir(paths["ordinary"]))
-	detail := fx.run(t, "explain", "--agent", "claude", "--project", fx.project, source.ID)
+	detail := fx.run(t, "explain", "--agent", "claude-code", "--project", fx.project, source.ID)
 	assertExit(t, detail, 0)
 	if !strings.Contains(string(detail.stdout), "skillOverrides.ordinary=user-invocable-only") || !strings.Contains(string(detail.stdout), local) {
 		t.Fatalf("missing controlling setting: %s", detail.stdout)

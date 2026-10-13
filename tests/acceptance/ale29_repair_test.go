@@ -46,7 +46,7 @@ func TestALE29ClaudeInvocationAliasesAndInvalidValues(t *testing.T) {
 		for _, field := range []string{"user-invocable", "disable-model-invocation"} {
 			name := fmt.Sprintf("invalid-%s-%d", field, i)
 			path := claudeSkill(t, root, name, name, field+": "+value+"\n")
-			expectations = append(expectations, expected{filepath.Dir(path), "unknown", "automatic-and-user", value})
+			expectations = append(expectations, expected{filepath.Dir(path), "unknown", "unknown", value})
 		}
 	}
 	before := treeManifest(t, fx.base)

@@ -88,7 +88,7 @@ func NewRequest(rawRoots, rawProjectRoots []string, rawProject *string) (Request
 }
 
 func NewRequestWithAgent(rawRoots, rawProjectRoots []string, rawProject *string, agent string) (Request, error) {
-	if agent != "" && agent != "codex" && agent != "claude" && agent != "claude-code" {
+	if agent != "" && agent != "codex" && agent != "claude-code" {
 		return Request{}, fmt.Errorf("unknown agent %q; use codex or claude-code", agent)
 	}
 	request := Request{Roots: make([]DiscoveryRoot, 0, len(rawRoots)+len(rawProjectRoots))}
@@ -130,9 +130,6 @@ func NewRequestWithAgent(rawRoots, rawProjectRoots []string, rawProject *string,
 	}
 	if err := appendRoots(rawProjectRoots, ContextProject, "project-root"); err != nil {
 		return Request{}, err
-	}
-	if agent == "claude" {
-		agent = "claude-code"
 	}
 	request.Agent = agent
 	if agent != "" {

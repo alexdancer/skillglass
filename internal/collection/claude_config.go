@@ -84,14 +84,14 @@ func (inputs *claudeInputs) load(path, scope string) {
 				}
 				inputs.overrides[name] = claudeSetting{text, path}
 			} else {
-				var enabled bool
-				if json.Unmarshal(entries[name], &enabled) != nil || string(entries[name]) == "null" {
+				var enabled *bool
+				if json.Unmarshal(entries[name], &enabled) != nil || enabled == nil {
 					inputs.problem(path, "enabledPlugins value must be boolean for "+name)
 					layer.State = "invalid"
 					continue
 				}
 				text = "false"
-				if enabled {
+				if *enabled {
 					text = "true"
 				}
 				inputs.plugins[name] = claudeSetting{text, path}
@@ -107,16 +107,21 @@ func (inputs *claudeInputs) load(path, scope string) {
 		} else {
 			for _, kind := range []string{"allow", "ask", "deny"} {
 				if rawRules, ok := permission[kind]; ok {
-					var rules []string
-					if json.Unmarshal(rawRules, &rules) != nil || string(rawRules) == "null" {
+					var rules []*string
+					if json.Unmarshal(rawRules, &rules) != nil || rules == nil {
 						inputs.problem(path, "permissions."+kind+" must be a string array")
 						layer.State = "invalid"
 						continue
 					}
 					for _, rule := range rules {
-						if rule == "Skill" || strings.HasPrefix(rule, "Skill(") {
-							inputs.rules = append(inputs.rules, claudeRule{rule, kind, path})
-							layer.Reason += "; permissions." + kind + "=" + rule
+						if rule == nil {
+							inputs.problem(path, "permissions."+kind+" elements must be non-null strings")
+							layer.State = "invalid"
+							continue
+						}
+						if *rule == "Skill" || strings.HasPrefix(*rule, "Skill(") {
+							inputs.rules = append(inputs.rules, claudeRule{*rule, kind, path})
+							layer.Reason += "; permissions." + kind + "=" + *rule
 						}
 					}
 				}
@@ -127,12 +132,12 @@ func (inputs *claudeInputs) load(path, scope string) {
 		}
 	}
 	if value, ok := data["strictPluginOnlyCustomization"]; ok {
-		var strict bool
-		if json.Unmarshal(value, &strict) != nil {
+		var strict *bool
+		if json.Unmarshal(value, &strict) != nil || strict == nil {
 			inputs.problem(path, "strictPluginOnlyCustomization must be boolean")
 			layer.State = "invalid"
 		} else if scope == "managed" {
-			inputs.strict = strict
+			inputs.strict = *strict
 		}
 	}
 	if _, ok := data["allowManagedPermissionRulesOnly"]; ok {

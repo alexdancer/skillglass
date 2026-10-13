@@ -16,10 +16,10 @@ type claudePluginFact struct {
 	provenance    Provenance
 }
 type claudeInstallation struct {
-	Scope       string `json:"scope"`
-	InstallPath string `json:"installPath"`
-	ProjectPath string `json:"projectPath"`
-	Version     string `json:"version"`
+	Scope       string          `json:"scope"`
+	InstallPath string          `json:"installPath"`
+	ProjectPath json.RawMessage `json:"projectPath"`
+	Version     json.RawMessage `json:"version"`
 }
 
 func discoverClaudePlugins(request *Request, inputs *claudeInputs) map[string]claudePluginFact {
@@ -40,6 +40,18 @@ func discoverClaudePlugins(request *Request, inputs *claudeInputs) map[string]cl
 	}
 	for id, entries := range installed.Plugins {
 		for _, entry := range entries {
+			if entry.Scope != "user" && entry.Scope != "project" && entry.Scope != "local" {
+				inputs.problem(registry, "plugin scope is missing or unsupported: "+id)
+			}
+			projectPath, projectOK := claudeManifestString(entry.ProjectPath)
+			if (len(entry.ProjectPath) > 0 || entry.Scope == "project" || entry.Scope == "local") && (!projectOK || !filepath.IsAbs(projectPath)) {
+				inputs.problem(registry, "plugin projectPath must be an absolute string: "+id)
+			}
+			if len(entry.Version) > 0 {
+				if _, ok := claudeManifestString(entry.Version); !ok {
+					inputs.problem(registry, "plugin version must be a non-null string: "+id)
+				}
+			}
 			if !filepath.IsAbs(entry.InstallPath) {
 				inputs.problem(registry, "plugin installPath must be absolute: "+id)
 				continue
@@ -115,13 +127,12 @@ func discoverClaudePlugins(request *Request, inputs *claudeInputs) map[string]cl
 			active, applicable, registered := false, false, false
 			for _, entry := range installed.Plugins[id] {
 				registered = true
-				if entry.Scope == "user" || ((entry.Scope == "project" || entry.Scope == "local") && request.Project.Selected && sameClaudePath(entry.ProjectPath, request.Project.Path)) {
+				projectPath, _ := claudeManifestString(entry.ProjectPath)
+				version, _ := claudeManifestString(entry.Version)
+				if entry.Scope == "user" || ((entry.Scope == "project" || entry.Scope == "local") && request.Project.Selected && sameClaudePath(projectPath, request.Project.Path)) {
 					applicable = true
-					if sameClaudePath(entry.InstallPath, directory) {
+					if sameClaudePath(entry.InstallPath, directory) && (!topologyMatches || version == "" || manifest.Version == "" || version == manifest.Version) {
 						active = true
-						if topologyMatches && entry.Version != "" && manifest.Version != "" && entry.Version != manifest.Version {
-							active = false
-						}
 					}
 				}
 			}
@@ -135,7 +146,7 @@ func discoverClaudePlugins(request *Request, inputs *claudeInputs) map[string]cl
 			} else if localSource != "" && !sameClaudePath(localSource, directory) && registered && applicable && !inputs.uncertain {
 				fact.participation = ParticipationExcluded
 				fact.activation = claudeEvidence(EvidenceInferred, "local-plugin-cache-copy", registry, "installPath", "local marketplace source is the native plugin source; this independent cache copy does not supply another command")
-			} else if registered && (!applicable || !active) {
+			} else if registered && !inputs.uncertain && (!applicable || (localSource == "" && !active)) {
 				fact.participation = ParticipationExcluded
 				fact.activation = claudeEvidence(EvidenceInferred, "inactive-plugin-installation", registry, "installPath / projectPath", "this cached version or project-scoped installation is not the applicable registered installation")
 			}
