@@ -458,13 +458,13 @@ func hermesEnvironmentDeclared(data map[string]any) bool {
 var hermesExcludedDirs = map[string]bool{".git": true, ".github": true, ".hub": true, ".archive": true, ".venv": true, "venv": true, "node_modules": true, "site-packages": true, "__pycache__": true, ".tox": true, ".nox": true, ".pytest_cache": true, ".mypy_cache": true, ".ruff_cache": true}
 
 func hermesExcluded(ref Reference, root DiscoveryRoot) string {
-	rel, _ := filepath.Rel(root.Path, ref.DiscoveredPath)
-	parts := strings.Split(rel, string(filepath.Separator))
-	for _, part := range parts {
+	for _, part := range strings.Split(filepath.Join(ref.DiscoveredPath, "SKILL.md"), string(filepath.Separator)) {
 		if hermesExcludedDirs[part] {
 			return "native index excludes dependency, archive and metadata directories"
 		}
 	}
+	rel, _ := filepath.Rel(root.Path, ref.DiscoveredPath)
+	parts := strings.Split(rel, string(filepath.Separator))
 	if len(parts) > 1 && parts[0] == "_org" {
 		marker := filepath.Join(root.Path, "_org", ".active_org")
 		raw, err := nativeBytes(marker)

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -181,6 +182,11 @@ func hermesDotenvQuoteClosed(value string) bool {
 	}
 	return false
 }
+
+// Python's dotenv parser uses Unicode whitespace, including these control separators.
+func hermesDotenvSpace(char rune) bool {
+	return unicode.IsSpace(char) || (char >= '\u001c' && char <= '\u001f')
+}
 func hermesDotenvLiteral(value string) (string, bool) {
 	if strings.Contains(value, "${") {
 		return "", false
@@ -189,10 +195,21 @@ func hermesDotenvLiteral(value string) (string, bool) {
 		return "", true
 	}
 	if value[0] != '\'' && value[0] != '"' {
-		if index := strings.Index(value, " #"); index >= 0 {
-			value = value[:index]
+		whitespaceStart := -1
+		for index, char := range value {
+			if hermesDotenvSpace(char) {
+				if whitespaceStart < 0 {
+					whitespaceStart = index
+				}
+				continue
+			}
+			if char == '#' && whitespaceStart >= 0 {
+				value = value[:whitespaceStart]
+				break
+			}
+			whitespaceStart = -1
 		}
-		return strings.TrimSpace(value), true
+		return strings.TrimFunc(value, hermesDotenvSpace), true
 	}
 	quote := value[0]
 	var result strings.Builder
