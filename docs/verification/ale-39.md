@@ -1,0 +1,50 @@
+# ALE-39: browse and explain CodeAF skills
+
+`--agent codeaf` adds CodeAF to the shared inventory, explanation, filtering and terminal browser. The adapter reuses source/reference identity and availability presentation. It reads local inputs without launching CodeAF, a conversation, a model, skill instructions, plugins or a writer.
+
+## Version evidence and uncertainty
+
+The installed executable at `/Users/alex/.local/bin/codeaf` points to `/Users/alex/.codeaf/bin/codeaf`. Its SHA-256 is `e2b2e134e9d2e5d3483b7fc373d16e383597433e9dddf7675fa47020d8451388`. Read-only Go build metadata identifies module `github.com/Agent-Field/codeaf v0.7.1+dirty`, revision `7e30335645c8c792849de1c13b3547d75775baa4`, `vcs.modified=true`, Go 1.26.5, Darwin arm64. An isolated denied-network `codeaf version` reports `codeaf 7e30335 (dirty) built 2026-10-09 10:03`.
+
+The independently inspected source checkout has the same revision and unrelated model/auth changes. The nine copied non-test files in `internal/skills`, `internal/home` and `internal/env` match that revision byte for byte. `tools/verify_codeaf.py` records each file hash and runs a compiled copy of those native packages against disposable home/project fixtures. That validates the pinned source loader, not equivalence with the installed dirty executable. The UI labels this difference, and identifies availability as an inference from reference source rules. No full native discovery CLI was established safely. Installed binary discovery, existing conversation attachments, stored facts, actual model use and other builds remain unobserved.
+
+Primary source references: [native loader](https://github.com/Agent-Field/CodeAF/blob/7e30335645c8c792849de1c13b3547d75775baa4/internal/skills/skills.go), [plugin discovery](https://github.com/Agent-Field/CodeAF/blob/7e30335645c8c792849de1c13b3547d75775baa4/internal/skills/plugins.go), [home resolution](https://github.com/Agent-Field/CodeAF/blob/7e30335645c8c792849de1c13b3547d75775baa4/internal/home/home.go), and [shipped skill guide](https://github.com/Agent-Field/CodeAF/blob/7e30335645c8c792849de1c13b3547d75775baa4/internal/manual/chat/skills-from-other-tools.md).
+
+## Discovery and precedence
+
+The explicit selected project is the only project base. CodeAF does not inherit Codex's Git ancestor walk. Each base reads direct child directories and directory aliases in this order: `.codeaf/skills`, `.agents/skills`, `.claude/skills`, `.codex/skills`, `.cursor/skills`, `.gemini/skills`, `.opencode/skills`, `.goose/skills`. Home additionally reads `.config/opencode/skills` and `.config/goose/skills`. Installed plugins follow those folders, then `.codex/skills/.system`. Ordinary roots are containers; a `SKILL.md` on the root itself does not hide child definitions or become a native skill. Nested containers are not recursively discovered.
+
+`CODEAF_HOME` moves the discovery login base wholesale, independently of `HOME`. Without that override, discovery uses `HOME`; it is required so the viewer never silently falls back to a real login. `CODEAF_PROFILE_DIR` selects the profile and does not select skill roots. Legacy `AFORGE_HOME` and `AFORGE_PROFILE_DIR` are fallback spellings only when the new variable is empty. Profile contents are not needed or read for this journey. When project equals the login base after lexical normalization, the bases fold into one project scope, including home-only roots and both plugin scopes.
+
+The first loaded definition owns its frontmatter name. Every project root precedes every home root. Within a base the documented root order applies; child names are sorted; plugin registry IDs sort lexically, with recorded installation/declaration order within each plugin. Plugin names stay bare, without Claude's `plugin:skill` namespace. A later independent copy is shadowed and names its winning source. A shared source retains all references and is available if one native reference wins; shadowed aliases remain explained separately. Independent copies and merely shared manifest files remain independent sources. Filters apply after availability and cannot change the winner.
+
+The native frontmatter parser reads a regular-file head of at most 64 KiB, requires a name and description, and repairs unquoted colon descriptions before YAML parsing. Invalid names and folder mismatches are native warnings rather than exclusion; descriptions over 1,024 runes are skipped. The generic viewer retains its own stricter manifest diagnostics and complete raw content, so generic malformed status and native eligibility can differ visibly. Larger generic manifests still have the existing 4 MiB inspection limit. Broken/unreadable references stay visible. Optional missing roots are ordinary absence; unreadable selected inputs make coverage incomplete.
+
+## Plugins and controls
+
+Only registrations in the discovery login base's `.claude/plugins/installed_plugins.json` identify installations. Current arrays and legacy single records are supported. User installations apply globally; project/local installations require the selected canonical project. Cached folders or marketplace entries without an installation are not native sources. The viewer also inspects registered disabled installations to explain their exclusion, clearly distinguishing inspection from effective native participation.
+
+`enabledPlugins` is read from login `.claude/settings.json`, project `.claude/settings.json`, then project `.claude/settings.local.json`. Later keys replace earlier keys; only exactly JSON `true` enables a plugin. Missing keys default off. Unreadable metadata reports incomplete coverage; unreadable setting layers leave plugin permission unknown. Only relevant keys are exposed, never raw settings, credentials or provider data.
+
+A plugin manifest or its marketplace entry can declare one folder or an ordered list. Declarations replace the default `skills` folder unless they name it. Marketplace catalogs resolve from known install location, conventional marketplace directory, then plugin installation; the first existing catalog wins. Absolute paths and lexical parent escapes are rejected. A declared path can be a bundle or a container. Registered versions remain attached to their own installation paths. Native plugin provenance is attached to the reference; managed source ownership is claimed only within the canonical installed directory. An external shared target does not become owned by the plugin merely through a link.
+
+Ordinary imported skills do not inherit Codex disable selectors or another application's invocation policy. Winning definitions are offered automatically and through `/skill` conversation attachment in the inspected source. Existing attachments and session state are unknown. Removing an attachment does not stop later automatic discovery or model selection. A viewer refresh rereads files but does not refresh an existing CodeAF process; the native guide describes a scan at launch.
+
+Persistent CodeAF-only per-skill enable, disable and project override are unsupported. Every source exposes explicit unsupported capability reasons through the shared JSON explanation, including plugin and shared-source consumers for later aggregate previews. Changing Claude's whole-plugin setting is a broader cross-application action. Deleting a shared source affects its other consumers. Neither operation is offered as a CodeAF-only workaround, and all writers remain unavailable.
+
+## Reproduce
+
+Use the pinned source revision and an installed binary, with cached Go dependencies:
+
+```sh
+python3 tools/verify_codeaf.py --source /absolute/path/to/codeaf/source --binary /absolute/path/to/codeaf --output /private/tmp/codeaf-evidence
+mkdir -p /private/tmp/ale-39-fixtures
+env TMPDIR=/private/tmp/ale-39-fixtures GOTMPDIR=/private/tmp/ale-39-fixtures GOPROXY=off GOSUMDB=off go test -count=1 -mod=readonly ./tests/acceptance -run ALE39
+env TMPDIR=/private/tmp/ale-39-fixtures GOTMPDIR=/private/tmp/ale-39-fixtures GOPROXY=off GOSUMDB=off sh tests/acceptance/run.sh /private/tmp/ale-39-acceptance
+```
+
+The native utility clears inherited environments, bounds every home/profile/XDG path and working directory under `/private/tmp`, denies network and writes outside that disposable case, and never starts chat or runs skill/plugin/model workloads. Build metadata is read without executing the native program; the version command runs only after isolation. Copied source packages are compiled with read-only modules and offline Go settings. Native receipts include version/build identifiers, source hashes, exact commands, exits, temporary paths, environment keys and explicit gaps. Source probes confirm project precedence, direct-only discovery, shared aliases, plugin settings layers, `CODEAF_HOME` discovery, and the irrelevance of profile/Codex per-skill changes to ordinary imports.
+
+Public executable tests cover precedence and same-name copies, aliases, generic inspection roots, home/profile and legacy environments, declared plugin folders, registration/project scope, independent installed versions, plugin on/off/unknown states, native manifest eligibility and offline write/network/child-execution denial. Focused 48- and 80-column PTY tests read every explanation page, verify application labels, ownership and unsupported attachment/disable distinctions, and refresh external plugin changes. Fixture manifests prove browsing leaves sources/settings intact. The existing harness's isolation controls prove denial is effective, not merely proxy configuration.
+
+Build receipts and actual terminal artifacts for this run are under `.agent-loop/selected-20261013/ale-39/`. `build.md` and `checks.json` record the candidate head and required validation results. Coordinator-owned independent reviews and no-mistakes validation remain separate from this implementation job.

@@ -167,6 +167,10 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 	}
 
 	rootIsBundle, manifestErr := hasManifest(resolvedRoot)
+	if root.childrenOnly {
+		rootIsBundle = false
+		manifestErr = nil
+	}
 	if rootIsBundle {
 		if builder.discoverCandidate(ctx, root, root.Path, ".") {
 			report.SourceCount++
@@ -195,7 +199,7 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 		sort.Slice(entries, func(left, right int) bool {
 			return entries[left].Name() < entries[right].Name()
 		})
-		if root.Origin != "" {
+		if strings.HasPrefix(root.Origin, "codex-") {
 			builder.discoverNativeChildren(ctx, root, root.Path, make(map[string]bool), new(int))
 			entries = nil
 		}
