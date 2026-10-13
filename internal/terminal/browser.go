@@ -26,27 +26,33 @@ const (
 	browserSourceDetail
 	browserProblemDetail
 	browserScope
+	browserComparison
 )
 
 type browserModel struct {
-	snapshot        *collection.Snapshot
-	filters         collection.Filters
-	sources         []collection.Source
-	problems        []collection.Problem
-	mode            browserMode
-	searchReturn    browserMode
-	queryBefore     string
-	sourceFocus     int
-	problemFocus    int
-	selected        collection.SourceID
-	selectedProblem collection.ProblemID
-	detailScroll    int
-	problemScroll   int
-	scopeScroll     int
-	previousMode    browserMode
-	feedback        string
-	width           int
-	height          int
+	marked               collection.SourceID
+	comparison           collection.Comparison
+	comparisonGeneration uint64
+	compareScroll        int
+	comparing            bool
+	snapshot             *collection.Snapshot
+	filters              collection.Filters
+	sources              []collection.Source
+	problems             []collection.Problem
+	mode                 browserMode
+	searchReturn         browserMode
+	queryBefore          string
+	sourceFocus          int
+	problemFocus         int
+	selected             collection.SourceID
+	selectedProblem      collection.ProblemID
+	detailScroll         int
+	problemScroll        int
+	scopeScroll          int
+	previousMode         browserMode
+	feedback             string
+	width                int
+	height               int
 }
 
 type pagedView struct {
@@ -178,6 +184,17 @@ func (model browserModel) Init() tea.Cmd {
 
 func (model browserModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := message.(type) {
+	case comparisonReady:
+		if message.generation != model.comparisonGeneration || model.mode != browserComparison {
+			return model, nil
+		}
+		model.comparing = false
+		model.comparison = message.report
+		model.feedback = ""
+		if message.err != nil {
+			model.feedback = safeInline(message.err.Error())
+		}
+		return model, nil
 	case tea.WindowSizeMsg:
 		detailAtEnd := model.mode == browserSourceDetail && model.detailScroll == model.maxDetailScroll()
 		problemAtEnd := model.mode == browserProblemDetail && model.problemScroll == model.maxProblemScroll()
@@ -215,6 +232,9 @@ func (model browserModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if message.String() == "q" {
 			return model, tea.Quit
+		}
+		if model.mode == browserComparison {
+			return model.updateComparison(message)
 		}
 		if model.mode == browserScope {
 			return model.updateScope(message)
@@ -261,6 +281,18 @@ func (model browserModel) updateSearch(key tea.KeyPressMsg) (tea.Model, tea.Cmd)
 
 func (model browserModel) updateCollection(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
+	case "m":
+		if model.mode == browserSources && len(model.sources) > 0 {
+			model.marked = model.sources[model.sourceFocus].ID
+			model.feedback = "Left marked; select a partner and press v"
+		}
+	case "v":
+		if model.mode == browserSources {
+			return model.startComparison()
+		}
+	case "esc":
+		model.marked = ""
+		model.feedback = "Comparison mark cleared"
 	case "/":
 		model.queryBefore = model.filters.Search
 		model.searchReturn = model.mode
@@ -443,6 +475,14 @@ func (model *browserModel) refresh() {
 		model.feedback = "Refresh failed: " + safeInline(err.Error())
 		return
 	}
+	if model.marked != "" {
+		previous, _ := model.snapshot.Source(model.marked)
+		current, ok := refreshed.Source(model.marked)
+		if !ok || previous.Identity.Certainty != "proven" || current.Identity.Certainty != "proven" {
+			model.marked = ""
+		}
+	}
+	model.comparisonGeneration++
 	model.snapshot = refreshed
 	switch change.State {
 	case collection.SelectionChangeCleared:
@@ -588,6 +628,8 @@ func (model browserModel) View() tea.View {
 		lines = model.renderSourceDetail()
 	case browserProblemDetail:
 		lines = model.renderProblemDetail()
+	case browserComparison:
+		lines = model.comparisonPage().layout().lines
 	case browserScope:
 		lines = model.renderScope()
 	default:
@@ -605,6 +647,10 @@ func (model browserModel) renderCollection() []string {
 	target := model.activeCollectionMode()
 	header := model.headerLines(target)
 	header = append(header, model.searchLine())
+	if model.marked != "" {
+		source, _ := model.snapshot.Source(model.marked)
+		header = append(header, fitLine("Compare left: "+safeInline(source.Name), model.width), fitLine("Left ID: "+string(model.marked), model.width), "Left path: "+rightmostCells(safeInline(source.Directory), model.width-len("Left path: ")))
+	}
 	var body []string
 	var focusLines []int
 	var status string
@@ -621,7 +667,7 @@ func (model browserModel) renderCollection() []string {
 	}
 	helpGroups := []string{
 		"↑/↓ or j/k move", "/ search", detailHelp, "Tab sources/problems",
-		"r refresh", "c context", "o root", "f problem", "s scope", "q quit",
+		"m mark left", "v compare", "r refresh", "c context", "o root", "f problem", "s scope", "q quit",
 	}
 	if model.mode == browserSearch {
 		helpGroups = []string{"type to search", "Enter keep", "Esc cancel", "Ctrl+U clear"}

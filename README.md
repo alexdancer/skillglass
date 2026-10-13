@@ -2,18 +2,17 @@
 
 A clear view into your local agent skills.
 
-Skillglass is a Go terminal tool for browsing and reading local agent skills. The planned product will also compare and control skills across agent applications, explain where a skill comes from, and show what a proposed change would affect.
+Skillglass is a Go terminal tool for browsing, reading, and comparing local agent skills. The planned product will also control skills across agent applications, explain where a skill comes from, and show what a proposed change would affect.
 
 ## Status
 
-The production read-only inventory and identity slices are implemented. Skillglass discovers explicit custom and project roots, groups references only when they resolve to the same proven directory object, reports collection problems without discarding healthy sources, and exposes the same immutable snapshot through the CLI and keyboard browser. Ownership and availability remain visibly unknown until later integrations can support evidence-based answers. The repository also contains the approved specification, ticket breakdown, local agent scheduler, and the [ALE-22 terminal prototype](prototypes/ale-22/README.md) that preceded the production implementation.
+The production read-only inventory, identity, and comparison slices are implemented. Skillglass discovers explicit custom and project roots, groups references only when they resolve to the same proven directory object, reports collection problems without discarding healthy sources, and exposes the same immutable snapshot through the CLI and keyboard browser. Ownership and availability remain visibly unknown until later integrations can support evidence-based answers. The repository also contains the approved specification, ticket breakdown, local agent scheduler, and the [ALE-22 terminal prototype](prototypes/ale-22/README.md) that preceded the production implementation.
 
 The project was planned as **Skill Viewer**. Existing Linear titles and historical planning documents retain that name; **Skillglass** is the product and repository name.
 
 ## Planned capabilities
 
 - Explain availability by agent application and project, including precedence and unsupported controls.
-- Compare independent copies while distinguishing them from shared references.
 - Preview and apply validated enable/disable controls, or permanently delete explicitly selected content after confirmation.
 - Work offline, with the first release targeting macOS.
 
@@ -29,6 +28,7 @@ Planned integrations cover Codex, Claude Code, Hermes, Pi, OpenCode, Gemini CLI,
 - [Agent instructions](AGENTS.md)
 - [ALE-23 verification](docs/verification/ale-23.md)
 - [ALE-24 verification](docs/verification/ale-24.md)
+- [ALE-25 verification](docs/verification/ale-25.md)
 
 [Linear](https://linear.app/alex-dancer/project/skill-viewer-58706f175bed) holds live ticket requirements, status, and dependencies. The local copies are references.
 
@@ -48,6 +48,7 @@ bin/skillglass list --root /path/to/skills
 bin/skillglass list --root /path/to/custom --project /path/to/project --project-root /path/to/project-skills --context project --problem duplicate-name --search testing --json
 bin/skillglass problems --root /path/to/custom --project /path/to/project --project-root /path/to/project-skills --search broken --json
 bin/skillglass read --root /path/to/custom --project /path/to/project --project-root /path/to/project-skills SOURCE_ID
+bin/skillglass compare --root /path/to/custom --json LEFT_SOURCE_ID RIGHT_SOURCE_ID
 bin/skillglass browse --root /path/to/custom --project /path/to/project --project-root /path/to/project-skills
 ```
 
@@ -55,11 +56,17 @@ bin/skillglass browse --root /path/to/custom --project /path/to/project --projec
 
 Use a source ID from `list` as the final `read` argument, after all scope and JSON flags. `read` deliberately has no view filters and returns the selected source with every known discovery reference. Supporting resources are inventoried recursively inside each bundle without following resource symlinks or opening resource contents. Browsing and reading never execute bundled instructions or scripts or change sources or agent settings. Human output escapes terminal controls; JSON preserves the text for programmatic use.
 
+Compare two IDs from `list`, with all flags before the IDs. Like `read`, `compare` accepts scope and JSON flags but no view filters. It reads current raw instructions and supporting resources, shows text differences and added/removed/changed entries, identifies binary changes without printing their bytes, and includes file-kind and mode changes. Selecting the same ID twice explains shared references to one source. Equal independent copies retain distinct identities. JSON includes `report.relation`, `report.outcome`, `report.coverage`, sorted `report.changes`, coverage `report.issues`, and both reference inventories. Completed equality or differences exit 0; incomplete comparison exits 1. Unrelated discovery-scope problems remain separate from selected-pair coverage.
+
+Comparison never writes, executes bundled content, repairs links or consolidates copies. Incomplete coverage produces an indeterminate outcome rather than an identical claim. A clearly labeled truncated diff only limits presentation, not byte comparison. See [comparison behavior and limits](docs/verification/ale-25.md#behavior-and-limits) for link handling, read and presentation bounds, and the best-effort consistency policy.
+
 Directory symlinks that reach the same proven directory object produce one source with several references. Equal names, equal bytes, and a shared `SKILL.md` target do not prove shared bundle identity, so those directories remain independently selectable. Every reference retains its custom or project context, original discovery path, resolution status, and root; successfully resolved references also carry the resolved path and source ID. Broken and cyclic references stay available without a fabricated source. Filtering shows a source when at least one reference matches while detail keeps its complete reference inventory. JSON exposes the active `filters`, root contexts in `scope.roots`, reference contexts and `matches_filters`, and each problem's related root, reference, and source IDs.
 
 The documented problem codes are `root-missing`, `root-unreadable`, `broken-reference`, `symlink-cycle`, `unreadable-manifest`, `malformed-manifest`, `metadata-non-finite-float`, `manifest-too-large`, `manifest-invalid-encoding`, `unreadable-resource`, `resource-limit`, `identity-uncertain`, `duplicate-name`, and `shared-manifest`. Duplicate names, shared manifests, and non-finite metadata are informational and do not make otherwise complete coverage incomplete. External resource links remain visible through their resource path, target, and `link_scope: external`; they are not traversed. Failures that prevent selected content from being discovered or read preserve useful partial output, mark coverage incomplete, and return status 1.
 
 In the browser, move with the arrow keys or `j`/`k`, press `/` to search the current Sources or Problems view, `Enter` to keep a search or open the focused item, `Tab` to switch views, `Esc` or the left arrow to return from detail, and `q` to quit outside search. Search supports bracketed paste as query data and `Ctrl+U` to clear. Source and problem detail scroll with the same movement keys, `PgUp`/`PgDn`, and `g`/`G` for top/end.
+
+In Sources, press `m` to mark the focused source as the left side, navigate or search for a partner, then press `v` to compare. The same marked source can also be selected to inspect shared-source semantics. Comparison runs asynchronously and shows pair identity, coverage and paged differences; scroll with `j`/`k`, `PgUp`/`PgDn`, and `g`/`G`, and press `Esc` to return. Press `r` in Comparison to refresh the inventory and return to Sources, then `v` to compare again. `Esc` in Sources clears the mark; refresh retains it only while the same proven directory object remains reachable.
 
 Press `c` to cycle all, project, and custom reference contexts; `o` to cycle selected roots; `f` to cycle problem codes; and `r` to refresh explicitly. The browser has no watcher. Refresh observes external edits and retains a selected source only while the same proven directory object remains reachable. A rename or one retargeted alias can retain selection when another reference still reaches that object. Replacement, loss, uncertain identity, or retargeting its final reference clears selection visibly. A selected source hidden by filters remains explicitly identified as hidden and is never rebound to a visible row.
 
