@@ -301,7 +301,14 @@ func runSandboxBrowser(t *testing.T, fx fixture, profile, executable string, bro
 	return raw.Bytes()
 }
 
-func runtimeProfile(executable, allowedRoot string) string {
+func runtimeProfile(executable, allowedRoot string, absentRoots ...string) string {
+	absentRoots = append(absentRoots, "/etc/codex", "/etc/hermes")
+	var allowed, denied strings.Builder
+	for _, root := range absentRoots {
+		fmt.Fprintf(&allowed, " (subpath %s)\n", sandboxString(root))
+		fmt.Fprintf(&denied, "(deny file-read* (subpath %s) (with errno ENOENT))\n", sandboxString(root))
+	}
+
 	return fmt.Sprintf(`(version 1)
 (allow default)
 (deny network*)
@@ -312,9 +319,11 @@ func runtimeProfile(executable, allowedRoot string) string {
  (subpath %s)
  (subpath "/System")
  (subpath "/usr/lib")
- (subpath "/dev"))))
+ (subpath "/dev")
+%s)))
 (deny process-exec (require-not (literal %s)))
-`, sandboxString(executable), sandboxString(allowedRoot), sandboxString(executable))
+%s
+`, sandboxString(executable), sandboxString(allowedRoot), allowed.String(), sandboxString(executable), denied.String())
 }
 
 func sandboxString(value string) string {

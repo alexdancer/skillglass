@@ -29,7 +29,7 @@ func hermesRun(t *testing.T, fx fixture, env []string, args ...string) commandRe
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, skillglassBinary, args...)
+	command := fx.fixtureCommand(ctx, skillglassBinary, args...)
 	command.Dir = fx.project
 	command.Env = append(fx.environment(), env...)
 	var stdout, stderr bytes.Buffer

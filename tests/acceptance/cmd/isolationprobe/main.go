@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"syscall"
 	"time"
 )
@@ -17,6 +18,17 @@ type result struct {
 }
 
 func main() {
+	if len(os.Args) == 3 && os.Args[1] == "--system" {
+		_, readErr := os.ReadFile(os.Args[2])
+		_, statErr := os.Stat(os.Args[2])
+		_, dirErr := os.ReadDir(filepath.Dir(os.Args[2]))
+		passed := os.IsNotExist(readErr) && os.IsNotExist(statErr) && os.IsNotExist(dirErr)
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"passed": passed, "read_absent": os.IsNotExist(readErr), "stat_absent": os.IsNotExist(statErr), "directory_absent": os.IsNotExist(dirErr)})
+		if !passed {
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) != 5 {
 		os.Exit(2)
 	}

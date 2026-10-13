@@ -16,6 +16,12 @@ type hermesInputs struct {
 	home, config, platform string
 	scope                  AgentScope
 	configData             map[string]any
+	pluginConfig           map[string]any
+	pluginManaged          map[string]any
+	managedConfigPath      string
+	pluginConfigPath       string
+	pluginUncertain        bool
+	policyEnv              map[string]string
 	uncertain              bool
 	problems               []Problem
 	plugins                map[RootID]hermesPlugin
@@ -106,11 +112,7 @@ func readHermesInputs(request Request) hermesInputs {
 	}
 	reason := "active-profile config only; no default-profile or project config inheritance"
 	inputs.scope.ConfigLayers = append(inputs.scope.ConfigLayers, PermissionLayer{Path: inputs.config, Scope: "active-profile", State: state, Reason: reason, Evidence: hermesEvidence(EvidenceObserved, "profile-config", inputs.config, "skills", reason)})
-	inputs.platform = os.Getenv("HERMES_PLATFORM")
-	if inputs.platform == "" {
-		inputs.platform = os.Getenv("HERMES_SESSION_PLATFORM")
-	}
-	inputs.scope.ConfigLayers = append(inputs.scope.ConfigLayers, PermissionLayer{Path: inputs.config, Scope: "session-platform", State: "read", Reason: "HERMES_PLATFORM precedes HERMES_SESSION_PLATFORM; selected platform=" + inputs.platform, Evidence: hermesEvidence(EvidenceObserved, "platform-selection", inputs.config, "HERMES_PLATFORM, HERMES_SESSION_PLATFORM", "process environment selects messaging platform; unset applies global list only")})
+	inputs.readPolicy(request)
 	return inputs
 }
 func hermesMap(data map[string]any, key string) map[string]any {
@@ -529,7 +531,13 @@ func applyHermesPrecedence(snapshot *Snapshot, roots []DiscoveryRoot) {
 					source.Availability.Reason = "native inventory index and system-prompt offers differ for this same-root name conflict"
 				}
 			}
-			source.Availability.Precedence = &PrecedenceExplanation{State: state, Winner: winner, RelatedSources: append([]SourceID(nil), ids...), Evidence: hermesEvidence(EvidenceInferred, "native-index-first-name", source.Manifest.Path, "", reason)}
+			var related []SourceID
+			for _, candidate := range ids {
+				if candidate != id {
+					related = append(related, candidate)
+				}
+			}
+			source.Availability.Precedence = &PrecedenceExplanation{State: state, Winner: winner, RelatedSources: related, Evidence: hermesEvidence(EvidenceInferred, "native-index-first-name", source.Manifest.Path, "", reason)}
 			if id != winner && source.Availability.State == AvailabilityAvailable {
 				source.Availability.State = AvailabilityShadowed
 				source.Availability.Reason = "later same-name definition is shadowed in the native index; source remains independently selectable"

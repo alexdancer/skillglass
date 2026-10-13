@@ -714,6 +714,7 @@ func newFixture(t *testing.T) fixture {
 		}
 	}
 
+	fx.prepareLaunchProfiles(t)
 	writeFile(t, filepath.Join(fx.home, ".codex", "skills", "home-canary", "SKILL.md"), []byte("HOME_FALLBACK_CANARY"), 0o644)
 	writeFile(t, filepath.Join(fx.project, "nested", "project-canary", "SKILL.md"), []byte("PROJECT_SCAN_CANARY"), 0o644)
 	writeFile(t, filepath.Join(base, "excluded", "unselected-root", "SKILL.md"), []byte("UNSELECTED_ROOT_CANARY"), 0o644)
@@ -798,7 +799,7 @@ func (fx fixture) run(t *testing.T, args ...string) commandResult {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, skillglassBinary, args...)
+	command := fx.fixtureCommand(ctx, skillglassBinary, args...)
 	command.Dir = fx.project
 	command.Env = fx.environment()
 	command.Stdin = bytes.NewReader(nil)

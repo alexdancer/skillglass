@@ -36,7 +36,7 @@ func TestBrowserPTYJourney(t *testing.T) {
 	normal := sourceNamed(t, inventory.Sources, "normal-skill")
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	command := exec.CommandContext(
+	command := fx.fixtureCommand(
 		ctx,
 		skillglassBinary,
 		"browse",
@@ -661,6 +661,7 @@ func TestBrowserHostileTerminalDataUsesSafeCells(t *testing.T) {
 
 func runTmux(t *testing.T, tmux string, fx fixture, socket string, args ...string) string {
 	t.Helper()
+	args = fx.containTmuxLaunch(args)
 	commandArgs := append([]string{"-L", socket, "-f", "/dev/null"}, args...)
 	command := exec.Command(tmux, commandArgs...)
 	command.Dir = fx.project
@@ -673,6 +674,7 @@ func runTmux(t *testing.T, tmux string, fx fixture, socket string, args ...strin
 }
 
 func runTmuxIgnoringError(tmux string, fx fixture, socket string, args ...string) {
+	args = fx.containTmuxLaunch(args)
 	commandArgs := append([]string{"-L", socket, "-f", "/dev/null"}, args...)
 	command := exec.Command(tmux, commandArgs...)
 	command.Dir = fx.project

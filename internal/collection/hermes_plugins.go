@@ -17,13 +17,6 @@ type hermesPlugin struct {
 	reason                              string
 }
 
-func hermesEnvEnabled(key string) bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv(key))) {
-	case "1", "true", "yes", "on":
-		return true
-	}
-	return false
-}
 func hermesPortableNamespace(key string) string {
 	var slug strings.Builder
 	for _, char := range strings.ToLower(key) {
@@ -107,7 +100,7 @@ func discoverHermesPlugins(request *Request, inputs *hermesInputs) {
 						plugin.reason = "declarative portable plugin registration; native namespace derived from registry key"
 					}
 				}
-				config := hermesMap(inputs.configData, "plugins")
+				config := inputs.pluginConfig
 				enabled, enabledOK := hermesStrings(config["enabled"])
 				if config["enabled"] != nil {
 					_, enabledOK = config["enabled"].([]any)
@@ -117,18 +110,18 @@ func discoverHermesPlugins(request *Request, inputs *hermesInputs) {
 					_, disabledOK = config["disabled"].([]any)
 				}
 				switch {
-				case hermesEnvEnabled("HERMES_SAFE_MODE"):
+				case !enabledOK || !disabledOK || inputs.uncertain || inputs.pluginUncertain:
+					plugin.state = ParticipationUnknown
+					plugin.reason = "plugin configuration could not be reliably interpreted"
+				case inputs.envEnabled("HERMES_SAFE_MODE"):
 					plugin.state = ParticipationExcluded
 					plugin.reason = "HERMES_SAFE_MODE skips plugin discovery"
-				case project && !hermesEnvEnabled("HERMES_ENABLE_PROJECT_PLUGINS"):
+				case project && !inputs.envEnabled("HERMES_ENABLE_PROJECT_PLUGINS"):
 					plugin.state = ParticipationExcluded
 					plugin.reason = "project plugins require HERMES_ENABLE_PROJECT_PLUGINS opt-in; selected project has no ancestor inheritance"
 				case hermesHas(disabled, plugin.key) || hermesHas(disabled, name):
 					plugin.state = ParticipationExcluded
 					plugin.reason = "plugins.disabled overrides plugins.enabled"
-				case !enabledOK || !disabledOK || inputs.uncertain:
-					plugin.state = ParticipationUnknown
-					plugin.reason = "plugin configuration could not be reliably interpreted"
 				case !hermesHas(enabled, plugin.key) && !hermesHas(enabled, name):
 					plugin.state = ParticipationExcluded
 					plugin.reason = "plugins are opt-in; registry key/name is absent from plugins.enabled"
@@ -245,7 +238,7 @@ func hermesPluginContained(path, root string) bool {
 }
 func hermesPluginFact(fact *ReferenceAvailability, explanation *AvailabilityExplanation, source Source, ref Reference, plugin hermesPlugin, inputs *hermesInputs) {
 	fact.Participation = plugin.state
-	fact.Evidence = hermesEvidence(EvidenceInferred, "plugin-registration", plugin.path, "plugins.enabled, plugins.disabled", plugin.reason)
+	fact.Evidence = hermesEvidence(EvidenceInferred, "plugin-registration", inputs.pluginConfigPath, "plugins.enabled, plugins.disabled", plugin.reason)
 	fact.Provenance = Provenance{Kind: "plugin", PluginID: plugin.key, Version: plugin.version, Evidence: hermesEvidence(EvidenceObserved, "plugin-manifest", plugin.path, "", plugin.reason)}
 	bare := source.Manifest.Name
 	if plugin.portable {
