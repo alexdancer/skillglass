@@ -32,7 +32,11 @@ func (fx fixture) prepareLaunchProfiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, executable := range []string{skillglassBinary, isolationProbeBinary} {
-		policy := runtimeProfile(canonicalPath(t, executable), canonicalPath(t, filepath.Join(fx.base, "allowed")), filepath.Join(canonicalPath(t, fx.base), "excluded", "system-inputs"))
+		policy := runtimeProfile(canonicalPath(t, executable), canonicalPath(t, fx.base), filepath.Join(canonicalPath(t, fx.base), "excluded", "system-inputs"))
+		// Each test owns the complete fixture, including comparison roots beside allowed/.
+		// Keep modeled live-home input denied and modeled machine policy absent.
+		policy += fmt.Sprintf("(deny file-read* (require-all (subpath %s) (require-not (subpath %s))))\n", sandboxString(filepath.Join(canonicalPath(t, fx.base), "excluded")), sandboxString(filepath.Join(canonicalPath(t, fx.base), "excluded", "system-inputs")))
+		policy += fmt.Sprintf("(deny file-read* (require-all (subpath \"/Users\") (require-not (literal %s))))\n", sandboxString(canonicalPath(t, executable)))
 		// Ancestor enumeration supports project boundary discovery without reading sibling data.
 		for path := filepath.Dir(canonicalPath(t, fx.base)); path != "/"; path = filepath.Dir(path) {
 			policy += fmt.Sprintf("(allow file-read-data (literal %s))\n", sandboxString(path))
