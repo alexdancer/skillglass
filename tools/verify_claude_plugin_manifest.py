@@ -48,10 +48,13 @@ def main():
             "--verbose", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--no-session-persistence"]
     areas = [plugin, root / "market/.claude-plugin", home / ".claude/settings.json",
              home / ".claude/plugins/known_marketplaces.json", home / ".claude/plugins/installed_plugins.json"]
+    cases_path = pathlib.Path(__file__).with_name("claude_homepage_cases.json")
+    cases = json.loads(cases_path.read_text())
     results = []
-    for label, homepage in [("absent", None), ("valid", "https://example.invalid/docs"), ("invalid", "not-an-absolute-url"), ("invalid-hierarchical", "https://")]:
+    for case in cases:
+        label, homepage = case["name"], case["homepage"]
         metadata = {"name": "demo", "version": "1.0.0"}
-        if homepage is not None:
+        if case["present"]:
             metadata["homepage"] = homepage
         write(plugin / ".claude-plugin/plugin.json", json.dumps(metadata))
         before = manifest(areas, root)
@@ -67,7 +70,7 @@ def main():
         write(output / (label + "-after.json"), json.dumps(after, indent=2) + "\n")
         assert before == after, label
         commands = [c for c in response["commands"] if not c.get("builtin")]
-        invalid = label.startswith("invalid")
+        invalid = not case["native_valid"]
         listed = any(c["name"] == "demo:root-action" for c in commands)
         assert listed == (not invalid), (label, commands)
         assert validation.returncode == (1 if invalid else 0), (label, validation.stderr)
@@ -80,9 +83,10 @@ def main():
                         "after_sha256": hashlib.sha256(json.dumps(after, sort_keys=True).encode()).hexdigest()})
     summary = {"version": version.stdout.strip(), "results": results, "fixture": str(root),
                "model_prompts": 0, "skill_workloads": 0,
+               "cases_sha256": hashlib.sha256(cases_path.read_bytes()).hexdigest(),
                "helper_sha256": hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest(),
                "containment_helper_sha256": hashlib.sha256((pathlib.Path(__file__).parent / "claude_containment.py").read_bytes()).hexdigest(),
-               "limits": "Only absent/valid HTTPS/invalid literal and malformed hierarchical homepage controls observed. No full native schema equivalence, model enforcement or enterprise-state claim."}
+               "limits": "Bounded 25-case homepage census only. No full URL/schema equivalence, model enforcement or enterprise-state claim."}
     write(output / "summary.json", json.dumps(summary, indent=2) + "\n")
     print(json.dumps(summary, indent=2))
 

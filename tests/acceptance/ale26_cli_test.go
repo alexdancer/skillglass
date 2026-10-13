@@ -13,9 +13,9 @@ import (
 )
 
 type codexEvidence struct {
-	Kind, Rule   string
-	InputPath    string `json:"input_path"`
-	AgentVersion string `json:"agent_version"`
+	Kind, Rule, Reason string
+	InputPath          string `json:"input_path"`
+	AgentVersion       string `json:"agent_version"`
 }
 type codexAvailability struct {
 	NativeNameEvidence codexEvidence `json:"native_name_evidence"`
@@ -26,6 +26,7 @@ type codexAvailability struct {
 	References []struct {
 		ReferenceID   string `json:"reference_id"`
 		Participation string
+		Evidence      codexEvidence
 		Permission    struct {
 			State    string
 			Evidence codexEvidence
