@@ -113,6 +113,7 @@ type fixture struct {
 	unreadableRoot string
 	missingRoot    string
 	marker         string
+	tmuxTemporary  string
 }
 
 type commandResult struct {
@@ -676,8 +677,14 @@ func TestDirectoryObjectIdentitySurvivesRename(t *testing.T) {
 func newFixture(t *testing.T) fixture {
 	t.Helper()
 	base := t.TempDir()
+	tmuxTemporary, err := os.MkdirTemp("/private/tmp", "sgmux-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(tmuxTemporary) })
 	fx := fixture{
 		base:           base,
+		tmuxTemporary:  tmuxTemporary,
 		home:           filepath.Join(base, "allowed", "home"),
 		xdgConfig:      filepath.Join(base, "allowed", "xdg-config"),
 		xdgData:        filepath.Join(base, "allowed", "xdg-data"),
@@ -798,7 +805,7 @@ func (fx fixture) run(t *testing.T, args ...string) commandResult {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, skillglassBinary, args...)
+	command := fx.command(ctx, skillglassBinary, args...)
 	command.Dir = fx.project
 	command.Env = fx.environment()
 	command.Stdin = bytes.NewReader(nil)
@@ -833,6 +840,7 @@ func (fx fixture) environment() []string {
 		"XDG_CACHE_HOME=" + fx.xdgCache,
 		"XDG_STATE_HOME=" + fx.xdgState,
 		"TMPDIR=" + fx.temporary,
+		"TMUX_TMPDIR=" + fx.tmuxTemporary,
 		"PATH=/usr/bin:/bin",
 		"TERM=xterm-256color",
 		"LC_ALL=C",

@@ -95,3 +95,62 @@ func TestALE33PiBrowserStandaloneFileRefresh(t *testing.T) {
 	runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "q")
 	assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 }
+
+func TestALE33RepairBrowserOccurrences(t *testing.T) {
+	tmux, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, width := range []int{48, 80} {
+		for _, scenario := range []string{"excluded-package", "alias-name"} {
+			t.Run(fmt.Sprintf("%d/%s", width, scenario), func(t *testing.T) {
+				fx := piFixture(t)
+				state, nativeName := "disabled", "managed"
+				if scenario == "excluded-package" {
+					pkg := filepath.Join(fx.base, "allowed", "package")
+					codexSkill(t, filepath.Join(pkg, "skills"), "managed", "managed")
+					writeFile(t, filepath.Join(pkg, "package.json"), []byte(`{"pi":{"skills":["skills"]}}`), 0600)
+					config := fmt.Sprintf(`{"defaultProjectTrust":"always","skills":[%q],"packages":[{"source":%q,"skills":[]}]}`, filepath.Join(pkg, "skills"), pkg)
+					writeFile(t, filepath.Join(fx.home, ".pi", "agent", "settings.json"), []byte(config), 0600)
+				} else {
+					state, nativeName = "available", "native-alias"
+					target := filepath.Join(fx.base, "allowed", "canonical-target")
+					writeFile(t, filepath.Join(target, "SKILL.md"), []byte("---\ndescription: Inert alias browser fixture.\n---\nNo workload.\n"), 0600)
+					root := filepath.Join(fx.home, ".pi", "agent", "skills")
+					if err := os.MkdirAll(root, 0755); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Symlink(target, filepath.Join(root, nativeName)); err != nil {
+						t.Fatal(err)
+					}
+				}
+				before := treeManifest(t, fx.base)
+				socket := fmt.Sprintf("ale33-repair-%d-%d-%s", os.Getpid(), width, scenario)
+				defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
+				runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", strconv.Itoa(width), "-y", "30", "-s", "browser", "exec "+shellQuote(skillglassBinary)+" browse --agent pi --project "+shellQuote(fx.project))
+				runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
+				frame := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", state+" (inferred)")
+				assertPaneCells(t, frame, width, 30)
+				prefix := fmt.Sprintf("tmux/ale33-repair/%d/%s/", width, scenario)
+				writeEvidence(t, prefix+"sources.txt", []byte(frame))
+				frame = actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter") }, "Read lines", "Availability: "+state)
+				var body strings.Builder
+				for page := 0; page < 20; page++ {
+					first, last, total, lines := sourceDetailBody(t, frame)
+					body.WriteString(strings.Join(lines, "\n"))
+					assertPaneCells(t, frame, width, 30)
+					writeEvidence(t, fmt.Sprintf("%sdetail-%02d.txt", prefix, page), []byte(frame))
+					if last == total {
+						break
+					}
+					frame = actOnPane(t, tmux, fx, socket, "browser:0.0", func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "PageDown") }, func(next paneSnapshot) bool { start, _, _ := sourceDetailRange(next.cells); return start > first }).cells
+				}
+				if !paneContains(body.String(), nativeName) {
+					t.Fatalf("native occurrence name missing: %s", body.String())
+				}
+				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "q")
+				assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+			})
+		}
+	}
+}

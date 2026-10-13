@@ -43,6 +43,7 @@ func buildPi(ctx context.Context, request Request) (*Snapshot, error) {
 	if request.Project.Selected {
 		inputs.scope.ConfigLayers = append(inputs.scope.ConfigLayers, PermissionLayer{Path: trustEvidence.InputPath, Scope: "project", State: inputs.trust, Reason: trustEvidence.Reason, Evidence: trustEvidence})
 	}
+	inputs.addPackages(&request, agentDir)
 	addConfigured := func(settings piSettings, base string, context ReferenceContext, rank int, trust string) {
 		for _, entry := range settings.skills {
 			if piPattern(entry) {
@@ -69,7 +70,6 @@ func buildPi(ctx context.Context, request Request) (*Snapshot, error) {
 	}
 	auto(filepath.Join(agentDir, "skills"), agentDir, ContextGlobal, "pi", 3, inputs.global, "allowed")
 	auto(filepath.Join(request.home, ".agents", "skills"), filepath.Join(request.home, ".agents"), ContextGlobal, "agents", 3, inputs.global, "allowed")
-	inputs.addPackages(&request, agentDir)
 	// Managed storage is inspectable, but registration is required for participation.
 	for _, base := range []string{agentDir, filepath.Join(request.Project.Path, ".pi")} {
 		if !request.Project.Selected && base != agentDir {
@@ -96,9 +96,10 @@ func buildPi(ctx context.Context, request Request) (*Snapshot, error) {
 			root.Evidence = &e
 		}
 	}
+	suppressed := inputs.lexicalDuplicates(snapshot)
 	ranks := make(map[SourceID]int)
 	for _, id := range snapshot.order {
-		source, rank := inputs.explain(snapshot, id, roots)
+		source, rank := inputs.explain(snapshot, id, roots, suppressed)
 		snapshot.sources[id] = source
 		ranks[id] = rank
 	}
@@ -107,7 +108,7 @@ func buildPi(ctx context.Context, request Request) (*Snapshot, error) {
 	return snapshot, nil
 }
 
-func (inputs *piInputs) explain(snapshot *Snapshot, id SourceID, roots map[RootID]DiscoveryRoot) (Source, int) {
+func (inputs *piInputs) explain(snapshot *Snapshot, id SourceID, roots map[RootID]DiscoveryRoot, suppressed map[ReferenceID]bool) (Source, int) {
 	source := snapshot.sources[id]
 	ex := AvailabilityExplanation{State: AvailabilityUnknown, Reason: "explicit viewer root does not establish Pi participation"}
 	e := piEvidence(EvidenceUnknown, "inspection-only", source.Directory, "", ex.Reason)
@@ -125,10 +126,7 @@ func (inputs *piInputs) explain(snapshot *Snapshot, id SourceID, roots map[RootI
 			ra.Provenance = fact.provenance
 			ra.Evidence = piEvidence(EvidenceInferred, "native-resource", root.Path, "", "Pi reference is in the selected known search scope")
 			ra.Permission = PermissionExplanation{State: PermissionAllowed, Evidence: piEvidence(EvidenceInferred, "resource-filters", fact.path, "skills", "resource root inclusions and exclusions applied independently"), Layers: cloneLayers(inputs.scope.ConfigLayers)}
-			file := ref.DiscoveredPath
-			if filepath.Base(source.Manifest.Path) == "SKILL.md" {
-				file = filepath.Join(file, "SKILL.md")
-			}
+			file := piOccurrenceFile(source, ref)
 			enabled, patternKnown := piEnabled(file, piFilterPatterns(fact.patterns), fact.base, strings.HasPrefix(root.Origin, "pi-configured"), false)
 			ra.Permission.Evidence.Setting = "skills resource rules: " + strings.Join(piFilterPatterns(fact.patterns), ", ")
 			if fact.packageFilter {
@@ -170,7 +168,11 @@ func (inputs *piInputs) explain(snapshot *Snapshot, id SourceID, roots map[RootI
 			if fact.trust == "denied" || fact.trust == "inactive" {
 				candidateRank += 100
 			}
-			if candidateRank < bestRank {
+			if suppressed[rid] {
+				ra.Participation = ParticipationExcluded
+				ra.Evidence = piEvidence(EvidenceInferred, "native-first-lexical-occurrence", file, "", "earlier native registration retained this identical lexical resource")
+			}
+			if !suppressed[rid] && candidateRank < bestRank {
 				copy := ra
 				best = &copy
 				bestRank = candidateRank
@@ -202,8 +204,12 @@ func (inputs *piInputs) explain(snapshot *Snapshot, id SourceID, roots map[RootI
 			e := piEvidence(EvidenceUnknown, "configured-availability", bestFact.path, "skills", ex.Reason)
 			ex.Evidence = &e
 		}
-		ex.NativeName = source.Name
-		n := piEvidence(EvidenceObserved, "native-name", source.Manifest.Path, "name", "manifest name or Pi parent-directory fallback")
+		file := piOccurrenceFile(source, snapshot.references[best.Reference])
+		ex.NativeName, _ = source.Manifest.Metadata["name"].(string)
+		if ex.NativeName == "" {
+			ex.NativeName = filepath.Base(filepath.Dir(file))
+		}
+		n := piEvidence(EvidenceObserved, "native-name", file, "name", "manifest name or selected lexical occurrence parent-directory fallback")
 		ex.NativeNameEvidence = &n
 	}
 	invocation := SessionExplanation{State: "implicit-allowed", Evidence: piEvidence(EvidenceInferred, "model-invocation", source.Manifest.Path, "disable-model-invocation", "native default includes the resource in the system prompt")}
@@ -237,6 +243,34 @@ func (inputs *piInputs) explain(snapshot *Snapshot, id SourceID, roots map[RootI
 	source.Availability = ex
 	return source, bestRank
 }
+func piOccurrenceFile(source Source, ref Reference) string {
+	if filepath.Base(source.Manifest.Path) == "SKILL.md" {
+		return filepath.Join(ref.DiscoveredPath, "SKILL.md")
+	}
+	return ref.DiscoveredPath
+}
+
+// The package manager inserts packages, configured paths, then automatic paths.
+// Its lexical map keeps the first registration before rank/canonical selection.
+func (inputs *piInputs) lexicalDuplicates(snapshot *Snapshot) map[ReferenceID]bool {
+	seen := make(map[string]bool)
+	suppressed := make(map[ReferenceID]bool)
+	for _, rid := range snapshot.referenceOrder {
+		ref := snapshot.references[rid]
+		fact, native := inputs.facts[ref.Root]
+		if !native || fact.trust == "denied" || fact.trust == "inactive" || ref.Source == "" {
+			continue
+		}
+		file := piOccurrenceFile(snapshot.sources[ref.Source], ref)
+		if seen[file] {
+			suppressed[rid] = true
+		} else {
+			seen[file] = true
+		}
+	}
+	return suppressed
+}
+
 func piHasIgnore(root, file string) bool {
 	path := filepath.Dir(file)
 	root = filepath.Clean(root)

@@ -8,7 +8,8 @@ import { pathToFileURL } from 'node:url';
 import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 const installed=process.argv[2];
-if (!installed) throw new Error('usage: node tests/native/pi-read.mjs INSTALLED_PI_PACKAGE');
+if (!installed) throw new Error('usage: python3 tests/native/pi-read-contained.py INSTALLED_PI_PACKAGE EVIDENCE_DIR');
+if (process.env.PI_FIXTURE_CONTAINED !== 'strict') throw new Error('native imports require the fail-closed contained launcher');
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'ale33-native-'));
 const home=path.join(root,'home'), project=path.join(root,'repo','nested');
 const agentDir=path.join(root,'separate-agent-dir');
@@ -46,13 +47,14 @@ write(path.join(agentDir,'settings.json'),JSON.stringify({defaultProjectTrust:'a
 write(path.join(project,'.pi','settings.json'),JSON.stringify({skills:[configured,'!excluded','!inherited'],packages:[{source:pkg,skills:[]}]}));
 const inspect=async()=>{const settings=SettingsManager.create(project,agentDir);const manager=new DefaultPackageManager({cwd:project,agentDir,settingsManager:settings});const resolved=await manager.resolve(()=>{throw new Error('install forbidden')});const loaded=loadSkills({cwd:project,agentDir,includeDefaults:false,skillPaths:resolved.skills.filter(r=>r.enabled).map(r=>r.path)});return {resolved:resolved.skills,loaded}};
 const baseline=await inspect();
-const rpc=await new Promise((resolve,reject)=>{
- const child=spawn('/usr/bin/sandbox-exec',['-p','(version 1)(allow default)(deny network*)',process.execPath,path.join(installed,'dist','bundle','cli.js'),'--mode','rpc','--offline','--no-session','--no-extensions','--no-mcp','--no-context-files','--no-tools'],{cwd:project,env:{HOME:home,PI_CODING_AGENT_DIR:path.relative(project,agentDir),PI_OFFLINE:'1',PATH:'/usr/bin:/bin',TERM:'dumb'}});
+const rpcCommands=()=>new Promise((resolve,reject)=>{
+ const child=spawn(process.execPath,[path.join(installed,'dist','bundle','cli.js'),'--mode','rpc','--offline','--no-session','--no-extensions','--no-mcp','--no-context-files','--no-tools'],{cwd:project,env:{HOME:home,PI_CODING_AGENT_DIR:path.relative(project,agentDir),PI_OFFLINE:'1',PATH:'/usr/bin:/bin',TERM:'dumb'}});
  let output='',error='';const timer=setTimeout(()=>{child.kill('SIGTERM');reject(new Error('native RPC timeout '+error))},15000);
- child.stdout.on('data',chunk=>{output+=chunk.toString();for(const line of output.split('\n')) {try {const value=JSON.parse(line);if(value.type==='response'&&value.id==='ale33-commands') {clearTimeout(timer);child.kill('SIGTERM');resolve(value)}} catch {}}});
+ child.stdout.on('data',chunk=>{output+=chunk.toString();for(const line of output.split('\n')) {try {const value=JSON.parse(line);if(value.type==='response'&&value.id==='ale33-commands') {clearTimeout(timer);child.once('exit',()=>resolve(value));child.kill('SIGTERM')}} catch {}}});
  child.stderr.on('data',chunk=>{error+=chunk.toString()});child.on('error',reject);
  child.stdin.write(JSON.stringify({id:'ale33-commands',type:'get_commands'})+'\n');
 });
+const rpc=await rpcCommands();
 assert.equal(rpc.success,true);
 assert(rpc.data.commands.some(command=>command.name==='skill:collision'));
 assert(!rpc.data.commands.some(command=>command.name==='skill:excluded'));
@@ -91,8 +93,35 @@ assert.equal(noDecision,true);
 const empty=fs.mkdtempSync(path.join(os.tmpdir(),'ale33-empty-'));
 assert.equal(await resolveProjectTrusted({cwd:empty,trustStore,defaultProjectTrust:'never',projectTrustContext:{hasUI:false}}),true);
 fs.rmSync(empty,{recursive:true});
-const checks=['empty-project-needs-no-trust','five-tier-name-precedence','independent-agent-dir-no-default-fallback','same-tier-first-name-filesystem-order','project-exclusion-does-not-disable-global','configured-roots-and-exclusions','package-project-filter-overrides-global','git-boundary-and-ancestor-skills','symlink-deduplication','explicit-only-prompt','exact-inclusion-exclusion-order','untrusted-project-gating','denied-project-alias-preserves-global-reference','nearest-trust-decision','native-cli-rpc-commands-offline-no-credentials'];
+// Identical lexical resources retain the package's first insertion, even when
+// higher-priority configured paths would otherwise win canonical selection.
+write(path.join(project,'.pi','settings.json'),JSON.stringify({}));
+write(path.join(agentDir,'settings.json'),JSON.stringify({defaultProjectTrust:'always',skills:[path.join(pkg,'skills')],packages:[{source:pkg,skills:[]}]}));
+const overlap=await inspect();
+const managedResource=overlap.resolved.find(r=>r.path===path.join(pkg,'skills','managed','SKILL.md'));
+assert(managedResource && !managedResource.enabled && managedResource.metadata.origin==='package');
+assert(!overlap.loaded.skills.some(s=>s.name==='managed'));
+const overlapRpc=await rpcCommands();
+assert(overlapRpc.success && !overlapRpc.data.commands.some(c=>c.name==='skill:managed'));
+// Fallback names belong to the lexical occurrence, separately from identity.
+const target=path.join(root,'canonical-target');
+write(path.join(target,'SKILL.md'),'---\ndescription: Inert alias fixture.\n---\nNo workload.\n');
+fs.symlinkSync(target,path.join(global,'native-alias'));
+skill(global,'independent','canonical-target');
+write(path.join(agentDir,'settings.json'),JSON.stringify({defaultProjectTrust:'always'}));
+const alias=await inspect();
+assert(alias.loaded.skills.some(s=>s.name==='native-alias' && s.filePath===path.join(global,'native-alias','SKILL.md')));
+assert(alias.loaded.skills.some(s=>s.name==='canonical-target' && s.filePath===path.join(global,'independent','SKILL.md')));
+const aliasRpc=await rpcCommands();
+assert(aliasRpc.success && aliasRpc.data.commands.some(c=>c.name==='skill:native-alias') && aliasRpc.data.commands.some(c=>c.name==='skill:canonical-target'));
+// A trusted excluded alias retains the canonical resource before an enabled
+// global alias; denied trust instead permits the global occurrence.
+write(path.join(project,'.pi','settings.json'),JSON.stringify({skills:['-'+path.join(local,'alias')]}));
+const excludedAlias=await inspect();
+assert(!excludedAlias.loaded.skills.some(s=>s.name==='shared'));
+
+const checks=['empty-project-needs-no-trust','five-tier-name-precedence','independent-agent-dir-no-default-fallback','same-tier-first-name-filesystem-order','project-exclusion-does-not-disable-global','configured-roots-and-exclusions','package-project-filter-overrides-global','git-boundary-and-ancestor-skills','symlink-deduplication','explicit-only-prompt','exact-inclusion-exclusion-order','untrusted-project-gating','denied-project-alias-preserves-global-reference','nearest-trust-decision','native-cli-rpc-commands-offline-no-credentials','package-configured-identical-lexical-exclusion','alias-fallback-and-independent-name-rpc','trusted-excluded-alias-canonical-dedup'];
 const version=JSON.parse(fs.readFileSync(path.join(installed,'package.json'),'utf8')).version;
 const hashes={};for (const f of ['core/package-manager.js','core/skills.js','core/settings-manager.js','core/trust-manager.js','core/project-trust.js']) hashes[f]=crypto.createHash('sha256').update(fs.readFileSync(path.join(installed,'dist',f))).digest('hex');
-console.log(JSON.stringify({version,installed,root,checks,hashes,rpc,baseline},null,2));
+console.log(JSON.stringify({version,installed,root,checks,hashes,rpc,baseline,overlap,overlapRpc,alias,aliasRpc,excludedAlias},null,2));
 fs.rmSync(root,{recursive:true});

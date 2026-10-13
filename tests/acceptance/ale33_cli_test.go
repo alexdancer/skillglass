@@ -1,9 +1,9 @@
 package acceptance_test
 
 import (
+	"context"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -271,7 +271,7 @@ func TestALE33PiConfiguredAgentDirectoryAndInactiveManagedCache(t *testing.T) {
 	codexSkill(t, filepath.Join(agentDir, "skills"), "selected", "configured-agent-dir")
 	codexSkill(t, filepath.Join(agentDir, "npm", "node_modules", "stale", "skills"), "cached", "inactive-cached")
 	before := treeManifest(t, fx.base)
-	command := exec.Command(skillglassBinary, "list", "--agent", "pi", "--project", fx.project, "--json")
+	command := fx.command(context.Background(), skillglassBinary, "list", "--agent", "pi", "--project", fx.project, "--json")
 	command.Dir = filepath.Join(fx.base, "allowed")
 	command.Env = append(fx.environment(), "PI_CODING_AGENT_DIR=separate-native-root")
 	raw, err := command.Output()
