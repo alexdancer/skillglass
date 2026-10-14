@@ -1,0 +1,52 @@
+package main
+
+import (
+	"encoding/json"
+	"net"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"time"
+)
+
+func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--child" {
+		os.Stdout.WriteString("INERT_CHILD_OK")
+		return
+	}
+	a := os.Args[1:]
+	if len(a) != 9 {
+		os.Exit(71)
+	}
+	data, readErr := os.ReadFile(a[0])
+	_, statErr := os.Stat(a[0])
+	_, listErr := os.ReadDir(a[1])
+	child, childErr := exec.Command(a[2], "--child").Output()
+	self, _ := os.Executable()
+	same, sameErr := exec.Command(self, "--child").Output()
+	writeErr := os.WriteFile(a[3], []byte("inert"), 0600)
+	allowed, allowedErr := os.ReadFile(a[4])
+	_, linkErr := os.ReadFile(a[5])
+	insideErr := os.WriteFile(a[6], []byte("inert"), 0600)
+	connection, netErr := net.DialTimeout("tcp", a[7], time.Second)
+	if connection != nil {
+		connection.Close()
+	}
+	// Rewriting the identical bytes is still a forbidden write to policy storage.
+	policy, policyReadErr := os.ReadFile(a[8])
+	policyWriteErr := os.WriteFile(a[8], policy, 0400)
+	os.Chmod(self, 0700)
+	binaryFile, binaryErr := os.OpenFile(filepath.Clean(self), os.O_WRONLY, 0)
+	if binaryFile != nil {
+		binaryFile.Close()
+	}
+	json.NewEncoder(os.Stdout).Encode(map[string]bool{
+		"outside_read": readErr == nil && string(data) == "CONTROLLED_OUTSIDE_CANARY\n",
+		"outside_stat": statErr == nil, "outside_list": listErr == nil,
+		"child":                 childErr == nil && string(child) == "INERT_CHILD_OK",
+		"same_executable_child": sameErr == nil && string(same) == "INERT_CHILD_OK",
+		"outside_write":         writeErr == nil, "fixture_read": allowedErr == nil && string(allowed) == "allowed\n",
+		"symlink_read": linkErr == nil, "inside_write": insideErr == nil, "network": netErr == nil,
+		"policy_write": policyReadErr == nil && policyWriteErr == nil, "binary_write": binaryErr == nil,
+	})
+}
