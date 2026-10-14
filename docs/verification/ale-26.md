@@ -1,6 +1,6 @@
 # ALE-26: browse and explain Codex skills
 
-This historical slice adds read-only Codex discovery and local configured-availability explanations to the existing immutable collection snapshot. It does not complete the wider Skillglass specification. The ALE-26 slice introduced no writers; [ALE-27](ale-27.md) owns the current global-control contract and its remaining scope limits. Production commands never launch Codex, invoke a model, install plugins or execute skill content. Browsing and inspection never write agent configuration.
+This historical slice adds read-only Codex discovery and local configured-availability explanations to the existing immutable collection snapshot. It does not complete the wider Skillglass specification. The ALE-26 slice introduced no writers; [ALE-27](ale-27.md) owns the current global-control contract and its remaining scope limits. Production commands never launch Codex, invoke a model, install plugins or execute skill content. The [README](../../README.md#build-and-use) owns current read-only and confirmed browser-control behavior.
 
 ## Use
 
