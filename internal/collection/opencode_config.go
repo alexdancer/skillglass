@@ -303,6 +303,9 @@ func (in *opencodeInputs) load(path, scope string, raw []byte, required bool) {
 			in.scope.ConfigLayers = append(in.scope.ConfigLayers, layer)
 			return
 		}
+		if err == nil && len(raw) == 0 {
+			raw = []byte("{}")
+		}
 	}
 	obj, parseErr := parseOpencode(raw, path)
 	if err != nil || parseErr != nil {

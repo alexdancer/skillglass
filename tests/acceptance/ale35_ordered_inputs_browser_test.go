@@ -32,6 +32,7 @@ func TestALE35OrderedInputTerminal(t *testing.T) {
 			{"directory-slash", `{"permission":{"skill":"deny"}}`, "disabled", "denied", "10"},
 			{"empty-default-ask", `{"default_agent":"","agent":{"build":{"permission":{"skill":"ask"}}}}`, "ask", "ask", "10"},
 			{"empty-default-tools", `{"default_agent":"","agent":{"build":{"tools":{"skill":false}}}}`, "disabled", "denied", "10"},
+			{"zero-byte", "", "ask", "ask", "10"},
 		} {
 			t.Run(fmt.Sprintf("%s-%dx%d", tc.name, size.width, size.height), func(t *testing.T) {
 				fx := newFixture(t)
@@ -40,6 +41,9 @@ func TestALE35OrderedInputTerminal(t *testing.T) {
 				opencodeConfig(t, filepath.Join(fx.xdgConfig, "opencode", "opencode.json"), tc.config)
 				if tc.name == "plugins" {
 					opencodeConfig(t, filepath.Join(fx.project, "opencode.json"), `{"plugin":[]}`)
+				}
+				if tc.name == "zero-byte" {
+					opencodeConfig(t, filepath.Join(fx.project, "opencode.json"), `{"permission":{"skill":"ask"}}`)
 				}
 				if tc.name == "markdown" {
 					writeFile(t, filepath.Join(fx.project, ".opencode", "agents", "override.md"), []byte("---\nname: build\npermission:\n  skill: deny\n---\nInert prompt\n"), 0600)
