@@ -53,12 +53,14 @@ Run repository checks after the last source or documentation change:
 env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go vet ./...
 env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go test -count=1 -mod=readonly ./...
 python3 -m unittest discover -s tests/agent_loop -v
+python3 -m unittest discover -s tests/native -v
+python3 -m py_compile tools/verify_hermes.py tools/verify_hermes_policy.py tests/native/test_verify_hermes_retired.py
 shellcheck tests/acceptance/run.sh
 sh -n tests/acceptance/run.sh
 git diff --check
 ```
 
-The formatting check must print no files; use `gofmt -w` on any reported files and rerun. These are local checks, not a claim of green CI. Earlier verification does not cover later changes.
+The formatting check must print no files; use `gofmt -w` on any reported files and rerun. The native test suite verifies the retired Hermes entrypoint's refusal using owned fixtures, without importing installed Hermes or running native discovery. See [Hermes evidence and limits](ale-31.md#recorded-native-version-and-provenance) for the separate bounded policy helper and historical receipts. These are local checks, not a claim of green CI. Earlier verification does not cover later changes.
 
 ## Evidence limits
 
