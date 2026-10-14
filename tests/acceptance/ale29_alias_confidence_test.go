@@ -269,8 +269,8 @@ func TestALE29UnknownAliasBrowser(t *testing.T) {
 				low, managed := claudeAt(t, list, target), claudeAt(t, list, plugin)
 				socket := "alias-confidence"
 				defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-				command := "exec " + fx.productShell(t) + " browse --agent claude-code --project " + shellQuote(fx.project) + " --availability unknown"
-				runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser", command)
+				command := fx.productCommand(t, "browse", "--agent", "claude-code", "--project", fx.project, "--availability", "unknown")
+				runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser")
 				runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 				runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height))
 				frame := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "unknown (unknown)")
@@ -329,8 +329,8 @@ func TestALE29UnknownAliasBrowser(t *testing.T) {
 				// Restart with the managed source alone selected through the same public search.
 				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "q")
 				runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-				command = "exec " + fx.productShell(t) + " browse --agent claude-code --project " + shellQuote(fx.project)
-				runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser", command)
+				command = fx.productCommand(t, "browse", "--agent", "claude-code", "--project", fx.project)
+				runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser")
 				runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 				runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height))
 				waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources")

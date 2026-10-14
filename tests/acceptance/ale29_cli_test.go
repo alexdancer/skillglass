@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func claudeSkill(t *testing.T, root, folder, name, extra string) string {
@@ -265,7 +267,14 @@ func TestALE29ClaudeConfiguredHomeReservedNamesAndUnknownManagedInputs(t *testin
 	command := fx.command(t, context.Background(), args...)
 	command.Env = append(fx.environment(), "CLAUDE_CONFIG_DIR="+configured)
 	command.Dir = fx.project
+	started := time.Now()
+	launch := recordLaunch(t, command)
 	raw, err := command.Output()
+	result := commandResult{code: launchExitCode(err), stdout: raw, duration: time.Since(started), launch: launch}
+	if exit, ok := err.(*exec.ExitError); ok {
+		result.code, result.stderr = exit.ExitCode(), exit.Stderr
+	}
+	recordEvidenceCommand(t, "configured-home-contained", result)
 	if err != nil {
 		t.Fatalf("configured scope: %s %v", raw, err)
 	}

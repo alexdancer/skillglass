@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -68,25 +67,7 @@ func (fx fixture) seal(t *testing.T) {
 
 func (fx fixture) invocation(t *testing.T, executable string, args ...string) []string {
 	t.Helper()
-	profile, err := os.ReadFile(fx.policy)
-	if err != nil {
-		t.Fatal(err)
-	}
-	binary := canonicalPath(t, executable)
-	raw, err := os.ReadFile(binary)
-	if err != nil {
-		t.Fatal(err)
-	}
-	digest := sha256.Sum256(profile)
-	binaryDigest := sha256.Sum256(raw)
-	argv := append([]string{"/usr/bin/sandbox-exec", "-f", fx.policy, binary}, args...)
-	evidence, err := json.MarshalIndent(map[string]any{"argv": argv, "environment": fx.environment(), "cwd": fx.project, "profile": string(profile), "profile_sha256": hex.EncodeToString(digest[:]), "binary_sha256": hex.EncodeToString(binaryDigest[:]), "system_inputs": "controlled absence, ENOENT; no live contents inspected", "product_writes": "denied", "tmux_control": "separate utility with explicit private socket; product payload has no network allowance"}, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	key := sha256.Sum256([]byte(strings.Join(argv, "\x00")))
-	writeEvidence(t, "fixture-policy/"+hex.EncodeToString(key[:])+".json", append(evidence, '\n'))
-	return argv
+	return append([]string{"/usr/bin/sandbox-exec", "-f", fx.policy, canonicalPath(t, executable)}, args...)
 }
 
 func (fx fixture) command(t *testing.T, ctx context.Context, args ...string) *exec.Cmd {
@@ -97,13 +78,8 @@ func (fx fixture) command(t *testing.T, ctx context.Context, args ...string) *ex
 	return command
 }
 
-func (fx fixture) productShell(t *testing.T) string {
-	argv := fx.invocation(t, skillglassBinary)
-	parts := make([]string, len(argv))
-	for i, arg := range argv {
-		parts[i] = shellQuote(arg)
-	}
-	return strings.Join(parts, " ")
+func (fx fixture) productCommand(t *testing.T, args ...string) *exec.Cmd {
+	return fx.command(t, context.Background(), args...)
 }
 
 func (fx fixture) tmuxSocket(socket string) string {
@@ -168,23 +144,21 @@ func TestALE29OrdinaryPolicyControlsAndTmuxInheritance(t *testing.T) {
 	}
 	socket := "fixture-policy-control"
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-	parts := []string{fx.productShell(t)}
-	for _, arg := range args {
-		parts = append(parts, shellQuote(arg))
-	}
-	// The utility shell holds the pane after the sealed probe exits.
-	payload := strings.Join(parts, " ") + "; /bin/sleep 30"
-	runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", "80", "-y", "30", "-s", "browser", payload)
+	runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", "80", "-y", "30", "-s", "browser", "exec /bin/sleep 30")
+	runTmux(t, tmux, fx, socket, "set-option", "-w", "-t", "browser:0", "remain-on-exit", "on")
+	runTmuxProduct(t, tmux, fx, socket, fx.productCommand(t, args...), "respawn-pane", "-k", "-t", "browser:0.0")
 	frame := ""
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		frame = capturePane(t, tmux, fx, socket, true)
+		frame = runTmux(t, tmux, fx, socket, "capture-pane", "-p", "-J", "-S", "-", "-t", "browser:0.0")
 		if strings.Contains(frame, "\"passed\":true") {
 			break
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
-	decodeJSON(t, []byte(strings.TrimSpace(frame)), &controls)
+	writeEvidence(t, "fixture-policy/tmux-controls-frame.txt", []byte(frame))
+	frame = strings.Split(strings.TrimSpace(frame), "\n")[0]
+	decodeJSON(t, []byte(frame), &controls)
 	if !controls.Passed || len(controls.Checks) != 16 {
 		t.Fatalf("tmux payload controls: %s", frame)
 	}

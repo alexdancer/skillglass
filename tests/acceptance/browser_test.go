@@ -47,6 +47,7 @@ func TestBrowserPTYJourney(t *testing.T) {
 	command.Dir = fx.project
 	command.Env = fx.environment()
 	started := time.Now()
+	launch := recordLaunch(t, command)
 	terminal, err := pty.StartWithSize(command, &pty.Winsize{Rows: 24, Cols: 80})
 	if err != nil {
 		t.Fatal(err)
@@ -88,6 +89,7 @@ func TestBrowserPTYJourney(t *testing.T) {
 	err = command.Wait()
 	<-copyDone
 	_ = terminal.Close()
+	recordEvidenceCommand(t, "browser-pty-contained", commandResult{code: launchExitCode(err), stdout: raw.Bytes(), duration: time.Since(started), launch: launch})
 	if ctx.Err() != nil {
 		t.Fatal("browser PTY journey timed out")
 	}
@@ -122,6 +124,7 @@ func TestBrowserPTYJourney(t *testing.T) {
 	if _, err := os.Stat(fx.marker); !os.IsNotExist(err) {
 		t.Fatalf("browser executed fixture script: %v", err)
 	}
+	assertRecordedContext(t, launch, command)
 	writeEvidence(t, "pty/raw.ansi", raw.Bytes())
 	writeEvidence(t, "pty/keys.txt", []byte(strings.Join(keys, "\n")+"\n"))
 	writeEvidence(t, "pty/dimensions.txt", []byte("80x24\n"))
@@ -131,15 +134,6 @@ func TestBrowserPTYJourney(t *testing.T) {
 			"search miss preserves selection: pass\n"+
 			"fixture unchanged and script inert: pass\n",
 	))
-	launch := fx.invocation(t, skillglassBinary, "browse", "--root", fx.cleanRoot, "--project", fx.project)
-	recordEvidenceCommand(
-		t,
-		"browser-pty-contained",
-		launch[0],
-		launch[1:],
-		fx.project,
-		commandResult{stdout: raw.Bytes(), duration: time.Since(started)},
-	)
 }
 
 func TestBrowserTmuxCellsAtRequiredWidths(t *testing.T) {
@@ -163,18 +157,10 @@ func TestBrowserTmuxCellsAtRequiredWidths(t *testing.T) {
 		t.Run(strconv.Itoa(width), func(t *testing.T) {
 			socket := fmt.Sprintf("skillglass-acceptance-%d-%d", os.Getpid(), width)
 			defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-			commandLine := strings.Join([]string{
-				"exec",
-				fx.productShell(t),
-				"browse",
-				"--root",
-				shellQuote(fx.cleanRoot),
-				"--project",
-				shellQuote(fx.project),
-			}, " ")
-			runTmux(t, tmux, fx, socket,
+			command := fx.productCommand(t, "browse", "--root", fx.cleanRoot, "--project", fx.project)
+			launch := runTmuxProduct(t, tmux, fx, socket, command,
 				"new-session", "-d", "-x", strconv.Itoa(width), "-y", "30",
-				"-s", "browser", commandLine,
+				"-s", "browser",
 			)
 			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 			runTmux(t, tmux, fx, socket,
@@ -243,7 +229,7 @@ func TestBrowserTmuxCellsAtRequiredWidths(t *testing.T) {
 			}
 			writeEvidence(t, fmt.Sprintf("tmux/%d/dimensions.txt", width), []byte(dimensions+"\n"))
 			writeEvidence(t, fmt.Sprintf("tmux/%d/keys.txt", width), []byte("/\ndescription-only-literal\nEnter\nEnter\nG\nq\n"))
-			writeEvidence(t, fmt.Sprintf("tmux/%d/command.txt", width), []byte(commandLine+"\n"))
+			writeEvidence(t, fmt.Sprintf("tmux/%d/command.txt", width), []byte(strings.Join(launch.Argv, "\n")+"\n"))
 			title := strings.TrimSpace(runTmux(
 				t, tmux, fx, socket,
 				"display-message", "-p", "-t", "browser:0.0", "#{pane_title}",
@@ -316,19 +302,12 @@ func TestBrowserManyRootsHasScrollableScopeAt60Columns(t *testing.T) {
 
 	socket := fmt.Sprintf("skillglass-many-roots-%d", os.Getpid())
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-	parts := []string{
-		"exec",
-		fx.productShell(t),
-		"browse",
-		"--project",
-		shellQuote(longProject),
-	}
+	parts := []string{"browse", "--project", longProject}
 	for _, root := range roots {
-		parts = append(parts, "--root", shellQuote(root))
+		parts = append(parts, "--root", root)
 	}
-	commandLine := strings.Join(parts, " ")
-	runTmux(t, tmux, fx, socket,
-		"new-session", "-d", "-x", "60", "-y", "30", "-s", "many", commandLine,
+	launch := runTmuxProduct(t, tmux, fx, socket, fx.productCommand(t, parts...),
+		"new-session", "-d", "-x", "60", "-y", "30", "-s", "many",
 	)
 	runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 	runTmux(t, tmux, fx, socket, "resize-window", "-t", "many:0", "-x", "60", "-y", "30")
@@ -439,7 +418,7 @@ func TestBrowserManyRootsHasScrollableScopeAt60Columns(t *testing.T) {
 	}
 	writeEvidence(t, "tmux/many-roots/05-detail-restored.txt", []byte(restoredDetail))
 	writeEvidence(t, "tmux/many-roots/keys.txt", []byte("/\ns\nEsc\ns\nG\nEsc\nEnter\nG\ns\nEsc\nq\n"))
-	writeEvidence(t, "tmux/many-roots/command.txt", []byte(commandLine+"\n"))
+	writeEvidence(t, "tmux/many-roots/command.txt", []byte(strings.Join(launch.Argv, "\n")+"\n"))
 	runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "-l", "q")
 }
 
@@ -470,22 +449,14 @@ func TestBrowserLongSearchUsesSingleRowTailViewport(t *testing.T) {
 
 	socket := fmt.Sprintf("skillglass-long-search-%d", os.Getpid())
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-	commandLine := strings.Join([]string{
-		"exec",
-		fx.productShell(t),
-		"browse",
-		"--root",
-		shellQuote(root),
-		"--project",
-		shellQuote(fx.project),
-	}, " ")
-	runTmux(t, tmux, fx, socket,
-		"new-session", "-d", "-x", "60", "-y", "30", "-s", "long", commandLine,
+	command := fx.productCommand(t, "browse", "--root", root, "--project", fx.project)
+	launch := runTmuxProduct(t, tmux, fx, socket, command,
+		"new-session", "-d", "-x", "60", "-y", "30", "-s", "long",
 	)
 	runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 	runTmux(t, tmux, fx, socket, "resize-window", "-t", "long:0", "-x", "60", "-y", "30")
 	_ = waitForPaneAt(t, tmux, fx, socket, "long:0.0", false, "Focus: 1/2", "/ search")
-	writeEvidence(t, "tmux/long-search/command.txt", []byte(commandLine+"\n"))
+	writeEvidence(t, "tmux/long-search/command.txt", []byte(strings.Join(launch.Argv, "\n")+"\n"))
 
 	longEditing := actForPaneAt(
 		t, tmux, fx, socket, "long:0.0", false,
@@ -602,15 +573,9 @@ func TestBrowserHostileTerminalDataUsesSafeCells(t *testing.T) {
 	fx := newFixture(t)
 	socket := fmt.Sprintf("skillglass-hostile-%d", os.Getpid())
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-	commandLine := strings.Join([]string{
-		"exec",
-		fx.productShell(t),
-		"browse",
-		"--root",
-		shellQuote(fx.hostileRoot),
-	}, " ")
-	runTmux(t, tmux, fx, socket,
-		"new-session", "-d", "-x", "80", "-y", "24", "-s", "hostile", commandLine,
+	command := fx.productCommand(t, "browse", "--root", fx.hostileRoot)
+	runTmuxProduct(t, tmux, fx, socket, command,
+		"new-session", "-d", "-x", "80", "-y", "24", "-s", "hostile",
 	)
 	runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 	runTmux(t, tmux, fx, socket, "resize-window", "-t", "hostile:0", "-x", "80", "-y", "24")
@@ -659,21 +624,35 @@ func TestBrowserHostileTerminalDataUsesSafeCells(t *testing.T) {
 	runTmux(t, tmux, fx, socket, "send-keys", "-t", "hostile:0.0", "-l", "q")
 }
 
+func runTmuxProduct(t *testing.T, tmux string, fx fixture, socket string, payload *exec.Cmd, options ...string) *launchReceipt {
+	t.Helper()
+	payloadLaunch := recordLaunch(t, payload)
+	parts := []string{"exec", "/usr/bin/env", "-i"}
+	for _, arg := range append(append([]string(nil), payloadLaunch.Environment...), payloadLaunch.Argv...) {
+		parts = append(parts, shellQuote(arg))
+	}
+	commandArgs := append([]string{"-S", fx.tmuxSocket(socket), "-f", "/dev/null"}, options...)
+	commandArgs = append(commandArgs, "-c", payloadLaunch.Cwd, strings.Join(parts, " "))
+	command := exec.Command(tmux, commandArgs...)
+	command.Dir, command.Env = fx.project, fx.environment()
+	started := time.Now()
+	utilityLaunch := recordLaunch(t, command)
+	output, err := command.CombinedOutput()
+	result := commandResult{code: launchExitCode(err), stdout: output, duration: time.Since(started), launch: utilityLaunch, payload: payloadLaunch}
+	recordEvidenceCommand(t, "tmux-contained-product-start", result)
+	if err != nil {
+		t.Fatalf("tmux product launch: %v\n%s", err, output)
+	}
+	return payloadLaunch
+}
+
 func runTmux(t *testing.T, tmux string, fx fixture, socket string, args ...string) string {
 	t.Helper()
 	commandArgs := append([]string{"-S", fx.tmuxSocket(socket), "-f", "/dev/null"}, args...)
 	command := exec.Command(tmux, commandArgs...)
 	command.Dir = fx.project
 	command.Env = fx.environment()
-	started := time.Now()
 	output, err := command.CombinedOutput()
-	if len(args) > 0 && args[0] == "new-session" {
-		code := 0
-		if err != nil {
-			code = 1
-		}
-		recordEvidenceCommand(t, "tmux-contained-product-start", tmux, commandArgs, fx.project, commandResult{code: code, stdout: output, duration: time.Since(started)})
-	}
 	if err != nil {
 		t.Fatalf("tmux %s: %v\n%s", strings.Join(args, " "), err, output)
 	}

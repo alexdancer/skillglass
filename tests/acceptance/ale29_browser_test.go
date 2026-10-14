@@ -28,8 +28,8 @@ func TestALE29ClaudeBrowserExplainsFiltersAndRefreshesWithoutWrites(t *testing.T
 			before := treeManifest(t, fx.base)
 			socket := fmt.Sprintf("ale29-%d-%d", os.Getpid(), size.width)
 			defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-			command := "exec " + fx.productShell(t) + " browse --agent claude-code --project " + shellQuote(fx.project) + " --availability explicit-only"
-			runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser", command)
+			command := fx.productCommand(t, "browse", "--agent", "claude-code", "--project", fx.project, "--availability", "explicit-only")
+			runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser")
 			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height))
 			first := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "Agent: claude-code", "browser-claude", "explicit-only (inferred)")
