@@ -1,7 +1,6 @@
 package acceptance_test
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -255,23 +254,16 @@ func opencodeEnvRun(t *testing.T, fx fixture, env []string, args ...string) comm
 	cmd := fx.command(t, ctx, args...)
 	cmd.Dir = fx.project
 	cmd.Env = append(fx.environment(), env...)
-	var out, stderr bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &stderr
-	launch := recordLaunch(t, cmd)
-	err := cmd.Run()
-	code := 0
+	result, err := executeFinalizedCommand(t, cmd)
 	if err != nil {
 		var exit *exec.ExitError
 		if !errors.As(err, &exit) {
 			t.Fatal(err)
 		}
-		code = exit.ExitCode()
 	}
 	if ctx.Err() != nil {
 		t.Fatal(ctx.Err())
 	}
-	result := commandResult{code: code, stdout: out.Bytes(), stderr: stderr.Bytes(), launch: launch}
 	recordEvidenceCommand(t, "opencode-env-cli", result)
 	return result
 }

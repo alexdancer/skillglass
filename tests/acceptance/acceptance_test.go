@@ -820,15 +820,7 @@ func (fx fixture) run(t *testing.T, args ...string) commandResult {
 	command.Dir = fx.project
 	command.Env = fx.environment()
 	command.Stdin = bytes.NewReader(nil)
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	command.Stdout = &stdout
-	command.Stderr = &stderr
-	started := time.Now()
-	launch := recordLaunch(t, command)
-	err := command.Run()
-	duration := time.Since(started)
-	result := commandResult{code: launchExitCode(err), stdout: stdout.Bytes(), stderr: stderr.Bytes(), duration: duration, launch: launch}
+	result, err := executeFinalizedCommand(t, command)
 	recordEvidenceCommand(t, "public-cli-contained", result)
 	if ctx.Err() != nil {
 		t.Fatalf("command timed out: %s %s", skillglassBinary, strings.Join(args, " "))
@@ -840,6 +832,16 @@ func (fx fixture) run(t *testing.T, args ...string) commandResult {
 		}
 	}
 	return result
+}
+
+func executeFinalizedCommand(t *testing.T, command *exec.Cmd) (commandResult, error) {
+	t.Helper()
+	var stdout, stderr bytes.Buffer
+	command.Stdout, command.Stderr = &stdout, &stderr
+	started := time.Now()
+	launch := recordLaunch(t, command)
+	err := command.Run()
+	return commandResult{code: launchExitCode(err), stdout: stdout.Bytes(), stderr: stderr.Bytes(), duration: time.Since(started), launch: launch}, err
 }
 
 func (fx fixture) environment() []string {
