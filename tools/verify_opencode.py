@@ -7,11 +7,10 @@ import json
 import os
 from pathlib import Path
 import shutil
-import signal
-import subprocess
 import tempfile
 
 from native_containment import native_profile, runtime_data_paths
+from native_receipts import recorded_run
 
 
 def main():
@@ -64,31 +63,14 @@ def main():
         original_hash = git_hash if executed == str(git_binary) else source_hash
         argv = [executed, *(['--pure'] if pure else []), *arguments]
         wrapped = ['/usr/bin/sandbox-exec','-f',str(profile),*argv]
-        invocation_hash = hashlib.sha256(Path(executed).read_bytes()).hexdigest()
-        child = subprocess.Popen(wrapped, cwd=project/'nested', env=e,
-                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                 start_new_session=True)
-        timed_out = False
-        try:
-            stdout, stderr = child.communicate(timeout=60)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-        finally:
-            # Only the newly created child process group is owned by this helper.
-            try:
-                os.killpg(child.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            stdout, stderr = child.communicate()
-        result = subprocess.CompletedProcess(wrapped, child.returncode, stdout, stderr)
+        result, receipt = recorded_run(out, label, wrapped, cwd=project/'nested', env=e,
+                                       binary=executed, profile=profile, runtime_data=runtime_data,
+                                       source={'source_binary':str(original),
+                                               'source_binary_sha256':original_hash})
         (out/(label+'.stdout')).write_bytes(result.stdout)
         (out/(label+'.stderr')).write_bytes(result.stderr)
-        receipts.append({'label':label,'argv':argv,'wrapped_argv':wrapped,
-                         'binary':executed,'binary_sha256':invocation_hash,
-                         'source_binary':str(original),'source_binary_sha256':original_hash,
-                         'environment':e,'profile':policy,'runtime_data':runtime_data,'cwd':str(project/'nested'),
-                         'pid':child.pid,'owned_process_group':child.pid,'group_cleanup':'SIGKILL to owned group, then reaped child','timed_out':timed_out,
-                         'exit':result.returncode,'stdout':label+'.stdout','stderr':label+'.stderr'})
+        receipts.append(receipt)
+        timed_out = receipt['timed_out']
         if timed_out:
             raise RuntimeError(label+' timed out; owned process group stopped')
         if result.returncode != expected:
@@ -208,7 +190,7 @@ def main():
         check('native validates rejected earlier layer before merge', True)
 
     finally:
-        (out/'receipts.json').write_text(json.dumps({'version':locals().get('version'),'git_version':locals().get('git_version'),'git_runtime':{'source':str(source_git),'sha256':git_hash,'fixture_copy':str(git_binary)},'fixture':str(base),'binary':binary,'source_binary':str(source_binary),'source_binary_sha256':source_hash,'environment':env,'profile':policy,'runtime_data':runtime_data,'network':'sandbox denies network*','write_boundary':'canonical fixture plus nonpersistent /dev/null discard','read_boundary':'fixture, exact executable and OS runtime paths; live homes and managed inputs excluded with controlled ENOENT','commands':receipts,'checks':checks,'gaps':['No inference or tool execution.','Debug skill lists raw definitions without permissions.','Concurrent collision winner cannot be generalized.','Native built-in is omitted from local bundle inventory.','Running session, remote policy, plugin hooks and writers remain unverified.','Actual system/enterprise and other user inputs excluded; fixture managed override only.','Historical outside-fixture effects remain unknown.']},indent=2)+'\n')
+        (out/'receipts.json').write_text(json.dumps({'version':locals().get('version'),'git_version':locals().get('git_version'),'git_runtime':{'source':str(source_git),'sha256':git_hash,'fixture_copy':str(git_binary)},'fixture':str(base),'binary':binary,'source_binary':str(source_binary),'source_binary_sha256':source_hash,'environment':env,'profile':policy,'runtime_data':runtime_data,'network':'sandbox denies network*','write_boundary':'canonical fixture plus nonpersistent /dev/null discard','read_boundary':'fixture, exact executable and OS runtime paths; live homes and managed inputs excluded with controlled ENOENT','commands':receipts,'invocation_journal':str(out/'invocations'),'checks':checks,'gaps':['No inference or tool execution.','Debug skill lists raw definitions without permissions.','Concurrent collision winner cannot be generalized.','Native built-in is omitted from local bundle inventory.','Running session, remote policy, plugin hooks and writers remain unverified.','Actual system/enterprise and other user inputs excluded; fixture managed override only.','Historical outside-fixture effects remain unknown.']},indent=2)+'\n')
         shutil.rmtree(base)
     print(json.dumps({'checks':len(checks),'passed':all(x['passed'] for x in checks),'out':str(out)}))
 

@@ -94,6 +94,14 @@ func TestALE35OpenCodeTerminalExplanationFilterRefreshAndScope(t *testing.T) {
 }
 
 func TestALE35InvalidConfigTerminalEvidence(t *testing.T) {
+	ale35InvalidConfigTerminalEvidence(t, `{"permission":null}`, "ale35-invalid")
+}
+
+func TestALE35InvalidAvailabilityConfigTerminalEvidence(t *testing.T) {
+	ale35InvalidConfigTerminalEvidence(t, `{"agent":{"build":{"disable":"false"}}}`, "ale35-invalid-availability")
+}
+
+func ale35InvalidConfigTerminalEvidence(t *testing.T, configText, evidenceName string) {
 	tmux, err := exec.LookPath("tmux")
 	if err != nil {
 		t.Fatal(err)
@@ -103,7 +111,7 @@ func TestALE35InvalidConfigTerminalEvidence(t *testing.T) {
 			fx, _ := codexFixture(t)
 			codexSkill(t, filepath.Join(fx.xdgConfig, "opencode", "skills"), strings.Repeat("long-folder-", 8), "invalid-input-source")
 			config := filepath.Join(fx.xdgConfig, "opencode", "opencode.json")
-			opencodeConfig(t, config, `{"permission":null}`)
+			opencodeConfig(t, config, configText)
 			before := treeManifest(t, fx.base)
 			socket := fmt.Sprintf("ale35-invalid-%d-%d", os.Getpid(), size.width)
 			defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
@@ -112,7 +120,7 @@ func TestALE35InvalidConfigTerminalEvidence(t *testing.T) {
 			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height))
 			initial := waitForPane(t, tmux, fx, socket, false, "invalid-input-source", "unknown (unknown)")
-			prefix := fmt.Sprintf("tmux/ale35-invalid/%dx%d/", size.width, size.height)
+			prefix := fmt.Sprintf("tmux/%s/%dx%d/", evidenceName, size.width, size.height)
 			capture := func(name, frame string) {
 				assertPaneCells(t, frame, size.width, size.height)
 				writeEvidence(t, prefix+name+".txt", []byte(frame))

@@ -261,7 +261,12 @@ func (in *opencodeInputs) load(path, scope string, raw []byte, required bool) {
 	} else {
 		layer.State = "loaded"
 		layer.Reason = "deep merge in native order; conflicting keys replace values without reordering existing keys"
+		before := len(in.problems)
 		in.validate(obj, path, false)
+		if len(in.problems) > before {
+			layer.State = "unknown"
+			layer.Reason = "loaded config contains unsupported or malformed interpreted fields"
+		}
 		normalizeOpencodeConfig(obj)
 		mergeOpencode(in.config, obj)
 	}
@@ -354,9 +359,7 @@ func readOpencodeInputs(request Request, ancestors []string) *opencodeInputs {
 			in.problem("skills.urls", "remote skill indexes are not fetched; cache presence cannot prove current activation or precedence")
 		}
 	}
-	if in.config.get("mode") != nil {
-		in.problem("mode", "legacy mode overrides are unverified")
-	}
+
 	return in
 }
 func (in *opencodeInputs) detectDynamic(dir string) {
@@ -591,9 +594,17 @@ func (in *opencodeInputs) validate(obj *opencodeObject, path string, agentConfig
 		permission(value)
 	}
 	if agentConfig {
-		if value, present := obj.values["hidden"]; present {
-			if _, ok := value.(bool); !ok {
-				in.problem(path, "agent hidden must be boolean")
+		for _, key := range []string{"hidden", "disable"} {
+			if value, present := obj.values[key]; present {
+				if _, ok := value.(bool); !ok {
+					in.problem(path, "agent "+key+" must be boolean")
+				}
+			}
+		}
+		if value, present := obj.values["mode"]; present {
+			mode, ok := value.(string)
+			if !ok || (mode != "subagent" && mode != "primary" && mode != "all") {
+				in.problem(path, "agent mode must be subagent, primary or all")
 			}
 		}
 	} else if value, present := obj.values["plugin"]; present {
@@ -601,7 +612,7 @@ func (in *opencodeInputs) validate(obj *opencodeObject, path string, agentConfig
 			in.problem(path, "plugin must be an array")
 		}
 	}
-	if tools := obj.get("tools"); tools != nil {
+	if tools, present := obj.values["tools"]; present {
 		if o, ok := tools.(*opencodeObject); ok {
 			for _, key := range o.keys {
 				if _, ok := o.get(key).(bool); !ok {
@@ -612,10 +623,10 @@ func (in *opencodeInputs) validate(obj *opencodeObject, path string, agentConfig
 			in.problem(path, "tools is not an object")
 		}
 	}
-	if skills := obj.get("skills"); skills != nil {
+	if skills, present := obj.values["skills"]; present && !agentConfig {
 		if o, ok := skills.(*opencodeObject); ok {
 			for _, key := range []string{"paths", "urls"} {
-				if values := o.get(key); values != nil {
+				if values, present := o.values[key]; present {
 					list, ok := values.([]any)
 					if !ok {
 						in.problem(path, "skills paths/urls is not an array")
@@ -632,7 +643,17 @@ func (in *opencodeInputs) validate(obj *opencodeObject, path string, agentConfig
 			in.problem(path, "skills is not an object")
 		}
 	}
-	if agents := obj.get("agent"); agents != nil {
+	if !agentConfig {
+		if value, present := obj.values["default_agent"]; present {
+			if _, ok := value.(string); !ok {
+				in.problem(path, "default agent must be a string")
+			}
+		}
+		if _, present := obj.values["mode"]; present {
+			in.problem(path, "legacy mode overrides are unverified")
+		}
+	}
+	if agents, present := obj.values["agent"]; present && !agentConfig {
 		if a, ok := agents.(*opencodeObject); ok {
 			for _, key := range a.keys {
 				if selected, ok := a.get(key).(*opencodeObject); ok {
