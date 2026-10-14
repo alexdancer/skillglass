@@ -1,6 +1,7 @@
 package acceptance_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -117,5 +118,116 @@ func TestALE39BrokenPluginBrowser(t *testing.T) {
 			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "q")
 		})
+	}
+}
+
+func TestALE39Review001BrowserUncertainPrecedenceRefresh(t *testing.T) {
+	tmux, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, topology := range []string{"project-plugin-home", "home-plugin-system", "lower-shared-aliases"} {
+		for _, width := range []int{48, 80} {
+			t.Run(topology+"/"+strconv.Itoa(width), func(t *testing.T) {
+				fx := codeafFixture(t)
+				pluginManifest, _ := codeafPluginFixture(t, fx)
+				scope := "project"
+				root := filepath.Join(fx.home, ".codeaf/skills")
+				if topology == "home-plugin-system" {
+					scope = "user"
+					root = filepath.Join(fx.home, ".codex/skills/.system")
+				} else if topology == "lower-shared-aliases" {
+					root = filepath.Join(fx.base, "shared")
+				}
+				lower := filepath.Dir(codexSkill(t, root, "lower-bundle", "plugin-skill"))
+				if topology == "lower-shared-aliases" {
+					for _, folder := range []string{".codeaf/skills", ".agents/skills"} {
+						alias := filepath.Join(fx.home, folder, "alias")
+						if err := os.MkdirAll(filepath.Dir(alias), 0700); err != nil {
+							t.Fatal(err)
+						}
+						if err := os.Symlink(lower, alias); err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+				plugin := filepath.Join(fx.base, "plugin")
+				registration := map[string]any{"plugins": map[string]any{"example@local": []any{map[string]any{"scope": scope, "projectPath": fx.project, "installPath": plugin, "version": "1.2"}}}}
+				raw, err := json.Marshal(registration)
+				if err != nil {
+					t.Fatal(err)
+				}
+				writeFile(t, filepath.Join(fx.home, ".claude/plugins/installed_plugins.json"), raw, 0600)
+				initial := codeafListResult(t, fx, 0)
+				pluginID := codeafPath(t, initial, filepath.Dir(pluginManifest)).ID
+				before := treeManifest(t, fx.base)
+				socket := fmt.Sprintf("ale39-review001-%s-%d-%d", topology, os.Getpid(), width)
+				defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
+				command := "exec " + shellQuote(skillglassBinary) + " browse --agent codeaf --project " + shellQuote(fx.project) + " --availability shadowed"
+				runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", strconv.Itoa(width), "-y", "30", "-s", "browser", command)
+				runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
+				runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(width), "-y", "30")
+				frame := waitForPane(t, tmux, fx, socket, false, "Focus: 1/1", "plugin-skill")
+				assertPaneCells(t, frame, width, 30)
+				send := func(key string, needles ...string) string {
+					return actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", key) }, needles...)
+				}
+				send("/", "Enter keep")
+				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "lower-bundle")
+				waitForPane(t, tmux, fx, socket, false, "Focus: 1/1")
+				send("Enter", "Enter read")
+				frame = send("Enter", "Read lines", "Availability: shadowed")
+				prefix := fmt.Sprintf("tmux/ale39-review001/%s/%d", topology, width)
+				writeEvidence(t, prefix+"/01-shadowed.txt", []byte(frame))
+				assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+				local := filepath.Join(fx.project, ".claude/settings.local.json")
+				writeFile(t, local, []byte(`{"enabledPlugins":`), 0600)
+				before = treeManifest(t, fx.base)
+				frame = send("r", "Refresh: selected directory object retained", "Read lines 1-", "Availability: unknown", "Configured permission: allowed")
+				writeEvidence(t, prefix+"/02-unknown.txt", []byte(frame))
+				rows := map[int]string{}
+				for page := 0; page < 40; page++ {
+					first, last, total, body := sourceDetailBody(t, frame)
+					for i, row := range body {
+						rows[first+i] = row
+					}
+					assertPaneCells(t, frame, width, 30)
+					writeEvidence(t, fmt.Sprintf("%s/unknown-%02d.txt", prefix, page), []byte(frame))
+					if last == total {
+						break
+					}
+					frame = actOnPane(t, tmux, fx, socket, "browser:0.0", func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "PageDown") }, func(next paneSnapshot) bool {
+						nextFirst, _, _ := sourceDetailRange(next.cells)
+						return nextFirst > first
+					}).cells
+				}
+				var body strings.Builder
+				for i := 1; i <= len(rows); i++ {
+					body.WriteString(rows[i])
+					body.WriteByte('\n')
+				}
+				for _, needle := range []string{"Precedence: unknown", "Related independent source: " + pluginID, "uncertain enablement", "Capability: disable", "persistent CodeAF-only per-skill control is unsupported"} {
+					if !paneContains(body.String(), needle) {
+						t.Fatalf("missing %q in uncertain detail:\n%s", needle, body.String())
+					}
+				}
+				if paneContains(body.String(), "Winning source:") || paneContains(body.String(), ": eligible (") {
+					t.Fatalf("uncertain detail asserts a winner:\n%s", body.String())
+				}
+				assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+				send("Escape", "0 matches", "hidden by filters")
+				send("a", "Availability filter: unavailable")
+				frame = send("a", "Availability filter: unknown", "Focus: 1/1")
+				writeEvidence(t, prefix+"/03-unknown-filter.txt", []byte(frame))
+				send("Enter", "Read lines", "Availability: unknown")
+				writeFile(t, local, []byte(`{"enabledPlugins":{"example@local":false}}`), 0600)
+				before = treeManifest(t, fx.base)
+				frame = send("r", "Refresh: selected directory object retained", "Read lines 1-", "Availability: available")
+				assertPaneCells(t, frame, width, 30)
+				writeEvidence(t, prefix+"/04-available.txt", []byte(frame))
+				assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "q")
+			})
+		}
 	}
 }

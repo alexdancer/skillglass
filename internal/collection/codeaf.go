@@ -163,7 +163,7 @@ func buildCodeAF(ctx context.Context, request Request) (*Snapshot, error) {
 	for _, rid := range snapshot.referenceOrder {
 		ref := snapshot.references[rid]
 		root, ok := inputs.roots[ref.Root]
-		if !ok || root.permission.State != PermissionAllowed || nativeReasons[ref.Source] != "" {
+		if !ok || root.permission.State == PermissionDenied || nativeReasons[ref.Source] != "" {
 			continue
 		}
 		// Ordinary roots are containers only. A plugin may name a bundle itself.
@@ -181,10 +181,10 @@ func buildCodeAF(ctx context.Context, request Request) (*Snapshot, error) {
 	winners := make(map[string]occurrence)
 	groups := make(map[string][]SourceID)
 	for _, candidate := range candidates {
-		if _, ok := winners[candidate.name]; !ok {
+		groups[candidate.name] = appendUniqueSourceIDs(groups[candidate.name], candidate.source)
+		if _, ok := winners[candidate.name]; !ok && candidate.root.permission.State == PermissionAllowed && len(groups[candidate.name]) == 1 {
 			winners[candidate.name] = candidate
 		}
-		groups[candidate.name] = appendUniqueSourceIDs(groups[candidate.name], candidate.source)
 	}
 	for _, id := range snapshot.order {
 		source := snapshot.sources[id]
@@ -215,7 +215,11 @@ func buildCodeAF(ctx context.Context, request Request) (*Snapshot, error) {
 					reason = "native ordinary roots load direct children, not a root manifest"
 				}
 				if reason == "" && root.permission.State == PermissionAllowed {
-					if winner, ok := winners[name]; ok && winner.ref == rid {
+					if winner, ok := winners[name]; !ok {
+						fact.Participation = ParticipationUnknown
+						uncertain = true
+						reason = "an earlier plugin's uncertain enablement prevents resolving this native name"
+					} else if winner.ref == rid {
 						fact.Participation = ParticipationEligible
 						eligible = true
 						reason = "first loaded definition owns the native name"
@@ -230,6 +234,9 @@ func buildCodeAF(ctx context.Context, request Request) (*Snapshot, error) {
 					reason = "registered plugin is not enabled for this context"
 				}
 				fact.Evidence = codeafEvidence(EvidenceInferred, "codeaf-native-discovery", ref.DiscoveredPath, "", reason)
+				if fact.Participation == ParticipationUnknown {
+					fact.Evidence.Kind = EvidenceUnknown
+				}
 			}
 			value.References = append(value.References, fact)
 		}
@@ -249,7 +256,7 @@ func buildCodeAF(ctx context.Context, request Request) (*Snapshot, error) {
 			} else if hasWinner && nativeReasons[id] == "" {
 				// Disabled plugin copies do not compete in native precedence.
 				for _, candidate := range candidates {
-					if candidate.source == id {
+					if candidate.source == id && candidate.root.permission.State == PermissionAllowed {
 						value.State = AvailabilityShadowed
 						value.Reason = "earlier loaded definition owns this native name"
 						precedence.State = PrecedenceShadowed
@@ -260,7 +267,11 @@ func buildCodeAF(ctx context.Context, request Request) (*Snapshot, error) {
 			}
 			if uncertain && !eligible {
 				value.State = AvailabilityUnknown
-				value.Reason = "plugin input is uncertain"
+				value.Reason = "plugin input is uncertain; native name precedence cannot establish this source as available"
+				if !hasWinner {
+					precedence.Evidence.Kind = EvidenceUnknown
+					precedence.Evidence.Reason = value.Reason
+				}
 			}
 			for _, other := range groups[name] {
 				if other != id {
