@@ -4,7 +4,7 @@
 
 ## Command contract
 
-Both verbs require `--agent codex`, explicit `--scope global`, and a source ID after all flags. Preview is the default. JSON exposes the same preview and result as text. A separately invoked confirmation rebuilds the preview from ordinary arguments. Its token acknowledges the current observations and proposed setting. The token supplies no path, patch or executable plan.
+Both verbs require `--agent codex`, an explicit `--scope`, and a source ID after all flags. Only `--scope global` permits a supported write. Preview is the default. JSON exposes the same preview and result as text. A separately invoked confirmation rebuilds the preview from ordinary arguments. Its token acknowledges the current observations and proposed setting. The token supplies no path, patch or executable plan.
 
 The native target is an absolute canonical `SKILL.md` path in user `CODEX_HOME/config.toml`, with explicit boolean `enabled`. Directory aliases share the canonical target. Independent same-name sources retain separate IDs and settings. Global setting scope is distinct from source origin. A project-origin manifest can receive a deliberately chosen global setting. A validated managed manifest can receive a precise per-skill setting. Neither operation edits project configuration, plugin activation, registrations, caches or skill content.
 
@@ -20,7 +20,7 @@ Directory locks coordinate Skillglass writers. Other editors may ignore that loc
 
 A ready preview exits 0 and changes no settings. Unsupported or refused requests exit 1. Applied results report write state, persistence, requested effective achievement and the fresh existing availability explanation. Verified persistence with a contextual blocker or unknown effective result exits 1. Explicit-only remains an enabled state with reduced automatic invocation. Unknown adoption by an existing session does not invalidate an achieved local configuration result. The tool never launches or restarts agent sessions.
 
-The browser opens a control from source detail with `d` or `e`. Scope selection requires `g` for global. `p` displays unsupported project control. The preview uses `y` for the displayed global action and Enter or Escape for cancellation. Submission runs asynchronously and prevents duplicate input. A confirmed failure or unmet result remains a non-success process exit after later browsing or cancellation. A subsequent successfully confirmed resolution can clear that outstanding result.
+The [README](../../README.md#build-and-use) owns browser controls and exit statuses. Submission runs asynchronously and prevents duplicate input.
 
 ## Native evidence
 
@@ -36,6 +36,6 @@ The public executable suite covers actual writes, byte and mode preservation, ex
 
 Real tmux sessions at 48 and 80 columns cover preview, cancellation, confirmation, stale edits, unsupported project control and process exit. A saved global enable with a higher project deny remains applied and verified, reports unmet achievement and exits 1 even after another cancellation. Narrow private tests induce staging, sync, rename, postread and cleanup failures, plus edits at the final available freshness check. The inherited-system-array guard has a narrow contract test because safely replacing host `/etc/codex/config.toml` is outside the fixture boundary. System-layer precedence remains conservatively uncertain in the existing reader.
 
-The standard checks and standalone acceptance runner use fixture `TMPDIR` and `GOTMPDIR` outside every checkout. Final evidence records exact commands, exit codes, native transcripts, built binary, terminal cells and the clean candidate commit. The local build report keeps preliminary failures separate from final results. Independent review and pipeline gates remain coordinator-owned.
+Follow the [combined-suite verification procedure](ale-24.md#reproduce-the-acceptance-evidence), including its per-worker fixture environment. Final evidence records exact commands, exit codes, native transcripts, built binary, terminal cells and the clean candidate commit. The local build report keeps preliminary failures separate from final results. Independent review and pipeline gates remain coordinator-owned.
 
-Ordinary acceptance CLI, direct PTY, tmux browsers and competing writers now share one fixture launcher. Read-only routes deny writes and child execution. Explicit mutation routes permit writes only beneath the disposable allowed root and allow the exact `/bin/ls` child required for ACL inspection. Both modes deny network and outside content, retain only exact ancestor directory handles for secure comparison traversal, and synthesize ENOENT for `/etc/codex` and `/private/etc/codex`. Owned readable config/skill canaries prove the absence rule even when inputs exist; owned outside read/write canaries exercise every launch route in both modes. Comparison fixture resources remain inside the allowance while retaining their original relationship to the selected bundle. Production discovery and the native validation boundary are unchanged.
+The [shared acceptance containment boundary](ale-23.md#runtime-containment-boundary) owns fixture-launcher restrictions, controls and limits. Production discovery and the separate native validation boundary are unchanged.

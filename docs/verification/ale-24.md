@@ -37,14 +37,17 @@ Historical ALE-23 hostile inventory and purported detail captures were byte-iden
 
 ## Reproduce the acceptance evidence
 
-Use macOS, the [README's Go toolchain and dependency setup](../../README.md#build-and-use), and `tmux` on PATH. Containment checks require macOS `sandbox-exec`; scheduler checks require Python 3.10 or later; shell lint requires `shellcheck` on PATH. Dependency downloads must already be present because the run disables Go network access. Supply a fresh absolute evidence directory so terminal captures and command receipts cannot mix with an earlier run:
+Use macOS, the [README's Go toolchain and dependency setup](../../README.md#build-and-use), and `tmux` on PATH. Containment checks require macOS `sandbox-exec`; scheduler checks require Python 3.10 or later; shell lint requires `shellcheck` on PATH. Dependency downloads must already be present because the run disables Go network access. Give each worker a dedicated `TMPDIR` and `GOTMPDIR` outside every Git checkout, so disposable homes and projects cannot inherit a repository boundary. Keep those variables set for the acceptance runner and repository checks below. Supply a fresh absolute evidence directory so terminal captures and command receipts cannot mix with an earlier run:
 
 ```sh
+TMPDIR="$(mktemp -d /private/tmp/ale-24-acceptance.XXXXXX)"
+GOTMPDIR="$TMPDIR"
+export TMPDIR GOTMPDIR
 evidence="$(pwd)/.agent-loop/ale-24-evidence-$(date +%Y%m%d-%H%M%S)"
 test ! -e "$evidence" && ./tests/acceptance/run.sh "$evidence"
 ```
 
-Inspect `cases.json`, raw PTY bytes, driven keys, pane dimensions, and current tmux cells. The acceptance driver builds the public executable and launches it with synthetic HOME, XDG, project, temporary, and current directories. Inspect fixture before/after manifests alongside command and browser receipts for source/settings immutability. The [inherited containment boundary](ale-23.md#runtime-containment-boundary) defines runtime restrictions, positive controls, and their limits.
+Inspect `cases.json`, raw PTY bytes, driven keys, pane dimensions, and current tmux cells. The acceptance driver builds the public executable and launches it with synthetic HOME, XDG, project, temporary, and current directories. Inspect fixture before/after manifests alongside command and browser receipts: read-only journeys must preserve sources and settings; mutation journeys must show only their intended changes and preserve unrelated state. The [inherited containment boundary](ale-23.md#runtime-containment-boundary) defines runtime restrictions, positive controls, and their limits.
 
 Run repository checks after the last source or documentation change:
 
