@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
 	"unicode/utf16"
@@ -357,7 +358,9 @@ func (in *geminiInputs) readTrust() {
 		if !filepath.IsAbs(rule.path) {
 			reason := "relative trusted-folder keys require an uninspected native working directory"
 			in.problem(path, reason)
-			in.scope.Gaps = append(in.scope.Gaps, reason)
+			if !slices.Contains(in.scope.Gaps, reason) {
+				in.scope.Gaps = append(in.scope.Gaps, reason)
+			}
 			in.trust = ParticipationUnknown
 			return
 		}

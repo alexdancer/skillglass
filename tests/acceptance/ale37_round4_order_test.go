@@ -82,13 +82,22 @@ func TestRound4R15OrderedNormalization(t *testing.T) {
 				}
 			}
 			if kind == "relative-unknown" {
-				found := false
+				reason := "relative trusted-folder keys require an uninspected native working directory"
+				count := 0
 				for _, gap := range list.Scope.Agent.Gaps {
-					found = found || gap == "relative trusted-folder keys require an uninspected native working directory"
+					if gap == reason {
+						count++
+					}
 				}
-				if !found {
-					t.Error("relative-key limitation is not labelled")
+				if count != 1 {
+					t.Errorf("relative-key limitation occurs %d times, want once", count)
 				}
+				ordinary := fx.run(t, "list", "--agent", "gemini", "--project", fx.project)
+				assertExit(t, ordinary, exit)
+				if count := strings.Count(string(ordinary.stdout), "Unverified: "+reason); count != 1 {
+					t.Errorf("ordinary scope repeats or omits relative-key limitation (%d):\n%s", count, ordinary.stdout)
+				}
+				assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 			}
 		})
 	}
