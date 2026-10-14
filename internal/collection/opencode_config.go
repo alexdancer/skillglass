@@ -10,6 +10,8 @@ import (
 	"os/user"
 	"path/filepath"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -38,8 +40,21 @@ func (o *opencodeObject) put(key string, value any, path string) {
 	o.values[key] = value
 	o.paths[key] = path
 }
+func opencodeArrayIndex(key string) (uint64, bool) {
+	index, err := strconv.ParseUint(key, 10, 32)
+	return index, err == nil && index < 4294967295 && strconv.FormatUint(index, 10) == key
+}
+func (o *opencodeObject) orderedKeys() []string {
+	keys := append([]string(nil), o.keys...)
+	sort.SliceStable(keys, func(i, j int) bool {
+		a, aIndex := opencodeArrayIndex(keys[i])
+		b, bIndex := opencodeArrayIndex(keys[j])
+		return aIndex && (!bIndex || a < b)
+	})
+	return keys
+}
 func mergeOpencode(target, source *opencodeObject) {
-	for _, key := range source.keys {
+	for _, key := range source.orderedKeys() {
 		old, a := target.get(key).(*opencodeObject)
 		next, b := source.get(key).(*opencodeObject)
 		if a && b {
@@ -236,7 +251,6 @@ type opencodeInputs struct {
 	uncertain            bool
 	dirs                 []string
 	home, project, cache string
-	plugins              bool
 }
 
 func (in *opencodeInputs) problem(path, reason string) {
@@ -269,6 +283,9 @@ func (in *opencodeInputs) load(path, scope string, raw []byte, required bool) {
 		}
 		normalizeOpencodeConfig(obj)
 		mergeOpencode(in.config, obj)
+		if scope != "global" {
+			in.registerPlugins(obj)
+		}
 	}
 	in.scope.ConfigLayers = append(in.scope.ConfigLayers, layer)
 }
@@ -314,6 +331,7 @@ func readOpencodeInputs(request Request, ancestors []string) *opencodeInputs {
 	for _, name := range []string{"config.json", "opencode.json", "opencode.jsonc"} {
 		in.load(filepath.Join(global, name), "global", nil, false)
 	}
+	in.registerPlugins(in.config)
 	in.detectGlobalLegacy(filepath.Join(global, "config"))
 	if raw := os.Getenv("OPENCODE_CONFIG"); raw != "" {
 		in.load(opencodePath(raw, project, home), "custom-config", nil, true)
@@ -346,6 +364,7 @@ func readOpencodeInputs(request Request, ancestors []string) *opencodeInputs {
 			in.loadPair(dir, "native-directory")
 		}
 		in.detectDynamic(dir)
+		in.detectMarkdown(dir)
 	}
 	if raw := os.Getenv("OPENCODE_CONFIG_CONTENT"); raw != "" {
 		in.load("OPENCODE_CONFIG_CONTENT", "inline", []byte(raw), true)
@@ -368,17 +387,81 @@ func readOpencodeInputs(request Request, ancestors []string) *opencodeInputs {
 	if raw := os.Getenv("OPENCODE_PERMISSION"); raw != "" {
 		in.load("OPENCODE_PERMISSION", "runtime-permission", []byte(`{"permission":`+raw+`}`), true)
 	}
-	if items, ok := in.config.get("plugin").([]any); ok && len(items) > 0 && !opencodeBool("OPENCODE_PURE") {
-		in.plugins = true
-		in.problem("plugin", "registered plugins may change configuration; hooks are never executed")
-	}
 	if skills, ok := in.config.get("skills").(*opencodeObject); ok {
 		if urls, ok := skills.get("urls").([]any); ok && len(urls) > 0 {
 			in.problem("skills.urls", "remote skill indexes are not fetched; cache presence cannot prove current activation or precedence")
 		}
 	}
 
+	normalizeOpencodeContextTools(in.config)
 	return in
+}
+func (in *opencodeInputs) registerPlugins(obj *opencodeObject) {
+	if items, ok := obj.get("plugin").([]any); ok && len(items) > 0 && !opencodeBool("OPENCODE_PURE") {
+		in.problem(obj.paths["plugin"], "registered plugin inputs may retain configuration hooks after later list replacement; hooks are never executed")
+	}
+}
+func (in *opencodeInputs) detectMarkdown(dir string) {
+	count := 0
+	for _, folder := range []string{"agent", "agents", "mode", "modes"} {
+		path := filepath.Join(dir, folder)
+		if _, err := os.Stat(path); nativeAbsent(path, err) {
+			continue
+		}
+		in.inspectMarkdown(path, folder == "agent" || folder == "agents", map[string]bool{}, &count, 0)
+	}
+}
+func (in *opencodeInputs) inspectMarkdown(path string, recursive bool, ancestors map[string]bool, count *int, depth int) {
+	if *count >= maxResourceEntries || depth > 64 {
+		in.problem(path, "native markdown metadata traversal exceeds read limit; targeting and validation are unverified")
+		return
+	}
+	*count++
+	info, err := os.Stat(path)
+	if err != nil {
+		in.problem(path, fmt.Sprintf("native markdown input cannot be inspected; targeting and validation are unverified: %v", err))
+		return
+	}
+	if !info.IsDir() {
+		in.problem(path, "native markdown input is not a directory; native acceptance is unverified")
+		return
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil || ancestors[resolved] {
+		in.problem(path, "native markdown metadata traversal cannot resolve directory aliases or cycles; coverage is unverified")
+		return
+	}
+	ancestors[resolved] = true
+	defer delete(ancestors, resolved)
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		in.problem(path, fmt.Sprintf("native markdown directory cannot be inspected; targeting and validation are unverified: %v", err))
+		return
+	}
+	for _, entry := range entries {
+		child := filepath.Join(path, entry.Name())
+		if *count >= maxResourceEntries {
+			in.problem(child, "native markdown metadata traversal exceeds read limit; targeting and validation are unverified")
+			return
+		}
+		*count++
+		markdown := strings.HasSuffix(entry.Name(), ".md")
+		if !markdown && (!recursive || (!entry.IsDir() && entry.Type()&os.ModeSymlink == 0)) {
+			continue
+		}
+		childInfo, err := os.Stat(child)
+		if err != nil {
+			in.problem(child, fmt.Sprintf("native markdown entry cannot be inspected; targeting and validation are unverified: %v", err))
+			continue
+		}
+		if childInfo.IsDir() {
+			if recursive {
+				in.inspectMarkdown(child, true, ancestors, count, depth+1)
+			}
+		} else if markdown {
+			in.problem(child, "recognized native markdown input is present; effective targeting and native acceptance are unverified; no content is executed")
+		}
+	}
 }
 func (in *opencodeInputs) detectDynamic(dir string) {
 	if opencodeBool("OPENCODE_PURE") {
@@ -391,7 +474,6 @@ func (in *opencodeInputs) detectDynamic(dir string) {
 		}
 		for _, entry := range entries {
 			if !entry.IsDir() && (strings.HasSuffix(entry.Name(), ".ts") || strings.HasSuffix(entry.Name(), ".js")) {
-				in.plugins = true
 				in.problem(filepath.Join(dir, name), "local plugin hooks are not executed; effective native state is unknown")
 				break
 			}
@@ -412,6 +494,7 @@ func opencodeWildcard(value, pattern string) bool {
 }
 
 type opencodeRule struct{ tool, pattern, action, path, setting string }
+type opencodeToolAction string
 
 func (in *opencodeInputs) rules(value any, setting string) []opencodeRule {
 	var rules []opencodeRule
@@ -426,11 +509,15 @@ func (in *opencodeInputs) rules(value any, setting string) []opencodeRule {
 		in.problem(setting, "permission must be an action or ordered object")
 		return nil
 	}
-	for _, tool := range obj.keys {
+	for _, tool := range obj.orderedKeys() {
 		if !opencodeWildcard("skill", tool) {
 			continue
 		}
 		v := obj.get(tool)
+		if action, ok := v.(opencodeToolAction); ok {
+			rules = append(rules, opencodeRule{tool: tool, pattern: "*", action: string(action), path: obj.paths[tool], setting: strings.TrimSuffix(setting, "permission") + "tools." + tool})
+			continue
+		}
 		if action, ok := v.(string); ok {
 			rules = append(rules, opencodeRule{tool: tool, pattern: "*", action: action, path: obj.paths[tool], setting: setting + "." + tool})
 			continue
@@ -440,7 +527,7 @@ func (in *opencodeInputs) rules(value any, setting string) []opencodeRule {
 			in.problem(obj.paths[tool], "skill permission has an unsupported value")
 			continue
 		}
-		for _, pattern := range patterns.keys {
+		for _, pattern := range patterns.orderedKeys() {
 			action, ok := patterns.get(pattern).(string)
 			if !ok {
 				in.problem(patterns.paths[pattern], "skill permission action is not a string")
@@ -453,17 +540,6 @@ func (in *opencodeInputs) rules(value any, setting string) []opencodeRule {
 }
 func (in *opencodeInputs) permission(name string) PermissionExplanation {
 	rules := []opencodeRule{{tool: "*", pattern: "*", action: "allow", setting: "native default"}}
-	if tools, ok := in.config.get("tools").(*opencodeObject); ok {
-		if enabled, ok := tools.get("skill").(bool); ok {
-			action := "deny"
-			if enabled {
-				action = "allow"
-			}
-			rules = append(rules, opencodeRule{tool: "skill", pattern: "*", action: action, path: tools.paths["skill"], setting: "tools.skill"})
-		} else if tools.get("skill") != nil {
-			in.problem(tools.paths["skill"], "tools.skill is not boolean")
-		}
-	}
 	rules = append(rules, in.rules(in.config.get("permission"), "permission")...)
 	agent := "build"
 	if raw := in.config.get("default_agent"); raw != nil {
@@ -495,14 +571,6 @@ func (in *opencodeInputs) permission(name string) PermissionExplanation {
 			}
 		}
 	}
-	for _, dir := range in.dirs {
-		for _, folder := range []string{"agent", "agents", "mode", "modes"} {
-			path := filepath.Join(dir, folder, agent+".md")
-			if _, err := os.Lstat(path); err == nil {
-				in.problem(path, "selected agent markdown overrides are unverified; no prompt or plugin is executed")
-			}
-		}
-	}
 	selected := rules[0]
 	for _, rule := range rules {
 		if rule.action != "allow" && rule.action != "ask" && rule.action != "deny" {
@@ -529,7 +597,31 @@ func (in *opencodeInputs) permission(name string) PermissionExplanation {
 	return PermissionExplanation{State: state, Evidence: opencodeEvidence(kind, "ordered-skill-permission", selected.path, selected.setting, reason), Layers: cloneLayers(in.scope.ConfigLayers)}
 }
 
-// Native schema normalizes permission strings and legacy agent tools before deep merge.
+func normalizeOpencodeContextTools(obj *opencodeObject) {
+	permission := newOpencodeObject()
+	if tools, ok := obj.get("tools").(*opencodeObject); ok {
+		for _, tool := range tools.orderedKeys() {
+			enabled, ok := tools.get(tool).(bool)
+			if !ok {
+				continue
+			}
+			action := opencodeToolAction("deny")
+			if enabled {
+				action = "allow"
+			}
+			key := tool
+			if key == "write" || key == "patch" {
+				key = "edit"
+			}
+			permission.put(key, action, tools.paths[tool])
+		}
+	}
+	if explicit, ok := obj.get("permission").(*opencodeObject); ok {
+		mergeOpencode(permission, explicit)
+	}
+	obj.put("permission", permission, obj.paths["permission"])
+}
+
 func normalizeOpencodeConfig(obj *opencodeObject) {
 	normalizePermission := func(o *opencodeObject) {
 		if action, ok := o.get("permission").(string); ok {
@@ -540,7 +632,7 @@ func normalizeOpencodeConfig(obj *opencodeObject) {
 	}
 	normalizePermission(obj)
 	if agents, ok := obj.get("agent").(*opencodeObject); ok {
-		for _, name := range agents.keys {
+		for _, name := range agents.orderedKeys() {
 			a, ok := agents.get(name).(*opencodeObject)
 			if !ok {
 				continue
@@ -548,12 +640,12 @@ func normalizeOpencodeConfig(obj *opencodeObject) {
 			normalizePermission(a)
 			p := newOpencodeObject()
 			if tools, ok := a.get("tools").(*opencodeObject); ok {
-				for _, tool := range tools.keys {
+				for _, tool := range tools.orderedKeys() {
 					enabled, ok := tools.get(tool).(bool)
 					if !ok {
 						continue
 					}
-					action := "deny"
+					action := opencodeToolAction("deny")
 					if enabled {
 						action = "allow"
 					}
@@ -561,7 +653,7 @@ func normalizeOpencodeConfig(obj *opencodeObject) {
 				}
 			}
 			if permission, ok := a.get("permission").(*opencodeObject); ok {
-				for _, tool := range permission.keys {
+				for _, tool := range permission.orderedKeys() {
 					p.put(tool, permission.get(tool), permission.paths[tool])
 				}
 			}
@@ -592,9 +684,9 @@ func (in *opencodeInputs) validate(obj *opencodeObject, path string, agentConfig
 			return
 		}
 		if p, ok := value.(*opencodeObject); ok {
-			for _, key := range p.keys {
+			for _, key := range p.orderedKeys() {
 				if nested, ok := p.get(key).(*opencodeObject); ok {
-					for _, pattern := range nested.keys {
+					for _, pattern := range nested.orderedKeys() {
 						if _, ok := nested.get(pattern).(string); !ok {
 							in.problem(path, "permission pattern action is invalid")
 						}
@@ -632,7 +724,7 @@ func (in *opencodeInputs) validate(obj *opencodeObject, path string, agentConfig
 	}
 	if tools, present := obj.values["tools"]; present {
 		if o, ok := tools.(*opencodeObject); ok {
-			for _, key := range o.keys {
+			for _, key := range o.orderedKeys() {
 				if _, ok := o.get(key).(bool); !ok {
 					in.problem(path, "tools values must be boolean")
 				}
@@ -673,7 +765,7 @@ func (in *opencodeInputs) validate(obj *opencodeObject, path string, agentConfig
 	}
 	if agents, present := obj.values["agent"]; present && !agentConfig {
 		if a, ok := agents.(*opencodeObject); ok {
-			for _, key := range a.keys {
+			for _, key := range a.orderedKeys() {
 				if selected, ok := a.get(key).(*opencodeObject); ok {
 					in.validate(selected, path, true)
 				} else {
