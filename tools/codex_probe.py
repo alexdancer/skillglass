@@ -50,6 +50,9 @@ class Probe:
         (self.codex_home / 'config.toml').write_text(
             '[analytics]\nenabled = false\n[feedback]\nenabled = false\n' + text)
 
+    def command(self, arguments):
+        return [self.binary, *arguments]
+
     def server(self, flags=()):
         return _Server(self, flags)
 
@@ -74,7 +77,7 @@ class _Server:
         self.probe = probe
         self.stderr = open(probe.base / f'stderr-{time.time_ns()}.txt', 'w')
         # No inference calls; caller must supply any required OS/network containment.
-        self.process = subprocess.Popen([probe.binary, 'app-server', '--stdio', *flags],
+        self.process = subprocess.Popen(probe.command(['app-server', '--stdio', *flags]),
                                         cwd=probe.cwd, env=probe.env, stdin=subprocess.PIPE,
                                         stdout=subprocess.PIPE, stderr=self.stderr, text=True, bufsize=1)
         self.queue = queue.Queue()

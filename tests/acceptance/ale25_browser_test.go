@@ -53,7 +53,7 @@ func TestALE25BrowserCompareCurrentBytesAndStaleSelection(t *testing.T) {
 			// The marked directory is still selected through discovery identity, then replaced.
 			// Neither independent replacement is an acceptable substitute for its old ID.
 			for _, p := range []string{a, b} {
-				if err := os.Rename(p, filepath.Join(fx.base, filepath.Base(p)+"-old")); err != nil {
+				if err := os.Rename(p, filepath.Join(fx.base, "allowed", filepath.Base(p)+"-old")); err != nil {
 					t.Fatal(err)
 				}
 				writeFile(t, filepath.Join(p, "SKILL.md"), []byte("---\nname: replacement\n---\nREPLACEMENT_NOT_SELECTED\n"), 0600)

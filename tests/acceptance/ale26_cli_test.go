@@ -222,8 +222,12 @@ func TestALE26NativeDiscoveryCoexistenceSharingAndExplanation(t *testing.T) {
 		}
 	}
 	for _, capability := range sharedSource.Availability.Capabilities {
-		if capability.State != "unsupported" {
-			t.Fatal("enabled a writer")
+		if capability.Operation == "enable" || capability.Operation == "disable" {
+			if capability.State != "supported" || capability.Scope != "global" {
+				t.Fatal("validated global writer missing")
+			}
+		} else if capability.State != "unsupported" {
+			t.Fatal("broadened control scope")
 		}
 	}
 	assertTreeUnchanged(t, before, treeManifest(t, fx.base))

@@ -39,6 +39,18 @@ func TestALE29ClaudeBrowserExplainsFiltersAndRefreshesWithoutWrites(t *testing.T
 				return actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", key) }, needles...)
 			}
 			send("Enter", "Read lines", "Availability: explicit-only")
+			for _, key := range []string{"e", "d"} {
+				if key == "d" {
+					send("r", "Refresh: selected directory object retained")
+				}
+				controls := send(key, "SKILLGLASS | Source", "Read lines", "Controls are unsupported")
+				assertPaneCells(t, controls, size.width, size.height)
+				if paneContains(controls, "Codex control") || paneContains(controls, "Apply global") {
+					t.Fatalf("Claude inspection exposed Codex controls: %s", controls)
+				}
+				writeEvidence(t, fmt.Sprintf("tmux/ale29/%dx%d/unsupported-control-%s.txt", size.width, size.height, key), []byte(controls))
+				assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+			}
 			collect := func(label string, needles ...string) {
 				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "g")
 				frame := waitForPane(t, tmux, fx, socket, false, "Read lines 1-")

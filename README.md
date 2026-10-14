@@ -2,11 +2,11 @@
 
 A clear view into your local agent skills.
 
-Skillglass is a Go terminal tool for browsing, reading, and comparing local agent skills. The planned product will also control skills across agent applications and show what a proposed change would affect.
+Skillglass is a Go terminal tool for browsing, reading, comparing, and controlling local agent skills. Control support varies by application and scope.
 
 ## Status
 
-The production read-only inventory, identity, and comparison slices are implemented. Skillglass discovers explicit custom and project roots, groups references only when they resolve to the same proven directory object, reports collection problems without discarding healthy sources, and exposes the same immutable snapshot through the CLI and keyboard browser. Codex and Claude Code integrations add native scope and factored local configured-availability explanations; existing-session enforcement remains unknown and all controls remain unsupported. Generic explicit-root inventory keeps unknown ownership and availability. The repository also contains the approved specification, ticket breakdown, local agent scheduler, and the [ALE-22 terminal prototype](prototypes/ale-22/README.md) that preceded the production implementation.
+The production read-only inventory, identity, and comparison slices are implemented. Skillglass discovers explicit custom and project roots, groups references only when they resolve to the same proven directory object, reports collection problems without discarding healthy sources, and exposes the same immutable snapshot through the CLI and keyboard browser. Codex and Claude Code integrations add native scope and factored local configured-availability explanations; existing-session enforcement remains unknown. Validated global Codex enable and disable controls use explicit source-bound preview and confirmation. Claude controls, project overrides and deletion remain unsupported. Generic explicit-root inventory keeps unknown ownership and availability. The repository also contains the approved specification, ticket breakdown, local agent scheduler, and the [ALE-22 terminal prototype](prototypes/ale-22/README.md) that preceded the production implementation.
 
 The project was planned as **Skill Viewer**. Existing Linear titles and historical planning documents retain that name; **Skillglass** is the product and repository name.
 
@@ -30,6 +30,7 @@ Planned integrations cover Codex, Claude Code, Hermes, Pi, OpenCode, Gemini CLI,
 - [ALE-24 verification](docs/verification/ale-24.md)
 - [ALE-25 verification](docs/verification/ale-25.md)
 - [ALE-26 Codex verification](docs/verification/ale-26.md)
+- [ALE-27 global Codex control verification](docs/verification/ale-27.md)
 - [ALE-29 Claude Code verification](docs/verification/ale-29.md)
 
 [Linear](https://linear.app/alex-dancer/project/skill-viewer-58706f175bed) holds live ticket requirements, status, and dependencies. The local copies are references.
@@ -60,9 +61,21 @@ bin/skillglass compare --root /path/to/custom --json LEFT_SOURCE_ID RIGHT_SOURCE
 bin/skillglass browse --root /path/to/custom --project /path/to/project --project-root /path/to/project-skills
 ```
 
+To change one source's global Codex choice, obtain its ID from `list`, inspect a preview, then repeat the exact request with its confirmation token:
+
+```sh
+bin/skillglass disable --agent codex --scope global --json SOURCE_ID
+bin/skillglass disable --agent codex --scope global --confirm c1:PREVIEW_TOKEN SOURCE_ID
+bin/skillglass enable --agent codex --scope global SOURCE_ID
+```
+
+Preview changes no settings. Add `--project /path/to/repository` to inspect the effective result in that project while explicitly saving a global choice. See [global Codex control behavior and limits](docs/verification/ale-27.md) for contextual blockers, persistence outcomes and unsupported scopes.
+
+In browser source detail, press `d` to disable or `e` to enable, then `g` to select global scope. Press `p` instead to inspect the unsupported project-control explanation. Inspect the paged preview. Press `y` to apply the displayed choice, or Enter or Escape to cancel. Long paths remain accessible by scrolling.
+
 `list` and `problems` accept `--source-root`, `--context all|project|custom|global|system|managed`, `--availability STATE`, and `--problem CODE`; `browse` accepts the same filters for its initial view, with search entered interactively. Use `bin/skillglass help` for supported availability values; the default is all. All supplied filters combine with AND. The source-root value must be one of the selected normalized absolute roots and never expands discovery. Search is case-insensitive. `list --search` matches source names and descriptions. `problems --search` matches problem codes, summaries, details, reported diagnostic paths, and all associated original discovery and requested-root paths. Context and source-root must match the same associated reference or root, but search may match any known provenance of that eligible problem. Availability filters match a source's overall configured state, not an individual reference's participation. Source-associated problems require a related source with that state and a reference matching the context/root filters; diagnostics without an associated source remain visible under availability filtering. Filters change the view of the selected snapshot, not its completeness or exit status. Each CLI invocation performs a fresh scan.
 
-Use a source ID from `list` as the final `read` or `explain` argument, after all scope and JSON flags. Both commands have no view filters and return the same source detail, including every known discovery reference and availability explanation; JSON identifies the requested command in `operation`. Supporting resources are inventoried recursively inside each bundle without following resource symlinks or opening resource contents. Browsing and reading never execute bundled instructions or scripts or change sources or agent settings. Human output escapes terminal controls; JSON preserves the text for programmatic use.
+Use a source ID from `list` as the final `read` or `explain` argument, after all scope and JSON flags. Both commands have no view filters and return the same source detail, including every known discovery reference and availability explanation; JSON identifies the requested command in `operation`. Supporting resources are inventoried recursively inside each bundle without following resource symlinks or opening resource contents. Browsing and reading never execute bundled instructions or scripts. Read-only inspection changes neither sources nor agent settings; browser writes require the explicit control confirmation described above. Human output escapes terminal controls; JSON preserves the text for programmatic use.
 
 Compare two IDs from `list`, with all flags before the IDs. Like `read`, `compare` accepts scope and JSON flags but no view filters. It reads current raw instructions and supporting resources, shows text differences and added/removed/changed entries, identifies binary changes without printing their bytes, and includes file-kind and mode changes. Selecting the same ID twice explains shared references to one source. Equal independent copies retain distinct identities. JSON includes `report.relation`, `report.outcome`, `report.coverage`, sorted `report.changes`, coverage `report.issues`, and both reference inventories. Completed equality or differences exit 0; incomplete comparison exits 1. Unrelated discovery-scope problems remain separate from selected-pair coverage.
 
@@ -94,7 +107,7 @@ Each affected manifest also reports one `metadata-non-finite-float` diagnostic. 
 
 A manifest that is not valid UTF-8 reports `manifest-invalid-encoding`, remains selectable with its paths and resources, and makes coverage incomplete with exit status 1. JSON preserves the complete file as standard padded base64 in `manifest.raw_bytes_base64` instead of replacing invalid bytes. Content-derived text and metadata fields are omitted for that manifest. Human output and browser detail show a recovery hint directing you to `list` or `read` with `--json`; they do not display an altered body. Valid UTF-8 output is unchanged, including a literal U+FFFD character.
 
-Exit status 0 means the requested result is complete, including an empty collection and help. Status 1 means incomplete coverage, an operational failure, or an unknown selection; useful partial output is preserved when available. On normal quit, the browser returns 1 if its current snapshot has incomplete coverage, including after an explicit refresh. Status 2 reports command usage errors.
+Exit status 0 means the requested result is complete, including an empty collection and help. Status 1 means incomplete coverage, an operational failure, an unknown selection, or an unsuccessful control request; useful partial output is preserved when available. See [control outcomes](docs/verification/ale-27.md#persistence-and-outcomes) for persistence and effective-result distinctions. On normal quit, the browser returns 1 if its current snapshot has incomplete coverage or its last confirmed control result was unsuccessful. Browsing, refresh and cancellation do not clear that control failure; a subsequent successfully confirmed change does. Status 2 reports command usage errors.
 
 ## Development workflow
 

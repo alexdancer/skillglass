@@ -317,7 +317,23 @@ func explainCodexSource(snapshot *Snapshot, id SourceID, roots map[RootID]Discov
 		if operation == "project-override" {
 			scope = "project"
 		}
-		explanation.Capabilities = append(explanation.Capabilities, Capability{Operation: operation, Scope: scope, State: "unsupported", Evidence: codexEvidence(EvidenceUnknown, "read-only-ticket", source.Directory, "", "no writers are enabled; plugin and system content requires its native manager")})
+		state := "unsupported"
+		reason := "this operation or scope has no validated writer"
+		evidenceKind := EvidenceUnknown
+		rule := "unsupported-control"
+		if operation == "enable" || operation == "disable" {
+			scope = "global"
+			source.Availability = explanation
+			if changeWriterEligible(source) {
+				state = "supported"
+				evidenceKind = EvidenceInferred
+				rule = "validated-global-manifest-control"
+				reason = "Codex 0.155.1 global canonical-manifest setting is validated; preview must validate current configuration, source identity and safe write topology"
+			} else {
+				reason = "eligible native manifest participation is required; no name, project override or plugin-level fallback"
+			}
+		}
+		explanation.Capabilities = append(explanation.Capabilities, Capability{Operation: operation, Scope: scope, State: state, Evidence: codexEvidence(evidenceKind, rule, source.Directory, "skills.config", reason)})
 	}
 	source.Availability = explanation
 	return source

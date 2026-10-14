@@ -27,9 +27,18 @@ const (
 	browserProblemDetail
 	browserScope
 	browserComparison
+	browserChangeScope
+	browserChangePreview
+	browserChangeResult
 )
 
 type browserModel struct {
+	changeChoice         collection.ControlChoice
+	changePreview        *collection.ChangePreview
+	changeOutcome        collection.ChangeOutcome
+	changeScroll         int
+	changing             bool
+	mutationFailed       bool
 	marked               collection.SourceID
 	comparison           collection.Comparison
 	comparisonGeneration uint64
@@ -158,6 +167,9 @@ func runBrowse(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	if finalModel, ok := final.(browserModel); ok {
 		snapshot = finalModel.snapshot
+		if finalModel.mutationFailed {
+			return 1
+		}
 	}
 	if !snapshot.Complete() {
 		return 1
@@ -184,6 +196,18 @@ func (model browserModel) Init() tea.Cmd {
 
 func (model browserModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := message.(type) {
+	case changeFinished:
+		model.changing = false
+		model.changeOutcome = message.outcome
+		model.mutationFailed = message.outcome.ExitCode() != 0
+		if message.outcome.Snapshot != nil {
+			model.snapshot = message.outcome.Snapshot
+			model.applyView()
+		}
+		model.mode = browserChangeResult
+		model.changeScroll = 0
+		model.feedback = ""
+		return model, nil
 	case comparisonReady:
 		if message.generation != model.comparisonGeneration || model.mode != browserComparison {
 			return model, nil
@@ -224,6 +248,9 @@ func (model browserModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return model, nil
 	case tea.KeyPressMsg:
+		if model.changing {
+			return model, nil
+		}
 		if message.String() == "ctrl+c" {
 			return model, tea.Quit
 		}
@@ -232,6 +259,9 @@ func (model browserModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if message.String() == "q" {
 			return model, tea.Quit
+		}
+		if model.mode == browserChangeScope || model.mode == browserChangePreview || model.mode == browserChangeResult {
+			return model.updateChange(message)
 		}
 		if model.mode == browserComparison {
 			return model.updateComparison(message)
@@ -347,6 +377,10 @@ func (model browserModel) updateCollection(key tea.KeyPressMsg) (tea.Model, tea.
 func (model browserModel) updateSourceDetail(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	var command tea.Cmd
 	switch key.String() {
+	case "d":
+		return model.openChange(collection.ControlDisable)
+	case "e":
+		return model.openChange(collection.ControlEnable)
 	case "esc", "left":
 		model.mode = browserSources
 	case "tab":
@@ -632,6 +666,8 @@ func (model *browserModel) setFocusEnd() {
 func (model browserModel) View() tea.View {
 	var lines []string
 	switch model.mode {
+	case browserChangeScope, browserChangePreview, browserChangeResult:
+		lines = model.changePage().layout().lines
 	case browserSourceDetail:
 		lines = model.renderSourceDetail()
 	case browserProblemDetail:
@@ -1169,10 +1205,12 @@ func (model browserModel) detailPageSize() int {
 }
 
 func (model browserModel) detailHelpLines() []string {
-	return wrapGroups(
-		[]string{"↑/↓ or j/k scroll", "PgUp/PgDn", "g/G top/end", "r refresh", "s scope", "Esc back", "q quit"},
-		model.width,
-	)
+	groups := []string{"↑/↓ or j/k scroll", "PgUp/PgDn", "g/G top/end", "r refresh", "s scope"}
+	if scope := model.snapshot.Scope(); scope.Agent != nil && scope.Agent.Application == "codex" {
+		groups = append(groups, "d Disable", "e Enable")
+	}
+	groups = append(groups, "Esc back", "q quit")
+	return wrapGroups(groups, model.width)
 }
 
 func (model browserModel) maxDetailScroll() int {

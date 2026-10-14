@@ -18,7 +18,7 @@ import (
 
 func absentSystemPolicy() string {
 	var policy strings.Builder
-	for _, path := range []string{"/Library/Application Support/ClaudeCode", "/Library/Managed Preferences", "/Library/Preferences/com.anthropic.claudecode.plist", "/etc/codex"} {
+	for _, path := range []string{"/Library/Application Support/ClaudeCode", "/Library/Managed Preferences", "/Library/Preferences/com.anthropic.claudecode.plist", "/etc/codex", "/private/etc/codex"} {
 		fmt.Fprintf(&policy, "(deny file-read* (subpath %s) (with errno ENOENT))\n", sandboxString(path))
 	}
 	return policy.String()
@@ -32,7 +32,7 @@ func ancestorReadLiterals(root string) string {
 	return filters.String()
 }
 
-func (fx fixture) seal(t *testing.T) {
+func (fx fixture) fixturePolicy(t *testing.T, writer bool) string {
 	t.Helper()
 	if runtime.GOOS != "darwin" {
 		t.Fatal("fixture containment requires Darwin sandbox-exec")
@@ -46,23 +46,35 @@ func (fx fixture) seal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	executableLiterals := " (literal " + sandboxString(product) + ") (literal " + sandboxString(probe) + ")"
+	writeRule := "(deny file-write*)"
+	if writer {
+		executableLiterals += " (literal \"/bin/ls\")"
+		writeRule = "(deny file-write* (require-not (subpath " + sandboxString(allowed) + ")))"
+	}
 	policy := fmt.Sprintf(`(version 1)
 (allow default)
 (deny network*)
-(deny file-write*)
+%s
 (deny file-read-data (require-not (require-any
- (literal %s) (literal %s) (literal "/") %s
- (subpath %s) (subpath %s)
+ %s (literal "/") %s
+ (subpath %s) (subpath %s) (subpath %s)
  (subpath "/Library/Application Support/ClaudeCode") (subpath "/Library/Managed Preferences")
- (literal "/Library/Preferences/com.anthropic.claudecode.plist") (subpath "/etc/codex")
+ (literal "/Library/Preferences/com.anthropic.claudecode.plist") (subpath "/etc/codex") (subpath "/private/etc/codex")
  (subpath "/System") (subpath "/usr/lib") (subpath "/dev"))))
 (deny file-read* (subpath %s))
-(allow file-read* (literal %s) (literal %s))
-(deny process-exec (require-not (require-any (literal %s) (literal %s))))
-`, sandboxString(product), sandboxString(probe), ancestorReadLiterals(allowed), sandboxString(allowed), sandboxString(filepath.Join(fx.base, "excluded", "system-inputs")), sandboxString(account.HomeDir), sandboxString(product), sandboxString(probe), sandboxString(product), sandboxString(probe))
+(allow file-read* (require-any %s))
+(deny process-exec (require-not (require-any %s)))
+`, writeRule, executableLiterals, ancestorReadLiterals(allowed), sandboxString(allowed), sandboxString(filepath.Join(fx.base, "excluded", "system-inputs")), sandboxString(filepath.Join(fx.base, "excluded", "controlled-system")), sandboxString(account.HomeDir), executableLiterals, executableLiterals)
 	policy += absentSystemPolicy()
 	policy += fmt.Sprintf("(deny file-read* (subpath %s) (with errno ENOENT))\n", sandboxString(filepath.Join(fx.base, "excluded", "system-inputs")))
-	writeFile(t, fx.policy, []byte(policy), 0600)
+	policy += fmt.Sprintf("(deny file-read* (subpath %s) (with errno ENOENT))\n", sandboxString(filepath.Join(fx.base, "excluded", "controlled-system")))
+	return policy
+}
+
+func (fx fixture) seal(t *testing.T) {
+	t.Helper()
+	writeFile(t, fx.policy, []byte(fx.fixturePolicy(t, false)), 0600)
 }
 
 func (fx fixture) invocation(t *testing.T, executable string, args ...string) []string {

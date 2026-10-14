@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -58,6 +59,9 @@ func recordLaunch(t *testing.T, command *exec.Cmd) *launchReceipt {
 		receipt.Executable = command.Args[3]
 		receipt.SystemInputs = "controlled absence, ENOENT; no live contents inspected"
 		receipt.ProductWrites = "denied"
+		if strings.Contains(string(profile), "(deny file-write* (require-not (subpath ") && !strings.Contains(string(profile), "(deny file-write*)") {
+			receipt.ProductWrites = "allowed only beneath the canonical disposable fixture root"
+		}
 		receipt.TmuxControl = "separate utility with explicit private socket; product payload has no network allowance"
 	}
 	receipt.Executable = resolve(receipt.Executable)
