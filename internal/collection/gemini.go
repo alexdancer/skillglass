@@ -179,8 +179,12 @@ func geminiWithin(root, path string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
+const geminiWhitespace = "\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff"
+
 var geminiFrontmatter = regexp.MustCompile(`^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n([\s\S]*))?`)
-var geminiDescriptionContinuation = regexp.MustCompile(`^[ \t]+\S`)
+var geminiNameField = regexp.MustCompile("^[" + geminiWhitespace + "]*name:[" + geminiWhitespace + "]*([^\r\n\u2028\u2029]*)$")
+var geminiDescriptionField = regexp.MustCompile("^[" + geminiWhitespace + "]*description:[" + geminiWhitespace + "]*([^\r\n\u2028\u2029]*)$")
+var geminiDescriptionContinuation = regexp.MustCompile("^[ \t]+[^" + geminiWhitespace + "]")
 var geminiNameCharacters = regexp.MustCompile(`[:\\/<>*?"|]`)
 
 func geminiNativeName(source Source) (string, Evidence, bool) {
@@ -201,12 +205,12 @@ func geminiNativeName(source Source) (string, Evidence, bool) {
 		nameOK, descriptionOK = false, false
 		lines := strings.Split(strings.ReplaceAll(match[1], "\r\n", "\n"), "\n")
 		for i := 0; i < len(lines); i++ {
-			line := strings.TrimSpace(lines[i])
-			if strings.HasPrefix(line, "name:") {
-				name = strings.TrimSpace(strings.TrimPrefix(line, "name:"))
+			if field := geminiNameField.FindStringSubmatch(lines[i]); field != nil {
+				name = strings.Trim(field[1], geminiWhitespace)
 				nameOK = true
+				continue
 			}
-			if strings.HasPrefix(line, "description:") {
+			if geminiDescriptionField.MatchString(lines[i]) {
 				descriptionOK = true
 				for i+1 < len(lines) && geminiDescriptionContinuation.MatchString(lines[i+1]) {
 					i++
