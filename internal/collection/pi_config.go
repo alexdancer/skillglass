@@ -284,6 +284,15 @@ func piMatch(path, pattern, base string, exact bool) (bool, bool) {
 		}
 		return false, true
 	}
+	if strings.ContainsAny(pattern, "?[") {
+		for _, candidate := range append(values, pattern) {
+			for _, literal := range candidate {
+				if literal > 0xffff {
+					return false, false
+				}
+			}
+		}
+	}
 	if strings.ContainsAny(pattern, "{}()\\") || strings.Contains(pattern, "//") {
 		return false, false
 	}

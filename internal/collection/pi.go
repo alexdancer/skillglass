@@ -27,7 +27,7 @@ func buildPi(ctx context.Context, request Request) (*Snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	inputs := piInputs{facts: make(map[RootID]piRootFact), scope: AgentScope{Application: "pi", ValidatedVersion: piValidatedVersion, VersionEvidence: "docs/verification/ale-33.md", Evidence: piEvidence(EvidenceInferred, "version-specific-adapter", "", "", "rules validated with installed native Pi resource manager and skill loader; current running sessions are not inspected"), Gaps: []string{"Running CLI --skill, --no-skills, trust overrides, custom SDK loaders and extension-provided resources are not observed.", "Complex minimatch braces/extglobs, package manifest glob expansion and ignore-file rules remain unknown; bounded discovery reports those cases.", "Legacy global npm installations and remote package version satisfaction are not inferred from a cache folder.", "Within one native root, discovery order follows the recorded macOS filesystem ordering; other platforms remain unvalidated.", "Standalone Markdown resources can be read; bundle comparison has incomplete coverage and deletion is unsupported.", "All writers are unavailable in this read-only ticket."}}}
+	inputs := piInputs{facts: make(map[RootID]piRootFact), scope: AgentScope{Application: "pi", ValidatedVersion: piValidatedVersion, VersionEvidence: "docs/verification/ale-33.md", Evidence: piEvidence(EvidenceInferred, "version-specific-adapter", "", "", "rules validated with installed native Pi resource manager and skill loader; current running sessions are not inspected"), Gaps: []string{"Running CLI --skill, --no-skills, trust overrides, custom SDK loaders and extension-provided resources are not observed.", "Complex minimatch braces/extglobs, package manifest glob expansion and ignore-file rules remain unknown; bounded discovery reports those cases.", "Non-exact ? and character-class patterns involving astral text remain unknown, including conservative uncertainty under astral candidate ancestors.", "Legacy global npm installations and remote package version satisfaction are not inferred from a cache folder.", "Within one native root, discovery order follows the recorded macOS filesystem ordering; other platforms remain unvalidated.", "Standalone Markdown resources can be read; bundle comparison has incomplete coverage and deletion is unsupported.", "All writers are unavailable in this read-only ticket."}}}
 	inputs.global = inputs.settings(filepath.Join(agentDir, "settings.json"), "global")
 	inputs.trust = inputs.projectTrust(request.Project, agentDir)
 	ancestors, err := piAncestors(request.Project)
@@ -163,14 +163,17 @@ func (inputs *piInputs) explain(snapshot *Snapshot, id SourceID, roots map[RootI
 			if !patternKnown {
 				problem := makeProblem(ProblemNativeInput, fact.path, "Pi resource pattern semantics are not independently validated", nil, true)
 				problem.nativeLocal = true
-				problem.RootIDs = []RootID{ref.Root}
+				problem.ReferenceIDs = []ReferenceID{rid}
 				inputs.problems = append(inputs.problems, problem)
 			}
 			if fact.uncertain || inputs.global.uncertain || !patternKnown || ignoreUnknown {
 				ra.Permission.State = PermissionUnknown
 				ra.Permission.Evidence = piEvidence(EvidenceUnknown, "unverified-native-input", fact.path, "skills", "configuration, pattern or ignore-file semantics cannot be reliably interpreted")
 				if ignoreUnknown {
-					inputs.problem(root.Path, "Pi ignore-file rules require native validation; resource availability remains unknown")
+					problem := makeProblem(ProblemNativeInput, root.Path, "Pi ignore-file rules require native validation; resource availability remains unknown", nil, true)
+					problem.nativeLocal = true
+					problem.ReferenceIDs = []ReferenceID{rid}
+					inputs.problems = append(inputs.problems, problem)
 				}
 			}
 			if source.Manifest.Status != ManifestParsed || strings.TrimSpace(source.Description) == "" || !strings.HasSuffix(source.Manifest.Path, ".md") {
