@@ -65,7 +65,7 @@ class CodexContainment:
 
     def policy(self, writer, system):
         q = lambda p: json.dumps(str(p))
-        executable = ' '.join('(literal ' + q(p) + ')' for p in self.hashes)
+        executable = ' '.join('(literal ' + q(p) + ')' for p in (*self.hashes, '/bin/ls'))
         ancestors = ' '.join('(literal ' + q(p) + ')' for p in self.root.parents)
         write = ('(deny file-write* (require-not (subpath ' + q(self.root) + ')))'
                  if writer else '(deny file-write*)')

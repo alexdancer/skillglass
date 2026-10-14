@@ -15,14 +15,14 @@ if not options.codex:
 OUT = options.out.resolve()
 OUT.mkdir(parents=True, exist_ok=True)
 PRODUCT = options.product.resolve()
-BASE = pathlib.Path(tempfile.mkdtemp(prefix='ale-27-native-', dir=OUT)).resolve()
+BASE = pathlib.Path(tempfile.mkdtemp(prefix='ale-27-native-', dir='/private/tmp')).resolve()
 FIXTURE_HOME = BASE / 'home'
 CODEX_DIR = FIXTURE_HOME / '.codex'
 REPO = BASE / 'repo'
 CWD = REPO / 'nested'
 for p in (CODEX_DIR, CWD):
     p.mkdir(parents=True)
-FIXTURE_ENV = {'HOME': str(FIXTURE_HOME), 'CODEX_HOME': str(CODEX_DIR), 'CLAUDE_CONFIG_DIR': str(FIXTURE_HOME / '.claude'), 'PATH': '/usr/bin:/bin:/usr/sbin:/sbin', 'TMPDIR': str(BASE), 'XDG_CONFIG_HOME': str(FIXTURE_HOME / '.config'), 'RUST_LOG': 'error', 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null'}
+FIXTURE_ENV = {'HOME': str(FIXTURE_HOME), 'CODEX_HOME': str(CODEX_DIR), 'CLAUDE_CONFIG_DIR': str(FIXTURE_HOME / '.claude'), 'PATH': '/usr/bin:/bin:/usr/sbin:/sbin', 'TMPDIR': str(BASE), 'GOTMPDIR': str(BASE), 'XDG_CONFIG_HOME': str(FIXTURE_HOME / '.config'), 'RUST_LOG': 'error', 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null'}
 NATIVE = pathlib.Path(options.codex).resolve()
 
 def q(p):
