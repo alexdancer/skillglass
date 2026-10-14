@@ -1,0 +1,178 @@
+"""Executable regression checks for the Codex verification launch boundary."""
+import hashlib
+import importlib.util
+import json
+import os
+import pathlib
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from types import SimpleNamespace
+from unittest import mock
+
+REPOSITORY = pathlib.Path(__file__).resolve().parents[2]
+
+INERT = '''package main
+import ("bufio"; "encoding/json"; "os")
+func main() {
+ cwd, _ := os.Getwd()
+ scanner := bufio.NewScanner(os.Stdin)
+ for scanner.Scan() {
+  var request map[string]any
+  json.Unmarshal(scanner.Bytes(), &request)
+  if id, ok := request["id"]; ok {
+   json.NewEncoder(os.Stdout).Encode(map[string]any{"id": id, "result": map[string]any{
+    "argv": os.Args, "cwd": cwd, "environment": os.Environ()}})
+  }
+ }
+}
+'''
+
+
+def load(name):
+    spec = importlib.util.spec_from_file_location(name, REPOSITORY / 'tools' / (name + '.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class CodexBoundary(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.temporary = tempfile.TemporaryDirectory(prefix='codex-boundary-test-', dir=REPOSITORY)
+        cls.build = pathlib.Path(cls.temporary.name).resolve()
+        cls.probe = cls.build / 'isolation-probe'
+        cls.native = cls.build / 'inert-codex'
+        source = cls.build / 'inert.go'
+        source.write_text(INERT)
+        go = shutil.which('go')
+        if not go:
+            raise RuntimeError('Go unavailable on PATH; isolation probe build blocked')
+        environment = {'PATH': os.environ['PATH'], 'HOME': str(cls.build),
+                       'TMPDIR': str(cls.build), 'GOTMPDIR': str(cls.build),
+                       'GOCACHE': str(cls.build / 'cache'), 'GOPROXY': 'off',
+                       'GOSUMDB': 'off', 'GOTOOLCHAIN': 'local', 'GOWORK': 'off'}
+        for target, path in [(cls.probe, './tests/acceptance/cmd/isolationprobe'),
+                             (cls.native, str(source))]:
+            subprocess.run([go, 'build', '-o', str(target), path], cwd=REPOSITORY,
+                           env=environment, check=True, capture_output=True, timeout=120)
+        cls.module = load('codex_containment')
+        cls.transport = load('codex_probe')
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.temporary.cleanup()
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(dir=self.build)
+        self.addCleanup(self.temp.cleanup)
+        self.output = pathlib.Path(self.temp.name)
+        self.root = self.output / 'fixture'
+        self.cwd = self.root / 'repo/nested'
+        self.cwd.mkdir(parents=True)
+        self.product = pathlib.Path('/bin/echo').resolve()
+        self.environment = {'HOME': str(self.root / 'home'),
+                            'CODEX_HOME': str(self.root / 'home/.codex'),
+                            'CLAUDE_CONFIG_DIR': str(self.root / 'home/.claude'),
+                            'XDG_CONFIG_HOME': str(self.root / 'home/.config'),
+                            'TMPDIR': str(self.root), 'PATH': '/usr/bin:/bin',
+                            'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null'}
+        pathlib.Path(self.environment['CODEX_HOME']).mkdir(parents=True)
+
+    def boundary(self, probe=None):
+        with mock.patch.object(self.module, 'PINNED_NATIVE_SHA256', self.module.digest(self.native)):
+            return self.module.CodexContainment(self.root, self.cwd, self.environment,
+                                                self.native, self.product,
+                                                probe or self.probe, self.output)
+
+    def test_public_runner_rejects_unpinned_binary_before_execution(self):
+        untrusted = self.output / 'untrusted-codex'
+        marker = self.output / 'executed'
+        untrusted.write_text('#!/bin/sh\ntouch ' + str(marker) + '\necho "codex-cli 0.155.1"\n')
+        untrusted.chmod(0o700)
+        output = self.output / 'runner-output'
+        argv = [sys.executable, str(REPOSITORY / 'tools/verify_codex_control.py'),
+                '--codex', str(untrusted), '--product', str(self.product),
+                '--isolation-probe', str(self.probe), '--out', str(output)]
+        result = subprocess.run(argv, cwd=REPOSITORY, capture_output=True, text=True,
+                                timeout=10, env=dict(os.environ, PYTHONDONTWRITEBYTECODE='1'))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('does not match the pinned 0.155.1 SHA256', result.stderr)
+        self.assertFalse(marker.exists())
+        self.assertEqual(list(output.glob('invocation-*.json')), [])
+
+    def test_both_modes_prove_containment_before_native_launch(self):
+        boundary = self.boundary()
+        controls = json.loads((self.output / 'containment.json').read_bytes())
+        self.assertTrue(all(controls['positive'].values()))
+        self.assertEqual([row['writer'] for row in controls['contained']], [False, False, True, True])
+        for row in controls['contained']:
+            self.assertEqual(json.loads(row['stdout'])['checks'],
+                             dict.fromkeys(self.module.CONTROL_NAMES, True))
+        self.assertTrue(boundary.ready)
+        self.assertFalse((boundary.controls / 'outside-write').exists())
+        self.assertFalse((boundary.controls / 'symlink-write').exists())
+
+    def test_failed_controls_refuse_native_execution(self):
+        with self.assertRaisesRegex(RuntimeError, 'containment controls failed'):
+            self.boundary(probe=pathlib.Path('/usr/bin/false'))
+        for receipt in self.output.glob('invocation-*.json'):
+            self.assertNotEqual(json.loads(receipt.read_bytes())['binary'], str(self.native))
+
+    def test_server_and_product_use_sealed_final_contexts(self):
+        boundary = self.boundary()
+        boundary.initialize_git(self.root / 'repo')
+        self.assertTrue((self.root / 'repo/.git').is_dir())
+        probe = SimpleNamespace(base=self.root, cwd=self.cwd, env=boundary.environment,
+                                command=boundary.native_command, results={})
+        server = self.transport._Server(probe, ())
+        try:
+            response = server.call('skills/list', {'cwds': [str(self.cwd)]})['result']
+        finally:
+            server.close()
+        receipt = pathlib.Path(boundary.calls[-1]['receipt'])
+        raw = receipt.read_bytes()
+        context = json.loads(raw)
+        self.assertEqual(response['argv'], context['argv'][3:])
+        self.assertEqual(response['cwd'], context['cwd'])
+        self.assertEqual(dict(item.split('=', 1) for item in response['environment']),
+                         context['environment'])
+        self.assertEqual(hashlib.sha256(raw).hexdigest(), boundary.calls[-1]['sha256'])
+        self.assertEqual(context['binary_sha256'], self.module.digest(self.native))
+        self.assertEqual(context['profile_sha256'], self.module.digest(pathlib.Path(context['profile'])))
+        argv = boundary.command(self.product, [], writer=False)
+        product_receipt = pathlib.Path(boundary.calls[-1]['receipt'])
+        self.assertEqual(json.loads(product_receipt.read_bytes())['argv'], argv)
+        result = subprocess.run(argv, cwd=boundary.cwd, env=boundary.environment, timeout=10)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(receipt.read_bytes(), raw)
+        self.assertEqual(receipt.stat().st_mode & 0o777, 0o400)
+        self.assertEqual(product_receipt.stat().st_mode & 0o777, 0o400)
+
+    def test_changed_profile_refuses_launch(self):
+        boundary = self.boundary()
+        profile = boundary.profiles[True]
+        profile.chmod(0o600)
+        profile.write_text('(version 1)\n(allow default)\n')
+        count = len(boundary.calls)
+        with self.assertRaisesRegex(RuntimeError, 'sealed profile changed'):
+            boundary.command(self.native, ['--version'])
+        self.assertEqual(len(boundary.calls), count)
+
+    def test_changed_binary_refuses_launch(self):
+        native = self.output / 'native-copy'
+        shutil.copyfile(self.native, native)
+        native.chmod(0o700)
+        with mock.patch.object(self, 'native', native):
+            boundary = self.boundary()
+            native.write_bytes(b'changed executable')
+            count = len(boundary.calls)
+            with self.assertRaisesRegex(RuntimeError, 'sealed executable changed'):
+                boundary.command(self.native, ['--version'])
+            self.assertEqual(len(boundary.calls), count)
+
+
+if __name__ == '__main__':
+    unittest.main()

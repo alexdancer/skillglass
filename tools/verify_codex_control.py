@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Prove product global Codex writes with disposable offline native inspection."""
-import argparse, hashlib, json, os, pathlib, shlex, shutil, subprocess, tempfile
+import argparse, hashlib, json, pathlib, shutil, subprocess, tempfile
+from codex_containment import CodexContainment
 from codex_probe import _Server
 from types import SimpleNamespace
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--codex', default=shutil.which('codex'))
 parser.add_argument('--product', type=pathlib.Path, required=True)
+parser.add_argument('--isolation-probe', type=pathlib.Path, required=True)
 parser.add_argument('--out', type=pathlib.Path, required=True)
 options = parser.parse_args()
 if not options.codex:
@@ -13,30 +15,26 @@ if not options.codex:
 OUT = options.out.resolve()
 OUT.mkdir(parents=True, exist_ok=True)
 PRODUCT = options.product.resolve()
-ORIGINAL_HOME = pathlib.Path(os.environ['HOME']).resolve()
-BASE = pathlib.Path(tempfile.mkdtemp(prefix='ale-27-native-', dir='/private/tmp')).resolve()
+BASE = pathlib.Path(tempfile.mkdtemp(prefix='ale-27-native-', dir=OUT)).resolve()
 FIXTURE_HOME = BASE / 'home'
 CODEX_DIR = FIXTURE_HOME / '.codex'
 REPO = BASE / 'repo'
 CWD = REPO / 'nested'
 for p in (CODEX_DIR, CWD):
     p.mkdir(parents=True)
-FIXTURE_ENV = {'HOME': str(FIXTURE_HOME), 'CODEX_HOME': str(CODEX_DIR), 'PATH': '/usr/bin:/bin:/usr/sbin:/sbin', 'TMPDIR': str(BASE), 'XDG_CONFIG_HOME': str(FIXTURE_HOME / '.config'), 'RUST_LOG': 'error'}
+FIXTURE_ENV = {'HOME': str(FIXTURE_HOME), 'CODEX_HOME': str(CODEX_DIR), 'CLAUDE_CONFIG_DIR': str(FIXTURE_HOME / '.claude'), 'PATH': '/usr/bin:/bin:/usr/sbin:/sbin', 'TMPDIR': str(BASE), 'XDG_CONFIG_HOME': str(FIXTURE_HOME / '.config'), 'RUST_LOG': 'error', 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null'}
 NATIVE = pathlib.Path(options.codex).resolve()
 
 def q(p):
     return json.dumps(str(p))
-PROFILE = BASE / 'native.sb'
-PROFILE.write_text('(version 1)\n(allow default)\n(deny network*)\n(deny file-write* (require-not (subpath ' + q(BASE) + ')))\n(deny file-read-data (require-all (subpath ' + q(ORIGINAL_HOME) + ') (require-not (require-any (literal ' + q(NATIVE) + ') (literal ' + q(PRODUCT) + ')))))\n(deny file-read-data (subpath "/etc/codex"))\n')
-WRAPPER = BASE / 'codex-isolated'
-WRAPPER.write_text('#!/bin/sh\nexec /usr/bin/sandbox-exec -f ' + shlex.quote(str(PROFILE)) + ' ' + shlex.quote(str(NATIVE)) + ' "$@"\n')
-WRAPPER.chmod(448)
-subprocess.run(['/usr/bin/git', 'init', '-q', str(REPO)], env=FIXTURE_ENV, check=True)
-RESULTS = {'root': str(BASE), 'native': str(NATIVE), 'environment': FIXTURE_ENV, 'profile': PROFILE.read_text(), 'cases': []}
-VERSION = subprocess.check_output([str(WRAPPER), '--version'], env=FIXTURE_ENV, text=True).strip()
+BOUNDARY = CodexContainment(BASE, CWD, FIXTURE_ENV, NATIVE, PRODUCT, options.isolation_probe, OUT)
+FIXTURE_ENV = BOUNDARY.environment
+BOUNDARY.initialize_git(REPO)
+RESULTS = {'root': str(BASE), 'native': str(NATIVE), 'environment': dict(FIXTURE_ENV), 'profiles': {str(writer): profile.read_text() for writer, profile in BOUNDARY.profiles.items()}, 'invocations': BOUNDARY.calls, 'cases': []}
+VERSION = subprocess.check_output(BOUNDARY.command(NATIVE, ['--version'], writer=False), cwd=CWD, env=FIXTURE_ENV, text=True).strip()
 RESULTS['version'] = VERSION
 assert VERSION == 'codex-cli 0.155.1', VERSION
-PROBE = SimpleNamespace(base=BASE, cwd=CWD, env=FIXTURE_ENV, binary=str(WRAPPER), results=RESULTS)
+PROBE = SimpleNamespace(base=BASE, cwd=CWD, env=FIXTURE_ENV, command=BOUNDARY.native_command, results=RESULTS)
 
 def skill(root, folder, name):
     d = root / folder
@@ -65,7 +63,7 @@ def inspect(label):
         s.close()
 
 def product(args, want=0):
-    argv = ['/usr/bin/sandbox-exec', '-f', str(PROFILE), str(PRODUCT), *args]
+    argv = BOUNDARY.command(PRODUCT, args, writer='--confirm' in args)
     p = subprocess.run(argv, cwd=CWD, env=FIXTURE_ENV, text=True, capture_output=True)
     RESULTS['productCommands'].append({'argv': argv, 'exit': p.returncode, 'stdout': p.stdout, 'stderr': p.stderr})
     assert p.returncode == want, (args, p.returncode, p.stdout, p.stderr)
