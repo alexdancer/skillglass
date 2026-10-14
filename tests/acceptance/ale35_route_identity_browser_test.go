@@ -32,11 +32,10 @@ func TestALE35RouteIdentityTerminal(t *testing.T) {
 				ale35PreserveInputs(t, fx, "overlap", env, before)
 				socket := fmt.Sprintf("ale35-routes-%d-%s-%d", os.Getpid(), label, size.width)
 				defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-				line := shellQuote(skillglassBinary) + " browse --agent opencode --project " + shellQuote(fx.project) + " --context global --source-root " + shellQuote(filepath.Join(fx.home, ".agents", "skills")) + "; code=$?; printf '\nROUTE_BROWSER_EXIT=%s\n' \"$code\"; /bin/sleep 30"
-				if disabled {
-					line = "OPENCODE_DISABLE_EXTERNAL_SKILLS=1 " + line
-				}
-				runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser", line)
+				command := fx.productCommand(t, "browse", "--agent", "opencode", "--project", fx.project, "--context", "global", "--source-root", filepath.Join(fx.home, ".agents", "skills"))
+				command.Env = append(fx.environment(), env...)
+				runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser")
+				runTmux(t, tmux, fx, socket, "set-option", "-w", "-t", "browser:0", "remain-on-exit", "on")
 				runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 				runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height))
 				state := "ask"
@@ -78,13 +77,13 @@ func TestALE35RouteIdentityTerminal(t *testing.T) {
 				var exit string
 				deadline := time.Now().Add(5 * time.Second)
 				for time.Now().Before(deadline) {
-					exit = capturePane(t, tmux, fx, socket, false)
-					if strings.Contains(exit, "ROUTE_BROWSER_EXIT=0") {
+					exit = strings.TrimSpace(runTmux(t, tmux, fx, socket, "display-message", "-p", "-t", "browser:0.0", "#{pane_dead}:#{pane_dead_status}"))
+					if exit == "1:0" {
 						break
 					}
 					time.Sleep(25 * time.Millisecond)
 				}
-				if !strings.Contains(exit, "ROUTE_BROWSER_EXIT=0") {
+				if exit != "1:0" {
 					t.Fatalf("browser did not quit normally: %s", exit)
 				}
 				writeEvidence(t, prefix+"exit.txt", []byte(exit))

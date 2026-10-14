@@ -190,7 +190,7 @@ func TestALE35EmptyConfigControls(t *testing.T) {
 				opencodeConfig(t, path, tc.content)
 			}
 			if tc.name == "unreadable-zero-file" {
-				policyPath := filepath.Join(fx.base, "allowed", "fixture.sb")
+				policyPath := fx.policy
 				policy, err := os.ReadFile(policyPath)
 				if err != nil {
 					t.Fatal(err)

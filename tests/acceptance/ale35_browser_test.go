@@ -25,8 +25,8 @@ func TestALE35OpenCodeTerminalExplanationFilterRefreshAndScope(t *testing.T) {
 			before := treeManifest(t, fx.base)
 			socket := fmt.Sprintf("ale35-%d-%d", os.Getpid(), size.width)
 			defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-			command := "exec " + shellQuote(skillglassBinary) + " browse --agent opencode --project " + shellQuote(fx.project) + " --availability ask"
-			runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser", command)
+			command := fx.productCommand(t, "browse", "--agent", "opencode", "--project", fx.project, "--availability", "ask")
+			runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser")
 			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height))
 			pane := waitForPane(t, tmux, fx, socket, false, "Agent: opencode", "browser-opencode", "ask (inferred)")
@@ -123,8 +123,8 @@ func ale35UnknownConfigTerminalEvidence(t *testing.T, configText, evidenceName, 
 			before := treeManifest(t, fx.base)
 			socket := fmt.Sprintf("ale35-invalid-%d-%d", os.Getpid(), size.width)
 			defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-			line := "exec " + shellQuote(skillglassBinary) + " browse --agent opencode --project " + shellQuote(fx.project) + " --availability unknown"
-			runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser", line)
+			command := fx.productCommand(t, "browse", "--agent", "opencode", "--project", fx.project, "--availability", "unknown")
+			runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser")
 			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height))
 			initial := waitForPane(t, tmux, fx, socket, false, "invalid-input-source", "unknown (unknown)")

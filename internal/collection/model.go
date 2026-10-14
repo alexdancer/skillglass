@@ -75,11 +75,12 @@ type DiscoveryRoot struct {
 }
 
 type Request struct {
-	Project   ProjectContext
-	Roots     []DiscoveryRoot
-	Agent     string
-	home      string
-	codexHome string
+	Project    ProjectContext
+	Roots      []DiscoveryRoot
+	Agent      string
+	home       string
+	codexHome  string
+	claudeHome string
 }
 
 func NewRequest(rawRoots, rawProjectRoots []string, rawProject *string) (Request, error) {
@@ -87,8 +88,8 @@ func NewRequest(rawRoots, rawProjectRoots []string, rawProject *string) (Request
 }
 
 func NewRequestWithAgent(rawRoots, rawProjectRoots []string, rawProject *string, agent string) (Request, error) {
-	if agent != "" && agent != "codex" && agent != "opencode" {
-		return Request{}, fmt.Errorf("unknown agent %q; use codex or opencode", agent)
+	if agent != "" && agent != "codex" && agent != "opencode" && agent != "claude-code" {
+		return Request{}, fmt.Errorf("unknown agent %q; use codex, claude-code or opencode", agent)
 	}
 	request := Request{Roots: make([]DiscoveryRoot, 0, len(rawRoots)+len(rawProjectRoots))}
 	if rawProject != nil {
@@ -139,6 +140,9 @@ func NewRequestWithAgent(rawRoots, rawProjectRoots []string, rawProject *string,
 		}
 		if agent == "codex" {
 			request.codexHome = codexHome(request.home)
+		}
+		if agent == "claude-code" {
+			request.claudeHome = claudeHome(request.home)
 		}
 	}
 	return request, nil
@@ -356,7 +360,7 @@ type Snapshot struct {
 }
 
 func Build(ctx context.Context, request Request) (*Snapshot, error) {
-	if request.Agent != "" && request.Agent != "codex" && request.Agent != "opencode" {
+	if request.Agent != "" && request.Agent != "codex" && request.Agent != "opencode" && request.Agent != "claude-code" {
 		return nil, fmt.Errorf("unknown agent %q", request.Agent)
 	}
 	if (request.Agent != "" && request.home == "") || (request.Agent == "codex" && request.codexHome == "") {
@@ -378,6 +382,9 @@ func Build(ctx context.Context, request Request) (*Snapshot, error) {
 	}
 	if request.Agent == "codex" {
 		return buildCodex(ctx, request)
+	}
+	if request.Agent == "claude-code" {
+		return buildClaude(ctx, request)
 	}
 	return discover(ctx, request)
 }

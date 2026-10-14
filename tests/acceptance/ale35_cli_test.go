@@ -252,12 +252,13 @@ func opencodeEnvRun(t *testing.T, fx fixture, env []string, args ...string) comm
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, skillglassBinary, args...)
+	cmd := fx.command(t, ctx, args...)
 	cmd.Dir = fx.project
 	cmd.Env = append(fx.environment(), env...)
 	var out, stderr bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &stderr
+	launch := recordLaunch(t, cmd)
 	err := cmd.Run()
 	code := 0
 	if err != nil {
@@ -270,8 +271,8 @@ func opencodeEnvRun(t *testing.T, fx fixture, env []string, args ...string) comm
 	if ctx.Err() != nil {
 		t.Fatal(ctx.Err())
 	}
-	result := commandResult{code: code, stdout: out.Bytes(), stderr: stderr.Bytes()}
-	recordEvidenceCommand(t, "opencode-env-cli", skillglassBinary, args, fx.project, result)
+	result := commandResult{code: code, stdout: out.Bytes(), stderr: stderr.Bytes(), launch: launch}
+	recordEvidenceCommand(t, "opencode-env-cli", result)
 	return result
 }
 func TestALE35OpenCodeRuntimeLayersAndFlags(t *testing.T) {

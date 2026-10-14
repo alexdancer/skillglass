@@ -99,7 +99,7 @@ func ale35PreserveInputs(t *testing.T, fx fixture, name string, env []string, ma
 	if err != nil {
 		t.Fatal(err)
 	}
-	profilePath := filepath.Join(fx.base, "allowed", "fixture.sb")
+	profilePath := fx.policy
 	profile, err := os.ReadFile(profilePath)
 	if err != nil {
 		t.Fatal(err)
@@ -116,11 +116,7 @@ func ale35PreserveInputs(t *testing.T, fx fixture, name string, env []string, ma
 		t.Fatal(err)
 	}
 	writeEvidence(t, prefix+"invocation.json", receipt)
-	launcher, err := os.ReadFile(skillglassBinary)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeEvidence(t, prefix+"launcher.sh", launcher)
+
 }
 
 func TestALE35OrderedInputNumericEnumeration(t *testing.T) {
@@ -360,8 +356,8 @@ func TestALE35OrderedInputMarkdownBoundary(t *testing.T) {
 				if route == "metadata-denied" {
 					denied = filepath.Join(fx.base, "allowed", "private")
 				}
-				policy := fixtureProfile(canonicalPath(t, fx.base), canonicalPath(t, skillglassExecutable)) + "\n(deny file-read* (subpath " + sandboxString(denied) + "))\n"
-				writeFile(t, filepath.Join(fx.base, "allowed", "fixture.sb"), []byte(policy), 0600)
+				policy := string(mustReadFixturePolicy(t, fx)) + "\n(deny file-read* (subpath " + sandboxString(denied) + "))\n"
+				writeFile(t, fx.policy, []byte(policy), 0600)
 				writeEvidence(t, "markdown/"+route+"-injected-EPERM.sb", []byte(policy))
 				if route == "directory-denied" {
 					path = denied

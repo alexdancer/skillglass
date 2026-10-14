@@ -33,20 +33,9 @@ func TestFixtureLaunchContainment(t *testing.T) {
 	if !positive["write_succeeds_without_sandbox"] || !positive["loopback_succeeds_without_sandbox"] {
 		t.Fatal(positive)
 	}
-	raw := canonicalPath(t, isolationProbeBinary)
-	wrapper, err := fixtureLauncher(raw, fx.temporary)
-	if err != nil {
-		t.Fatal(err)
-	}
-	profile := filepath.Join(fx.base, "allowed", "fixture.sb")
-	policy := fixtureProfile(canonicalPath(t, fx.base), raw)
-	writeFile(t, profile, []byte(policy), 0600)
-	writeEvidence(t, "fixture-launch/fixture.sb", []byte(policy))
-	launcher, err := os.ReadFile(wrapper)
-	if err != nil {
-		t.Fatal(err)
-	}
-	writeEvidence(t, "fixture-launch/launcher.sh", launcher)
+	profile := fx.policy
+	policy := mustReadFixturePolicy(t, fx)
+	writeEvidence(t, "fixture-launch/fixture.sb", policy)
 	args := []string{"--absence", allowed, excluded, blocked, listener.Addr().String()}
 	verify := func(data []byte) {
 		t.Helper()
@@ -62,7 +51,7 @@ func TestFixtureLaunchContainment(t *testing.T) {
 		}
 	}
 	original := skillglassBinary
-	skillglassBinary = wrapper
+	skillglassBinary = isolationProbeBinary
 	defer func() { skillglassBinary = original }()
 	result := fx.run(t, args...)
 	assertExit(t, result, 0)
@@ -78,7 +67,7 @@ func TestFixtureLaunchContainment(t *testing.T) {
 	assertExit(t, aliasResult, 0)
 	verify(aliasResult.stdout)
 	writeEvidence(t, "fixture-launch/symlink.json", aliasResult.stdout)
-	command := exec.Command(wrapper, args...)
+	command := fx.productCommand(t, args...)
 	command.Dir = fx.project
 	command.Env = fx.environment()
 	terminal, err := pty.Start(command)
@@ -98,22 +87,22 @@ func TestFixtureLaunchContainment(t *testing.T) {
 	}
 	socket := fmt.Sprintf("fixture-control-%d", os.Getpid())
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-	line := shellQuote(wrapper)
-	for _, arg := range args {
-		line += " " + shellQuote(arg)
-	}
-	line += "; /bin/sleep 30"
-	runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", strconv.Itoa(160), "-y", "24", "-s", "browser", line)
+	runTmuxProduct(t, tmux, fx, socket, fx.productCommand(t, args...), "new-session", "-d", "-x", strconv.Itoa(160), "-y", "80", "-s", "browser")
+	runTmux(t, tmux, fx, socket, "set-option", "-w", "-t", "browser:0", "remain-on-exit", "on")
 	var pane string
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		pane = capturePane(t, tmux, fx, socket, true)
+		pane = runTmux(t, tmux, fx, socket, "capture-pane", "-p", "-J", "-S", "-", "-t", "browser:0.0")
 		if strings.Contains(pane, `"passed":true`) {
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	verify([]byte(pane))
+	start, end := strings.Index(pane, "{\"passed\":"), strings.LastIndex(pane, "}")
+	if start < 0 || end < start {
+		t.Fatalf("probe output missing: %s", pane)
+	}
+	verify([]byte(pane[start : end+1]))
 	writeEvidence(t, "fixture-launch/tmux.json", []byte(pane))
 	assertNoSandboxedConnection(t, listener)
 	if _, err := os.Stat(blocked); !os.IsNotExist(err) {

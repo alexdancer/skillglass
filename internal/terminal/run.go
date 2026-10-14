@@ -20,7 +20,7 @@ const usage = `Usage:
   skillglass browse [SCOPE]
 
 Scope:
-  --agent APPLICATION  codex or opencode; inferred native scope and availability
+  --agent APPLICATION  codex, claude-code or opencode; inferred native scope and availability
   --root ROOT          custom discovery root; repeatable
   --project PROJECT    selected project context
   --project-root ROOT  discovery root associated with --project; repeatable
@@ -63,7 +63,7 @@ type commonOptions struct {
 }
 
 func (options *commonOptions) bind(flags *flag.FlagSet, includeFilters, includeJSON bool) {
-	flags.StringVar(&options.agent, "agent", "", "selected agent application (codex or opencode)")
+	flags.StringVar(&options.agent, "agent", "", "selected agent application (codex, claude-code or opencode)")
 	flags.Var(&options.roots, "root", "explicit custom discovery root; repeatable")
 	flags.Var(&options.projectRoots, "project-root", "explicit project-associated discovery root; repeatable")
 	flags.Var(&options.project, "project", "selected project context")

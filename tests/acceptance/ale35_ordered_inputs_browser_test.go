@@ -62,11 +62,10 @@ func TestALE35OrderedInputTerminal(t *testing.T) {
 				ale35PreserveInputs(t, fx, tc.skill, env, before)
 				socket := fmt.Sprintf("ale35-ordered-%d-%s-%d", os.Getpid(), tc.name, size.width)
 				defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-				line := shellQuote(skillglassBinary) + " browse --agent opencode --project " + shellQuote(fx.project) + "; code=$?; printf '\\nORDERED_BROWSER_EXIT=%s\\n' \"$code\"; /bin/sleep 30"
-				if len(env) != 0 {
-					line = "OPENCODE_CONFIG_DIR=" + shellQuote(strings.TrimPrefix(env[0], "OPENCODE_CONFIG_DIR=")) + " " + line
-				}
-				runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser", line)
+				command := fx.productCommand(t, "browse", "--agent", "opencode", "--project", fx.project)
+				command.Env = append(fx.environment(), env...)
+				runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser")
+				runTmux(t, tmux, fx, socket, "set-option", "-w", "-t", "browser:0", "remain-on-exit", "on")
 				runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 				runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height))
 				kind := "inferred"
@@ -88,13 +87,13 @@ func TestALE35OrderedInputTerminal(t *testing.T) {
 				var exit string
 				deadline := time.Now().Add(5 * time.Second)
 				for time.Now().Before(deadline) {
-					exit = capturePane(t, tmux, fx, socket, false)
-					if strings.Contains(exit, "ORDERED_BROWSER_EXIT="+expectedExit) {
+					exit = strings.TrimSpace(runTmux(t, tmux, fx, socket, "display-message", "-p", "-t", "browser:0.0", "#{pane_dead}:#{pane_dead_status}"))
+					if exit == "1:"+expectedExit {
 						break
 					}
 					time.Sleep(25 * time.Millisecond)
 				}
-				if !strings.Contains(exit, "ORDERED_BROWSER_EXIT="+expectedExit) {
+				if exit != "1:"+expectedExit {
 					t.Fatalf("unexpected browser exit: %s", exit)
 				}
 				writeEvidence(t, prefix+"exit.txt", []byte(exit))

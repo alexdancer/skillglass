@@ -17,6 +17,10 @@ type result struct {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "fixture-policy" {
+		fixturePolicy()
+		return
+	}
 	absence := len(os.Args) == 6 && os.Args[1] == "--absence"
 	if absence {
 		os.Args = append(os.Args[:1], os.Args[2:]...)
