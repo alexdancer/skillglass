@@ -1,5 +1,7 @@
 package collection
 
+import "slices"
+
 func applyNativeProblems(snapshot *Snapshot, problems []Problem, roots map[RootID]DiscoveryRoot) {
 	merged := make(map[ProblemID]Problem, len(problems))
 	for _, problem := range problems {
@@ -7,6 +9,7 @@ func applyNativeProblems(snapshot *Snapshot, problems []Problem, roots map[RootI
 		if !exists {
 			current = problem
 		}
+		current.nativeLocal = current.nativeLocal || problem.nativeLocal
 		current.SourceIDs = appendUniqueSourceIDs(current.SourceIDs, problem.SourceIDs...)
 		current.ReferenceIDs = appendUniqueReferenceIDs(current.ReferenceIDs, problem.ReferenceIDs...)
 		current.RootIDs = appendUniqueRootIDs(current.RootIDs, problem.RootIDs...)
@@ -21,11 +24,12 @@ func applyNativeProblems(snapshot *Snapshot, problems []Problem, roots map[RootI
 			continue
 		}
 		problem = merged[problem.ID]
-		sourceLocal := len(problem.SourceIDs) > 0
+		targets := problem
+		local := targets.nativeLocal || len(targets.SourceIDs) > 0 || len(targets.RootIDs) > 0 || len(targets.ReferenceIDs) > 0
 		for _, rid := range snapshot.referenceOrder {
 			reference := snapshot.references[rid]
-			if sourceLocal {
-				if !nativeContainsSource(problem.SourceIDs, reference.Source) {
+			if local {
+				if !slices.Contains(targets.RootIDs, reference.Root) && !slices.Contains(targets.ReferenceIDs, rid) && !slices.Contains(targets.SourceIDs, reference.Source) {
 					continue
 				}
 			} else if roots[reference.Root].Origin == "" {
@@ -35,7 +39,7 @@ func applyNativeProblems(snapshot *Snapshot, problems []Problem, roots map[RootI
 			problem.ReferenceIDs = appendUniqueReferenceIDs(problem.ReferenceIDs, rid)
 			problem.SourceIDs = appendUniqueSourceIDs(problem.SourceIDs, reference.Source)
 		}
-		if len(problem.RootIDs) == 0 && !sourceLocal {
+		if len(problem.RootIDs) == 0 && !local {
 			for _, root := range snapshot.scope.Roots {
 				if root.Origin != "" {
 					problem.RootIDs = append(problem.RootIDs, root.ID)
@@ -59,13 +63,4 @@ func applyNativeProblems(snapshot *Snapshot, problems []Problem, roots map[RootI
 		known[problem.ID] = true
 	}
 	recountRootReports(snapshot.scope.Roots, snapshot.references, snapshot.problems)
-}
-
-func nativeContainsSource(values []SourceID, id SourceID) bool {
-	for _, value := range values {
-		if value == id {
-			return true
-		}
-	}
-	return false
 }

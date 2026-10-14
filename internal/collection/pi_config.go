@@ -42,7 +42,12 @@ type piRootFact struct {
 	trust           string
 	uncertain       bool
 }
+type piPackageProblem struct {
+	problem          Problem
+	source, settings string
+}
 type piInputs struct {
+	packageProblems []piPackageProblem
 	scope           AgentScope
 	problems        []Problem
 	global, project piSettings
@@ -279,51 +284,74 @@ func piMatch(path, pattern, base string, exact bool) (bool, bool) {
 		}
 		return false, true
 	}
-	if strings.ContainsAny(pattern, "{}()") {
+	if strings.ContainsAny(pattern, "{}()\\") || strings.Contains(pattern, "//") {
 		return false, false
 	}
-	var expr strings.Builder
-	expr.WriteString("^")
-	for i := 0; i < len(pattern); i++ {
-		switch pattern[i] {
-		case '*':
-			if i+1 < len(pattern) && pattern[i+1] == '*' {
-				i++
-				if i+1 < len(pattern) && pattern[i+1] == '/' {
-					i++
-					expr.WriteString("(?:.*/)?")
-				} else {
-					expr.WriteString(".*")
-				}
-			} else {
+	segments := strings.Split(pattern, "/")
+	expressions := make([]*regexp.Regexp, len(segments))
+	for index, segment := range segments {
+		if segment == "**" {
+			continue
+		}
+		var expr strings.Builder
+		expr.WriteString("^")
+		for i := 0; i < len(segment); i++ {
+			switch segment[i] {
+			case '*':
 				expr.WriteString("[^/]*")
+			case '?':
+				expr.WriteString("[^/]")
+			case '[':
+				end := strings.IndexByte(segment[i+1:], ']')
+				if end < 0 {
+					return false, false
+				}
+				part := segment[i : i+end+2]
+				if strings.HasPrefix(part, "[!") {
+					part = "[^" + part[2:]
+				}
+				expr.WriteString(part)
+				i += end + 1
+			default:
+				literal, width := utf8.DecodeRuneInString(segment[i:])
+				expr.WriteString(regexp.QuoteMeta(string(literal)))
+				i += width - 1
 			}
-		case '?':
-			expr.WriteString("[^/]")
-		case '[':
-			end := strings.IndexByte(pattern[i+1:], ']')
-			if end < 0 {
-				return false, false
-			}
-			part := pattern[i : i+end+2]
-			if strings.HasPrefix(part, "[!") {
-				part = "[^" + part[2:]
-			}
-			expr.WriteString(part)
-			i += end + 1
-		default:
-			literal, width := utf8.DecodeRuneInString(pattern[i:])
-			expr.WriteString(regexp.QuoteMeta(string(literal)))
-			i += width - 1
+		}
+		expr.WriteString("$")
+		var err error
+		expressions[index], err = regexp.Compile(expr.String())
+		if err != nil {
+			return false, false
 		}
 	}
-	expr.WriteString("$")
-	re, err := regexp.Compile(expr.String())
-	if err != nil {
-		return false, false
-	}
 	for _, value := range values {
-		if re.MatchString(value) {
+		components := strings.Split(value, "/")
+		memo := make(map[[2]int]bool)
+		var match func(int, int) bool
+		match = func(p, v int) bool {
+			key := [2]int{p, v}
+			if result, seen := memo[key]; seen {
+				return result
+			}
+			result := false
+			if p == len(segments) {
+				result = v == len(components)
+			} else if segments[p] == "**" {
+				result = match(p+1, v) || v < len(components) && !strings.HasPrefix(components[v], ".") && match(p, v+1)
+			} else if v < len(components) {
+				component, segment := components[v], segments[p]
+				magic := strings.ContainsAny(segment, "*?[")
+				eligible := !strings.HasPrefix(component, ".") || strings.HasPrefix(segment, ".")
+				if magic && (component == "." || component == "..") {
+					eligible = false
+				}
+				result = eligible && expressions[p].MatchString(component) && match(p+1, v+1)
+			}
+			memo[key] = result
+			return result
+		}
+		if match(0, 0) {
 			return true, true
 		}
 	}

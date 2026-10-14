@@ -103,7 +103,17 @@ func buildPi(ctx context.Context, request Request) (*Snapshot, error) {
 		snapshot.sources[id] = source
 		ranks[id] = rank
 	}
-	applyPiPrecedence(snapshot, ranks, inputs.facts)
+	applyPiPrecedence(snapshot, ranks)
+	for _, diagnostic := range inputs.packageProblems {
+		problem := diagnostic.problem
+		for _, root := range request.Roots {
+			fact := inputs.facts[root.ID]
+			if root.Origin == "pi-package" && fact.path == diagnostic.settings && fact.provenance.PluginID == diagnostic.source {
+				problem.RootIDs = appendUniqueRootIDs(problem.RootIDs, root.ID)
+			}
+		}
+		inputs.problems = append(inputs.problems, problem)
+	}
 	applyNativeProblems(snapshot, inputs.problems, roots)
 	return snapshot, nil
 }
@@ -150,6 +160,12 @@ func (inputs *piInputs) explain(snapshot *Snapshot, id SourceID, roots map[RootI
 			}
 			// Ignore files use gitignore semantics; unsupported forms must not be invented.
 			ignoreUnknown := !root.piFile && piHasIgnore(root.Path, file)
+			if !patternKnown {
+				problem := makeProblem(ProblemNativeInput, fact.path, "Pi resource pattern semantics are not independently validated", nil, true)
+				problem.nativeLocal = true
+				problem.RootIDs = []RootID{ref.Root}
+				inputs.problems = append(inputs.problems, problem)
+			}
 			if fact.uncertain || inputs.global.uncertain || !patternKnown || ignoreUnknown {
 				ra.Permission.State = PermissionUnknown
 				ra.Permission.Evidence = piEvidence(EvidenceUnknown, "unverified-native-input", fact.path, "skills", "configuration, pattern or ignore-file semantics cannot be reliably interpreted")
@@ -321,17 +337,12 @@ func pathWithin(root, path string) bool {
 	rel, err := filepath.Rel(root, path)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
-func applyPiPrecedence(snapshot *Snapshot, ranks map[SourceID]int, facts map[RootID]piRootFact) {
+func applyPiPrecedence(snapshot *Snapshot, ranks map[SourceID]int) {
 	order := map[SourceID]int{}
 	for index, rid := range snapshot.referenceOrder {
 		ref := snapshot.references[rid]
-		id := ref.Source
-		fact, native := facts[ref.Root]
-		if !native || fact.rank != ranks[id] {
-			continue
-		}
-		if _, seen := order[id]; !seen {
-			order[id] = index
+		if snapshot.sources[ref.Source].Availability.ReferenceID == rid {
+			order[ref.Source] = index
 		}
 	}
 	groups := make(map[string][]SourceID)
@@ -389,6 +400,11 @@ func (inputs *piInputs) addPackages(request *Request, agentDir string) {
 	seen := map[string]bool{}
 	for _, entry := range entries {
 		p := entry.pkg
+		packageProblem := func(path, reason string) {
+			problem := makeProblem(ProblemNativeInput, path, reason, nil, true)
+			problem.nativeLocal = true
+			inputs.packageProblems = append(inputs.packageProblems, piPackageProblem{problem: problem, source: p.Source, settings: filepath.Join(entry.base, "settings.json")})
+		}
 		root := piPath(p.Source, entry.base, request.home)
 		identity := root
 		managed := false
@@ -405,7 +421,7 @@ func (inputs *piInputs) addPackages(request *Request, agentDir string) {
 		} else if strings.HasPrefix(p.Source, "git:") {
 			git := strings.TrimPrefix(p.Source, "git:")
 			if strings.Contains(git, "://") || strings.Contains(git, ":") || strings.HasPrefix(git, "/") {
-				inputs.problem(entry.base, "Pi remote package source form is not validated for offline resolution")
+				packageProblem(entry.base, "Pi remote package source form is not validated for offline resolution")
 				continue
 			}
 			if at := strings.LastIndex(git, "@"); at > 0 {
@@ -416,7 +432,7 @@ func (inputs *piInputs) addPackages(request *Request, agentDir string) {
 			identity = "git:" + git
 			managed = true
 		} else if strings.Contains(p.Source, "://") || strings.HasPrefix(p.Source, "git@") || strings.Contains(p.Source, ":") {
-			inputs.problem(entry.base, "Pi package source is not a validated local, npm: or git: registration")
+			packageProblem(entry.base, "Pi package source is not a validated local, npm: or git: registration")
 			continue
 		}
 		if seen[identity] {
@@ -426,13 +442,13 @@ func (inputs *piInputs) addPackages(request *Request, agentDir string) {
 			seen[identity] = true
 		}
 		if !pathWithin(entry.base, root) && managed {
-			inputs.problem(entry.base, "Pi package registration escapes managed storage")
+			packageProblem(entry.base, "Pi package registration escapes managed storage")
 			continue
 		}
 		fact := piRootFact{rank: 4, base: root, path: filepath.Join(entry.base, "settings.json"), trust: entry.trust, uncertain: uncertain, packageFilter: p.hasSkills, packagePatterns: p.Skills, delta: p.Autoload != nil && !*p.Autoload, provenance: Provenance{Kind: "plugin", PluginID: p.Source, Evidence: piEvidence(EvidenceObserved, "package-registration", filepath.Join(entry.base, "settings.json"), "packages", "Pi package registration observed; package owns its resources")}}
 		if fact.delta {
 			fact.uncertain = true
-			inputs.problem(fact.path, "Pi autoload=false package deltas need additional native validation")
+			packageProblem(fact.path, "Pi autoload=false package deltas need additional native validation")
 		}
 		raw, err := nativeBytes(filepath.Join(root, "package.json"))
 		var manifest struct {
@@ -441,7 +457,7 @@ func (inputs *piInputs) addPackages(request *Request, agentDir string) {
 		}
 		if !nativeAbsent(filepath.Join(root, "package.json"), err) && (err != nil || json.Unmarshal(raw, &manifest) != nil) {
 			fact.uncertain = true
-			inputs.problem(filepath.Join(root, "package.json"), "Pi package manifest is unreadable or invalid")
+			packageProblem(filepath.Join(root, "package.json"), "Pi package manifest is unreadable or invalid")
 		}
 		fact.provenance.Version = manifest.Version
 		skillRoots := []string{"skills"}
@@ -453,7 +469,7 @@ func (inputs *piInputs) addPackages(request *Request, agentDir string) {
 				entries, valid = piResourceArray(value)
 				if !valid {
 					fact.uncertain = true
-					inputs.problem(filepath.Join(root, "package.json"), "Pi package skills must be an array of strings")
+					packageProblem(filepath.Join(root, "package.json"), "Pi package skills must be an array of strings")
 				}
 			}
 			switch {
@@ -470,20 +486,22 @@ func (inputs *piInputs) addPackages(request *Request, agentDir string) {
 			if strings.HasPrefix(value, "!") || strings.HasPrefix(value, "+") || strings.HasPrefix(value, "-") {
 				manifestPatterns = append(manifestPatterns, value)
 			}
+			if piPattern(value) && strings.ContainsAny(value, "*?") {
+				fact.uncertain = true
+				packageProblem(filepath.Join(root, "package.json"), "Pi package manifest glob expansion is not independently validated; inventory may be partial")
+			}
 		}
 		// Manifest filters define package membership before user resource filters.
 		if len(manifestPatterns) > 0 {
 			fact.uncertain = true
-			inputs.problem(filepath.Join(root, "package.json"), "Pi package manifest filters are not yet independently validated")
+			packageProblem(filepath.Join(root, "package.json"), "Pi package manifest filters are not yet independently validated")
 		}
 		for _, value := range skillRoots {
 			if piPattern(value) {
 				if strings.ContainsAny(value, "*?") {
-					fact.uncertain = true
-					inputs.problem(filepath.Join(root, "package.json"), "Pi package manifest glob expansion is not independently validated; inventory may be partial")
 					matches, err := filepath.Glob(filepath.Join(root, value))
 					if err != nil {
-						inputs.problem(root, "Pi package glob cannot be resolved")
+						packageProblem(root, "Pi package glob cannot be resolved")
 					}
 					for _, path := range matches {
 						inputs.addRoot(request, path, ContextManaged, "pi-package", "pi", fact, false)

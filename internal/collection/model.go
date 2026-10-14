@@ -199,6 +199,7 @@ func ParseProblemCode(value string) (ProblemCode, error) {
 }
 
 type Problem struct {
+	nativeLocal    bool
 	ID             ProblemID     `json:"id"`
 	Code           ProblemCode   `json:"code"`
 	Path           string        `json:"path"`
@@ -446,7 +447,7 @@ func (snapshot *Snapshot) Query(filters Filters, target QueryTarget) View {
 			!strings.Contains(strings.ToLower(source.Description), needle) {
 			continue
 		}
-		if filters.Problem != "" && !sourceHasProblem(source, filters.Problem) {
+		if filters.Problem != "" && !snapshot.sourceHasProblem(source, filters, matchingReferences) {
 			continue
 		}
 		sources = append(sources, cloneSource(source))
@@ -623,9 +624,9 @@ func sourceHasMatchingReference(source Source, matching map[ReferenceID]bool) bo
 	return false
 }
 
-func sourceHasProblem(source Source, code ProblemCode) bool {
+func (snapshot *Snapshot) sourceHasProblem(source Source, filters Filters, matchingReferences map[ReferenceID]bool) bool {
 	for _, problem := range source.Problems {
-		if problem.Code == code {
+		if snapshot.problemMatches(problem, filters, matchingReferences) {
 			return true
 		}
 	}
