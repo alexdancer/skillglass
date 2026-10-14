@@ -57,7 +57,7 @@ env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go vet ./...
 env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go test -count=1 -mod=readonly ./...
 python3 -m unittest discover -s tests/agent_loop -v
 python3 -m unittest discover -s tests/native_verification -v
-python3 -m py_compile tools/claude_containment.py tools/verify_claude.py tools/verify_claude_plugin_manifest.py tests/native_verification/test_verify_claude.py
+python3 -m py_compile tools/claude_containment.py tools/verify_claude.py tools/verify_claude_plugin_manifest.py tools/verify_codeaf.py tests/native_verification/test_verify_claude.py
 shellcheck tests/acceptance/run.sh
 sh -n tests/acceptance/run.sh
 git diff --check
