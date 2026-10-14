@@ -19,8 +19,8 @@ func TestBrowserBracketedPasteIsSearchData(t *testing.T) {
 	before := treeManifest(t, fx.base)
 	socket := fmt.Sprintf("skillglass-paste-%d", os.Getpid())
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-	commandLine := strings.Join([]string{"exec", fx.productShell(t, false), "browse", "--root", shellQuote(fx.cleanRoot), "--project", shellQuote(fx.project)}, " ")
-	runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", "60", "-y", "30", "-s", "paste", commandLine)
+	command := fx.productCommand(t, "browse", "--root", fx.cleanRoot, "--project", fx.project)
+	launch := runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", "60", "-y", "30", "-s", "paste")
 	runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 	runTmux(t, tmux, fx, socket, "set-option", "-w", "-t", "paste:0", "remain-on-exit", "on")
 	runTmux(t, tmux, fx, socket, "resize-window", "-t", "paste:0", "-x", "60", "-y", "30")
@@ -32,7 +32,7 @@ func TestBrowserBracketedPasteIsSearchData(t *testing.T) {
 		}
 	}()
 	_ = waitForPaneAt(t, tmux, fx, socket, "paste:0.0", false, "Focus: 1/2", "/ search")
-	writeEvidence(t, "tmux/paste/command.txt", []byte(commandLine+"\n"))
+	writeEvidence(t, "tmux/paste/command.txt", []byte(strings.Join(launch.Argv, "\n")+"\n"))
 	writeEvidence(t, "tmux/paste/dimensions.txt", []byte("60x30\n"))
 	var keys strings.Builder
 	defer func() { writeEvidence(t, "tmux/paste/keys.txt", []byte(keys.String())) }()

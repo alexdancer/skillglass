@@ -25,8 +25,8 @@ func TestALE26BrowserAvailabilityExplanationFilterAndRefresh(t *testing.T) {
 			before := treeManifest(t, fx.base)
 			socket := fmt.Sprintf("ale26-%d-%d-%d", os.Getpid(), width, height)
 			defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-			command := "exec " + fx.productShell(t, false) + " browse --agent codex --project " + shellQuote(fx.project) + " --availability available"
-			runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", strconv.Itoa(width), "-y", strconv.Itoa(height), "-s", "browser", command)
+			command := fx.productCommand(t, "browse", "--agent", "codex", "--project", fx.project, "--availability", "available")
+			runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", strconv.Itoa(width), "-y", strconv.Itoa(height), "-s", "browser")
 			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(width), "-y", strconv.Itoa(height))
 			pane := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "browser-codex", "available (inferred)")
@@ -117,14 +117,14 @@ func TestALE26BrowserContextCycleRecoversGenericAndPreservesNativeOrder(t *testi
 	for _, initial := range []string{"global", "system", "managed", "native"} {
 		t.Run(initial, func(t *testing.T) {
 			fx := newFixture(t)
-			scope := "--root " + shellQuote(fx.cleanRoot) + " --context " + initial
+			scope := []string{"browse", "--root", fx.cleanRoot, "--context", initial}
 			if initial == "native" {
 				fx, _ = codexFixture(t)
-				scope = "--agent codex --project " + shellQuote(fx.project)
+				scope = []string{"browse", "--agent", "codex", "--project", fx.project}
 			}
 			socket := fmt.Sprintf("ale26-context-%d-%s", os.Getpid(), initial)
 			defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-			runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", "48", "-y", "24", "-s", "browser", "exec "+fx.productShell(t, false)+" browse "+scope)
+			runTmuxProduct(t, tmux, fx, socket, fx.productCommand(t, scope...), "new-session", "-d", "-x", "48", "-y", "24", "-s", "browser")
 			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", "48", "-y", "24")
 			current := initial

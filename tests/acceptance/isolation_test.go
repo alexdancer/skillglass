@@ -60,6 +60,23 @@ func TestRuntimeContentIsolation(t *testing.T) {
 	writeEvidence(t, "isolation/positive-controls.json", append(positiveJSON, '\n'))
 
 	before := treeManifest(t, fx.base)
+	probe := runSandboxCommand(t, fx, probeProfile, canonicalProbe, allowedSentinel, liveHomeSentinel, blockedWrite, listener.Addr().String())
+	assertExit(t, probe, 0)
+	var controls struct {
+		Passed bool            `json:"passed"`
+		Checks map[string]bool `json:"checks"`
+	}
+	decodeJSON(t, probe.stdout, &controls)
+	if !controls.Passed {
+		t.Fatalf("sandbox controls failed: %s", probe.stdout)
+	}
+	for _, name := range []string{"allowed_read", "excluded_read_denied", "file_write_denied", "network_denied", "child_exec_denied"} {
+		if !controls.Checks[name] {
+			t.Fatalf("sandbox control %q did not pass", name)
+		}
+	}
+	writeEvidence(t, "isolation/controls.json", probe.stdout)
+	assertNoSandboxedConnection(t, listener)
 	list := runSandboxCommand(
 		t,
 		fx,
@@ -104,39 +121,6 @@ func TestRuntimeContentIsolation(t *testing.T) {
 		t.Fatalf("sandboxed browser output is incomplete: %q", browseRaw)
 	}
 	writeEvidence(t, "isolation/browse.ansi", browseRaw)
-
-	probe := runSandboxCommand(
-		t,
-		fx,
-		probeProfile,
-		canonicalProbe,
-		allowedSentinel,
-		liveHomeSentinel,
-		blockedWrite,
-		listener.Addr().String(),
-	)
-	assertExit(t, probe, 0)
-	var controls struct {
-		Passed bool            `json:"passed"`
-		Checks map[string]bool `json:"checks"`
-	}
-	decodeJSON(t, probe.stdout, &controls)
-	if !controls.Passed {
-		t.Fatalf("sandbox controls failed: %s", probe.stdout)
-	}
-	for _, name := range []string{
-		"allowed_read",
-		"excluded_read_denied",
-		"file_write_denied",
-		"network_denied",
-		"child_exec_denied",
-	} {
-		if !controls.Checks[name] {
-			t.Errorf("sandbox control %q did not pass", name)
-		}
-	}
-	writeEvidence(t, "isolation/controls.json", probe.stdout)
-	assertNoSandboxedConnection(t, listener)
 
 	after := treeManifest(t, fx.base)
 	writeEvidence(t, "isolation/tree-before.json", before)
@@ -229,12 +213,16 @@ func runSandboxCommand(
 	command.Stdout = &stdout
 	command.Stderr = &stderr
 	started := time.Now()
+	launch := recordLaunch(t, command)
 	err := command.Run()
 	result := commandResult{
+		code:     launchExitCode(err),
+		launch:   launch,
 		stdout:   stdout.Bytes(),
 		stderr:   stderr.Bytes(),
 		duration: time.Since(started),
 	}
+	recordEvidenceCommand(t, "sandboxed-command", result)
 	if ctx.Err() != nil {
 		t.Fatalf("sandboxed command timed out: %s %s", executable, strings.Join(args, " "))
 	}
@@ -243,16 +231,8 @@ func runSandboxCommand(
 		if !errors.As(err, &exitError) {
 			t.Fatalf("run sandboxed command: %v", err)
 		}
-		result.code = exitError.ExitCode()
 	}
-	recordEvidenceCommand(
-		t,
-		"sandboxed-command",
-		"/usr/bin/sandbox-exec",
-		commandArgs,
-		command.Dir,
-		result,
-	)
+	assertRecordedContext(t, launch, command)
 	return result
 }
 
@@ -275,6 +255,7 @@ func runSandboxBrowser(t *testing.T, fx fixture, profile, executable string) []b
 	command.Dir = canonicalPath(t, fx.project)
 	command.Env = fx.environment()
 	started := time.Now()
+	launch := recordLaunch(t, command)
 	terminal, err := pty.StartWithSize(command, &pty.Winsize{Rows: 30, Cols: 80})
 	if err != nil {
 		t.Fatal(err)
@@ -292,55 +273,33 @@ func runSandboxBrowser(t *testing.T, fx fixture, profile, executable string) []b
 	err = command.Wait()
 	<-copyDone
 	_ = terminal.Close()
+	recordEvidenceCommand(t, "sandboxed-browser-pty", commandResult{code: launchExitCode(err), stdout: raw.Bytes(), duration: time.Since(started), launch: launch})
 	if ctx.Err() != nil {
 		t.Fatal("sandboxed browser timed out")
 	}
 	if err != nil {
 		t.Fatalf("sandboxed browser exit: %v\n%q", err, raw.Bytes())
 	}
-	recordEvidenceCommand(
-		t,
-		"sandboxed-browser-pty",
-		"/usr/bin/sandbox-exec",
-		[]string{
-			"-f",
-			profile,
-			executable,
-			"browse",
-			"--root",
-			fx.cleanRoot,
-			"--project",
-			fx.project,
-		},
-		command.Dir,
-		commandResult{stdout: raw.Bytes(), duration: time.Since(started)},
-	)
+	assertRecordedContext(t, launch, command)
 	return raw.Bytes()
 }
 
 func runtimeProfile(executable, allowedRoot string) string {
-	ancestors := ""
-	for parent := filepath.Dir(allowedRoot); parent != "/"; parent = filepath.Dir(parent) {
-		ancestors += " (literal " + sandboxString(parent) + ")\n"
-	}
-	absent := sandboxString(filepath.Join(filepath.Dir(allowedRoot), "excluded", "controlled-system"))
+	controlledSystem := filepath.Join(filepath.Dir(allowedRoot), "excluded", "controlled-system")
 	return fmt.Sprintf(`(version 1)
 (allow default)
 (deny network*)
 (deny file-write*)
 (deny file-read-data (require-not (require-any
- (literal %s)
- (literal "/")
-%s (subpath %s)
- (subpath "/etc/codex")
- (subpath "/private/etc/codex")
- (subpath %s)
- (subpath "/System")
- (subpath "/usr/lib")
- (subpath "/dev"))))
-(deny file-read* (with errno 2) (require-any (subpath "/etc/codex") (subpath "/private/etc/codex") (subpath %s)))
+ (literal %s) (literal "/") %s
+ (subpath %s) (subpath %s)
+ (subpath "/Library/Application Support/ClaudeCode") (subpath "/Library/Managed Preferences")
+ (literal "/Library/Preferences/com.anthropic.claudecode.plist")
+ (subpath "/etc/codex") (subpath "/private/etc/codex")
+ (subpath "/System") (subpath "/usr/lib") (subpath "/dev"))))
 (deny process-exec (require-not (literal %s)))
-`, sandboxString(executable), ancestors, sandboxString(allowedRoot), absent, absent, sandboxString(executable))
+(deny file-read* (subpath %s) (with errno ENOENT))
+`, sandboxString(executable), ancestorReadLiterals(allowedRoot), sandboxString(allowedRoot), sandboxString(controlledSystem), sandboxString(executable), sandboxString(controlledSystem)) + absentSystemPolicy()
 }
 
 func sandboxString(value string) string {
@@ -400,12 +359,7 @@ func (fx fixture) launchArgs(t *testing.T, executable string, writer bool, extra
 		t.Skip("ordinary runtime containment requires Darwin sandbox-exec")
 	}
 	executable = canonicalPath(t, executable)
-	allowed := canonicalPath(t, filepath.Join(fx.base, "allowed"))
-	profile := runtimeProfile(executable, allowed)
-	if writer {
-		profile = strings.ReplaceAll(profile, "(literal "+sandboxString(executable)+")", "(require-any (literal "+sandboxString(executable)+") (literal \"/bin/ls\"))")
-		profile = strings.Replace(profile, "(deny file-write*)", "(deny file-write* (require-not (subpath "+sandboxString(allowed)+")))", 1)
-	}
+	profile := fx.fixturePolicy(t, writer)
 	profile += extra
 	sum := sha256.Sum256([]byte(profile))
 	path := filepath.Join(builtBinaryDir, fmt.Sprintf("fixture-%x.sb", sum))
@@ -414,15 +368,6 @@ func (fx fixture) launchArgs(t *testing.T, executable string, writer bool, extra
 	}
 	writeEvidence(t, fmt.Sprintf("isolation/profiles/%x.sb", sum), []byte(profile))
 	return append([]string{"/usr/bin/sandbox-exec", "-f", path, executable}, args...)
-}
-
-func (fx fixture) productShell(t *testing.T, writer bool) string {
-	t.Helper()
-	parts := fx.launchArgs(t, skillglassBinary, writer, "")
-	for i := range parts {
-		parts[i] = shellQuote(parts[i])
-	}
-	return strings.Join(parts, " ")
 }
 
 func TestFixtureLauncherContainmentControls(t *testing.T) {
@@ -462,13 +407,17 @@ func TestFixtureLauncherContainmentControls(t *testing.T) {
 				case "cli":
 					cmd := exec.Command(argv[0], argv[1:]...)
 					cmd.Env, cmd.Dir = fx.environment(), fx.project
+					launch := recordLaunch(t, cmd)
 					raw, err = cmd.CombinedOutput()
+					recordEvidenceCommand(t, "fixture-mode-control-cli", commandResult{code: launchExitCode(err), stdout: raw, launch: launch})
+					assertRecordedContext(t, launch, cmd)
 					if err != nil {
 						t.Fatalf("control failed: %v\n%s", err, raw)
 					}
 				case "pty":
 					cmd := exec.Command(argv[0], argv[1:]...)
 					cmd.Env, cmd.Dir = fx.environment(), fx.project
+					launch := recordLaunch(t, cmd)
 					terminal, startErr := pty.StartWithSize(cmd, &pty.Winsize{Rows: 24, Cols: 80})
 					if startErr != nil {
 						t.Fatal(startErr)
@@ -476,6 +425,8 @@ func TestFixtureLauncherContainmentControls(t *testing.T) {
 					raw, _ = io.ReadAll(terminal)
 					err = cmd.Wait()
 					_ = terminal.Close()
+					recordEvidenceCommand(t, "fixture-mode-control-pty", commandResult{code: launchExitCode(err), stdout: raw, launch: launch})
+					assertRecordedContext(t, launch, cmd)
 					if err != nil {
 						t.Fatalf("PTY control failed: %v\n%s", err, raw)
 					}
@@ -484,11 +435,9 @@ func TestFixtureLauncherContainmentControls(t *testing.T) {
 					defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
 					runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", "80", "-y", "24", "-s", "browser", "exec /bin/cat")
 					runTmux(t, tmux, fx, socket, "set-option", "-g", "remain-on-exit", "on")
-					parts := append([]string(nil), argv...)
-					for i := range parts {
-						parts[i] = shellQuote(parts[i])
-					}
-					runTmux(t, tmux, fx, socket, "respawn-pane", "-k", "-t", "browser:0.0", "exec "+strings.Join(parts, " "))
+					cmd := exec.Command(argv[0], argv[1:]...)
+					cmd.Env, cmd.Dir = fx.environment(), fx.project
+					runTmuxProduct(t, tmux, fx, socket, cmd, "respawn-pane", "-k", "-t", "browser:0.0")
 					deadline := time.Now().Add(3 * time.Second)
 					var pane string
 					for time.Now().Before(deadline) {

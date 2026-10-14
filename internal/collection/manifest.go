@@ -19,7 +19,7 @@ import (
 
 const maxManifestBytes int64 = 4 << 20
 
-func inspectManifest(bundleDirectory string) (Manifest, []Problem) {
+func inspectManifest(bundleDirectory string, allowUnnamed bool) (Manifest, []Problem) {
 	lexicalPath := filepath.Join(bundleDirectory, "SKILL.md")
 	manifest := Manifest{Path: lexicalPath, Status: ManifestUnreadable}
 
@@ -174,6 +174,10 @@ func inspectManifest(bundleDirectory string) (Manifest, []Problem) {
 	}
 
 	name, ok := metadata["name"].(string)
+	if _, present := metadata["name"]; !present && allowUnnamed {
+		name = filepath.Base(bundleDirectory)
+		ok = true
+	}
 	if !ok || strings.TrimSpace(name) == "" {
 		manifest.Status = ManifestMalformed
 		problem := makeProblem(

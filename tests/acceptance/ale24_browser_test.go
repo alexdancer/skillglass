@@ -40,14 +40,9 @@ func TestALE24BrowserModesAndReferencesAtRequiredWidths(t *testing.T) {
 		t.Run(strconv.Itoa(width), func(t *testing.T) {
 			socket := fmt.Sprintf("skillglass-ale24-modes-%d-%d", os.Getpid(), width)
 			defer runTmuxIgnoringError(tmux, fx.fixture, socket, "kill-server")
-			commandLine := strings.Join([]string{
-				"exec", fx.productShell(t, false), "browse",
-				"--root", shellQuote(fx.rootA),
-				"--project", shellQuote(fx.project),
-				"--project-root", shellQuote(fx.rootB),
-			}, " ")
-			runTmux(t, tmux, fx.fixture, socket,
-				"new-session", "-d", "-x", strconv.Itoa(width), "-y", "30", "-s", "browser", commandLine,
+			command := fx.productCommand(t, "browse", "--root", fx.rootA, "--project", fx.project, "--project-root", fx.rootB)
+			launch := runTmuxProduct(t, tmux, fx.fixture, socket, command,
+				"new-session", "-d", "-x", strconv.Itoa(width), "-y", "30", "-s", "browser",
 			)
 			runTmux(t, tmux, fx.fixture, socket, "set-option", "-g", "status", "off")
 			runTmux(t, tmux, fx.fixture, socket,
@@ -127,7 +122,7 @@ func TestALE24BrowserModesAndReferencesAtRequiredWidths(t *testing.T) {
 			writeEvidence(t, fmt.Sprintf("tmux/ale24-modes/%d/keys.txt", width), []byte(
 				"/\nshared-directory\nEnter\nEnter\n<scroll>\nEsc\nTab\n/\nCtrl+U\nEnter\nEnter\nEsc\nq\n",
 			))
-			writeEvidence(t, fmt.Sprintf("tmux/ale24-modes/%d/command.txt", width), []byte(commandLine+"\n"))
+			writeEvidence(t, fmt.Sprintf("tmux/ale24-modes/%d/command.txt", width), []byte(strings.Join(launch.Argv, "\n")+"\n"))
 			_ = act(func() {
 				runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "Escape")
 			}, "SKILLGLASS | Problems", "Enter problem")
@@ -163,14 +158,9 @@ func TestALE24BrowserRefreshSelectionAndProblemPaste(t *testing.T) {
 
 	socket := fmt.Sprintf("skillglass-ale24-refresh-%d", os.Getpid())
 	defer runTmuxIgnoringError(tmux, fx.fixture, socket, "kill-server")
-	commandLine := strings.Join([]string{
-		"exec", fx.productShell(t, false), "browse",
-		"--root", shellQuote(fx.rootA),
-		"--project", shellQuote(fx.project),
-		"--project-root", shellQuote(fx.rootB),
-	}, " ")
-	runTmux(t, tmux, fx.fixture, socket,
-		"new-session", "-d", "-x", "60", "-y", "30", "-s", "refresh", commandLine,
+	command := fx.productCommand(t, "browse", "--root", fx.rootA, "--project", fx.project, "--project-root", fx.rootB)
+	launch := runTmuxProduct(t, tmux, fx.fixture, socket, command,
+		"new-session", "-d", "-x", "60", "-y", "30", "-s", "refresh",
 	)
 	runTmux(t, tmux, fx.fixture, socket, "set-option", "-g", "status", "off")
 	runTmux(t, tmux, fx.fixture, socket, "set-option", "-w", "-t", "refresh:0", "remain-on-exit", "on")
@@ -281,7 +271,7 @@ func TestALE24BrowserRefreshSelectionAndProblemPaste(t *testing.T) {
 	assertPaneCells(t, problemDetail, 60, 30)
 
 	expected := treeManifest(t, fx.base)
-	writeEvidence(t, "tmux/ale24-refresh/command.txt", []byte(commandLine+"\n"))
+	writeEvidence(t, "tmux/ale24-refresh/command.txt", []byte(strings.Join(launch.Argv, "\n")+"\n"))
 	writeEvidence(t, "tmux/ale24-refresh/keys.txt", []byte(keys.String()+"<q>\n"))
 	_ = act(func() { key("q") }, "Pane is dead")
 	status := strings.TrimSpace(runTmux(t, tmux, fx.fixture, socket,

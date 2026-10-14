@@ -35,6 +35,7 @@ func changeCommand(t *testing.T, fx fixture, extraProfile string, args ...string
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	started := time.Now()
+	launch := recordLaunch(t, cmd)
 	err := cmd.Run()
 	code := 0
 	if err != nil {
@@ -47,8 +48,9 @@ func changeCommand(t *testing.T, fx fixture, extraProfile string, args ...string
 	if ctx.Err() != nil {
 		t.Fatal("change timed out")
 	}
-	result := commandResult{code: code, stdout: stdout.Bytes(), stderr: stderr.Bytes(), duration: time.Since(started)}
-	recordEvidenceCommand(t, "offline-public-mutation", argv[0], argv[1:], fx.project, result)
+	result := commandResult{code: code, stdout: stdout.Bytes(), stderr: stderr.Bytes(), duration: time.Since(started), launch: launch}
+	recordEvidenceCommand(t, "offline-public-mutation", result)
+	assertRecordedContext(t, launch, cmd)
 	return result
 }
 func changeRun(t *testing.T, fx fixture, choice, id, token string, want int, extra ...string) changeReceipt {
@@ -360,12 +362,17 @@ func TestALE27WrongConfirmationConcurrencyAndWriteDenial(t *testing.T) {
 			cmd := exec.Command(argv[0], argv[1:]...)
 			cmd.Env = fx.environment()
 			cmd.Dir = fx.project
+			started := time.Now()
+			launch := recordLaunch(t, cmd)
 			raw, err := cmd.Output()
 			code := 0
 			if err != nil {
 				code = err.(*exec.ExitError).ExitCode()
 			}
-			results <- commandResult{code: code, stdout: raw}
+			result := commandResult{code: code, stdout: raw, duration: time.Since(started), launch: launch}
+			recordEvidenceCommand(t, "offline-competing-mutation", result)
+			assertRecordedContext(t, launch, cmd)
+			results <- result
 		}()
 	}
 	applied, refused := 0, 0

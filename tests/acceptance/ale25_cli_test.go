@@ -124,8 +124,8 @@ func TestALE25PublicIncompleteCoverage(t *testing.T) {
 			fx, root, a, b := compareFixture(t)
 			switch kind {
 			case "external":
-				writeFile(t, filepath.Join(fx.base, "allowed", "external-file"), []byte("external target"), 0600)
-				if err := os.Symlink(filepath.Join(fx.base, "allowed", "external-file"), filepath.Join(a, "external")); err != nil {
+				writeFile(t, filepath.Join(fx.base, "allowed", "compare-external.txt"), []byte("external target"), 0600)
+				if err := os.Symlink(filepath.Join(fx.base, "allowed", "compare-external.txt"), filepath.Join(a, "external")); err != nil {
 					t.Fatal(err)
 				}
 			case "broken":

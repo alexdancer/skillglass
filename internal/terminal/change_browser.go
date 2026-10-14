@@ -11,6 +11,11 @@ import (
 type changeFinished struct{ outcome collection.ChangeOutcome }
 
 func (model browserModel) openChange(choice collection.ControlChoice) (tea.Model, tea.Cmd) {
+	scope := model.snapshot.Scope()
+	if scope.Agent == nil || scope.Agent.Application != "codex" {
+		model.feedback = "Controls are unsupported for this agent scope."
+		return model, nil
+	}
 	model.changeChoice = choice
 	model.changePreview = nil
 	model.changeScroll = 0
