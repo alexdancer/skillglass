@@ -299,11 +299,17 @@ func (inputs *hermesInputs) readManagedPlugins(path string) {
 		inputs.policyLayer(path, "managed-plugin-config", "unknown", "managed plugin policy is invalid YAML")
 		return
 	}
+	observation := observeHermesYAML(raw)
+	if !observation.nativeTagsSupported() {
+		inputs.pluginProblem(path, "managed plugin policy contains unsupported native YAML tags; native fail-open fallback is not observed")
+		inputs.policyLayer(path, "managed-plugin-config", "unknown", "managed policy interpretation failed; its values are not applied")
+		return
+	}
 	value, present := data["plugins"]
 	if present && value != nil && hermesMap(data, "plugins") == nil {
 		inputs.pluginProblem(path, "managed plugins must be a mapping")
 	}
-	inputs.managedYAML = observeHermesYAML(raw)
+	inputs.managedYAML = observation
 	inputs.pluginManaged = hermesMap(data, "plugins")
 	inputs.managedConfigPath = path
 	inputs.policyLayer(path, "managed-plugin-config", "read", "managed values replace user values per leaf; raw skills.disabled remains profile-only")

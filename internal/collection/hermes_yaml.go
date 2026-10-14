@@ -1,6 +1,7 @@
 package collection
 
 import (
+	"regexp"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -18,8 +19,36 @@ func observeHermesYAML(raw []byte) hermesYAMLObservation {
 	return hermesYAMLObservation{root: node.Content[0]}
 }
 
+func (observation hermesYAMLObservation) nativeTagsSupported() bool {
+	return hermesYAMLTagsSupported(observation.root, make(map[*yaml.Node]bool))
+}
+
+func hermesYAMLTagsSupported(node *yaml.Node, seen map[*yaml.Node]bool) bool {
+	if node == nil {
+		return false
+	}
+	if seen[node] {
+		return true
+	}
+	seen[node] = true
+	if node.Kind == yaml.AliasNode {
+		return hermesYAMLTagsSupported(node.Alias, seen)
+	}
+	switch node.ShortTag() {
+	case "!!null", "!!bool", "!!int", "!!float", "!!binary", "!!timestamp", "!!omap", "!!pairs", "!!set", "!!str", "!!seq", "!!map", "!!merge":
+	default:
+		return false
+	}
+	for _, child := range node.Content {
+		if !hermesYAMLTagsSupported(child, seen) {
+			return false
+		}
+	}
+	return true
+}
+
 func (observation hermesYAMLObservation) known(paths ...string) bool {
-	if observation.root == nil {
+	if !observation.nativeTagsSupported() {
 		return false
 	}
 	for _, path := range paths {
@@ -71,7 +100,7 @@ func hermesYAMLPathKnown(node *yaml.Node, path []string, active map[*yaml.Node]b
 		}
 		return true, false
 	}
-	if node.Kind == yaml.ScalarNode && node.Style == 0 && node.ShortTag() == "!!str" && hermesYAMLImplicitBoolean(node.Value) {
+	if node.Kind == yaml.ScalarNode && (node.ShortTag() == "!!binary" || hermesYAMLNativeTag(node) != node.ShortTag()) {
 		return false, true
 	}
 	children := node.Content
@@ -89,6 +118,24 @@ func hermesYAMLPathKnown(node *yaml.Node, path []string, active map[*yaml.Node]b
 		}
 	}
 	return true, true
+}
+
+var hermesYAMLSexagesimalInt = regexp.MustCompile(`^[-+]?[1-9][0-9_]*(?::[0-5]?[0-9])+$`)
+var hermesYAMLSexagesimalFloat = regexp.MustCompile(`^[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\.[0-9_]*$`)
+
+func hermesYAMLNativeTag(node *yaml.Node) string {
+	tag := node.ShortTag()
+	if tag == "!!str" && node.Style == 0 {
+		switch {
+		case hermesYAMLImplicitBoolean(node.Value):
+			return "!!bool"
+		case hermesYAMLSexagesimalInt.MatchString(node.Value):
+			return "!!int"
+		case hermesYAMLSexagesimalFloat.MatchString(node.Value):
+			return "!!float"
+		}
+	}
+	return tag
 }
 
 func hermesYAMLImplicitBoolean(value string) bool {
@@ -118,10 +165,7 @@ func hermesYAMLEffectiveEntries(node *yaml.Node, active map[*yaml.Node]bool) ([]
 		if resolved == nil || resolved.Kind != yaml.ScalarNode {
 			return false
 		}
-		tag := resolved.ShortTag()
-		if tag == "!!str" && resolved.Style == 0 && hermesYAMLImplicitBoolean(resolved.Value) {
-			tag = "!!bool"
-		}
+		tag := hermesYAMLNativeTag(resolved)
 		identity := tag + "\x00" + resolved.Value
 		if !seen[identity] {
 			seen[identity] = true

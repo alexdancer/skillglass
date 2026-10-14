@@ -89,7 +89,11 @@ func discoverHermesPlugins(request *Request, inputs *hermesInputs) {
 					var state string
 					var observation hermesYAMLObservation
 					data, state, observation = inputs.yaml(manifest)
-					plugin.admitted = state == "read"
+					plugin.admitted = state == "read" && observation.nativeTagsSupported()
+					if state == "read" && !plugin.admitted {
+						plugin.reason = "native SafeLoader rejects unsupported YAML tags in the root manifest"
+						inputs.problems = append(inputs.problems, makeProblem(ProblemNativeInput, manifest, plugin.reason, nil, false))
+					}
 					plugin.nameKnown = observation.known("name")
 					plugin.versionKnown = observation.known("version")
 					if value, present := data["name"]; present {
