@@ -82,7 +82,15 @@ func (inputs *hermesInputs) readPolicy(request Request) {
 	}
 	inputs.policyLayer(filepath.Join(inputs.home, ".env"), "session-platform", "read", "profile environment overrides shell policy; managed environment wins last; HERMES_PLATFORM precedes HERMES_SESSION_PLATFORM")
 	user := hermesMap(inputs.configData, "plugins")
-	inputs.pluginConfig = inputs.expandPluginPolicy(user, inputs.config)
+	inherited := make(map[string]any)
+	for _, key := range []string{"enabled", "disabled"} {
+		if _, replaced := inputs.pluginManaged[key]; !replaced {
+			if value, present := user[key]; present {
+				inherited[key] = value
+			}
+		}
+	}
+	inputs.pluginConfig = inputs.expandPluginPolicy(inherited, inputs.config)
 	inputs.pluginConfigPath = inputs.config
 	if inputsManaged := inputs.pluginManaged; inputsManaged != nil {
 		for key, value := range inputs.expandPluginPolicy(inputsManaged, inputs.managedConfigPath) {

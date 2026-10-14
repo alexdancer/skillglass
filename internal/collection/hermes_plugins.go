@@ -73,10 +73,10 @@ func discoverHermesPlugins(request *Request, inputs *hermesInputs) {
 					continue
 				}
 				manifest := filepath.Join(child, "plugin.yaml")
-				_, yamlErr := os.Lstat(manifest)
+				_, yamlErr := os.Stat(manifest)
 				if os.IsNotExist(yamlErr) {
 					manifest = filepath.Join(child, "plugin.yml")
-					_, yamlErr = os.Lstat(manifest)
+					_, yamlErr = os.Stat(manifest)
 				}
 				portable := false
 				if os.IsNotExist(yamlErr) {
