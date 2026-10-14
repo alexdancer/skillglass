@@ -103,8 +103,8 @@ func readHermesInputs(request Request) hermesInputs {
 	inputs.config = filepath.Join(inputs.home, "config.yaml")
 	var state string
 	inputs.configData, state, inputs.configYAML = inputs.yaml(inputs.config)
-	if state == "read" && !inputs.configYAML.nativeTagsSupported() {
-		inputs.problem(inputs.config, "profile configuration contains unsupported native YAML tags; native fallback and running-session policy are not established")
+	if state == "read" && (!inputs.configYAML.nativeConstructible() || !inputs.configYAML.mappingAt()) {
+		inputs.problem(inputs.config, "profile configuration requires supported native YAML constructors and a mapping root; native fallback and running-session policy are not established")
 		inputs.configData, state = nil, "unknown"
 	}
 	for _, key := range []string{"skills", "plugins"} {

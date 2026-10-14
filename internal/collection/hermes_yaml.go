@@ -19,11 +19,45 @@ func observeHermesYAML(raw []byte) hermesYAMLObservation {
 	return hermesYAMLObservation{root: node.Content[0]}
 }
 
-func (observation hermesYAMLObservation) nativeTagsSupported() bool {
-	return hermesYAMLTagsSupported(observation.root, make(map[*yaml.Node]bool))
+func hermesYAMLResolve(node *yaml.Node) *yaml.Node {
+	seen := make(map[*yaml.Node]bool)
+	for node != nil && node.Kind == yaml.AliasNode {
+		if seen[node] {
+			return nil
+		}
+		seen[node] = true
+		node = node.Alias
+	}
+	return node
 }
 
-func hermesYAMLTagsSupported(node *yaml.Node, seen map[*yaml.Node]bool) bool {
+func (observation hermesYAMLObservation) nativeConstructible() bool {
+	return hermesYAMLConstructorValid(observation.root, make(map[*yaml.Node]bool))
+}
+
+func (observation hermesYAMLObservation) mappingAt(path ...string) bool {
+	node := hermesYAMLResolve(observation.root)
+	for _, name := range path {
+		if node == nil || node.Kind != yaml.MappingNode || node.ShortTag() != "!!map" {
+			return false
+		}
+		entries, known := hermesYAMLEffectiveEntries(node, make(map[*yaml.Node]bool))
+		if !known {
+			return false
+		}
+		node = nil
+		for index := 0; index < len(entries); index += 2 {
+			var key any
+			if entries[index].Decode(&key) == nil && key == name {
+				node = hermesYAMLResolve(entries[index+1])
+				break
+			}
+		}
+	}
+	return node != nil && node.Kind == yaml.MappingNode && node.ShortTag() == "!!map"
+}
+
+func hermesYAMLConstructorValid(node *yaml.Node, seen map[*yaml.Node]bool) bool {
 	if node == nil {
 		return false
 	}
@@ -32,15 +66,104 @@ func hermesYAMLTagsSupported(node *yaml.Node, seen map[*yaml.Node]bool) bool {
 	}
 	seen[node] = true
 	if node.Kind == yaml.AliasNode {
-		return hermesYAMLTagsSupported(node.Alias, seen)
+		return hermesYAMLConstructorValid(node.Alias, seen)
 	}
-	switch node.ShortTag() {
-	case "!!null", "!!bool", "!!int", "!!float", "!!binary", "!!timestamp", "!!omap", "!!pairs", "!!set", "!!str", "!!seq", "!!map", "!!merge":
-	default:
+	switch hermesYAMLNativeTag(node) {
+	case "!!null", "!!bool", "!!int", "!!float", "!!binary", "!!str":
+		return hermesYAMLScalarNode(node) != nil
+	case "!!timestamp":
+		return node.Kind == yaml.ScalarNode
+	case "!!map", "!!set":
+		return hermesYAMLMappingValid(node, seen, make(map[*yaml.Node]bool))
+	case "!!seq":
+		if node.Kind != yaml.SequenceNode {
+			return false
+		}
+		for _, child := range node.Content {
+			if !hermesYAMLConstructorValid(child, seen) {
+				return false
+			}
+		}
+		return true
+	case "!!omap", "!!pairs":
+		if node.Kind != yaml.SequenceNode {
+			return false
+		}
+		for _, child := range node.Content {
+			entry := hermesYAMLResolve(child)
+			if entry == nil || entry.Kind != yaml.MappingNode || len(entry.Content) != 2 || !hermesYAMLConstructorValid(entry.Content[0], seen) || !hermesYAMLConstructorValid(entry.Content[1], seen) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+func hermesYAMLScalarNode(node *yaml.Node) *yaml.Node {
+	seen := make(map[*yaml.Node]bool)
+	for node = hermesYAMLResolve(node); node != nil && !seen[node]; node = hermesYAMLResolve(node) {
+		seen[node] = true
+		if node.Kind == yaml.ScalarNode {
+			return node
+		}
+		if node.Kind != yaml.MappingNode {
+			return nil
+		}
+		var value *yaml.Node
+		for index := 0; index < len(node.Content); index += 2 {
+			key := hermesYAMLResolve(node.Content[index])
+			if key != nil && hermesYAMLNativeTag(key) == "!!value" {
+				value = node.Content[index+1]
+				break
+			}
+		}
+		node = value
+	}
+	return nil
+}
+
+func hermesYAMLMappingValid(node *yaml.Node, seen, active map[*yaml.Node]bool) bool {
+	node = hermesYAMLResolve(node)
+	if node == nil || node.Kind != yaml.MappingNode || active[node] {
 		return false
 	}
-	for _, child := range node.Content {
-		if !hermesYAMLTagsSupported(child, seen) {
+	active[node] = true
+	defer delete(active, node)
+	for index := 0; index < len(node.Content); index += 2 {
+		key, value := hermesYAMLResolve(node.Content[index]), node.Content[index+1]
+		if key == nil {
+			return false
+		}
+		switch hermesYAMLNativeTag(key) {
+		case "!!merge":
+			operand := hermesYAMLResolve(value)
+			if operand == nil {
+				return false
+			}
+			if operand.Kind == yaml.SequenceNode {
+				for _, child := range operand.Content {
+					if !hermesYAMLMappingValid(child, seen, active) {
+						return false
+					}
+				}
+			} else if !hermesYAMLMappingValid(operand, seen, active) {
+				return false
+			}
+			continue
+		case "!!value":
+			if hermesYAMLScalarNode(key) == nil {
+				return false
+			}
+		default:
+			if !hermesYAMLConstructorValid(key, seen) {
+				return false
+			}
+			if key.ShortTag() == "!!map" || key.ShortTag() == "!!set" || key.ShortTag() == "!!seq" || key.ShortTag() == "!!omap" || key.ShortTag() == "!!pairs" {
+				return false
+			}
+		}
+		if !hermesYAMLConstructorValid(value, seen) {
 			return false
 		}
 	}
@@ -48,7 +171,7 @@ func hermesYAMLTagsSupported(node *yaml.Node, seen map[*yaml.Node]bool) bool {
 }
 
 func (observation hermesYAMLObservation) known(paths ...string) bool {
-	if !observation.nativeTagsSupported() {
+	if !observation.nativeConstructible() {
 		return false
 	}
 	for _, path := range paths {
@@ -69,32 +192,25 @@ func hermesYAMLPathKnown(node *yaml.Node, path []string, active map[*yaml.Node]b
 	if node.Kind == yaml.AliasNode {
 		return hermesYAMLPathKnown(node.Alias, path, active)
 	}
+	if (node.Kind == yaml.MappingNode && node.ShortTag() != "!!map") || (node.Kind == yaml.SequenceNode && node.ShortTag() != "!!seq") {
+		return false, true
+	}
 	if len(path) > 0 {
-		if node.Kind == yaml.MappingNode {
-			for index := 0; index < len(node.Content); index += 2 {
-				key := node.Content[index]
-				var value any
-				if key.Decode(&value) == nil {
-					if text, ok := value.(string); ok && text == path[0] {
-						keyKnown, _ := hermesYAMLPathKnown(key, nil, active)
-						valueKnown, present := hermesYAMLPathKnown(node.Content[index+1], path[1:], active)
-						return keyKnown && valueKnown, present
-					}
-				}
-			}
-			for index := 0; index < len(node.Content); index += 2 {
-				if node.Content[index].ShortTag() == "!!merge" {
-					known, present := hermesYAMLPathKnown(node.Content[index+1], path, active)
-					if present {
-						return known, true
-					}
-				}
-			}
-		} else if node.Kind == yaml.SequenceNode {
-			for _, child := range node.Content {
-				known, present := hermesYAMLPathKnown(child, path, active)
-				if present {
-					return known, true
+		if node.Kind != yaml.MappingNode {
+			return true, false
+		}
+		entries, known := hermesYAMLEffectiveEntries(node, make(map[*yaml.Node]bool))
+		if !known {
+			return false, true
+		}
+		for index := 0; index < len(entries); index += 2 {
+			key := entries[index]
+			var value any
+			if key.Decode(&value) == nil {
+				if text, ok := value.(string); ok && text == path[0] {
+					keyKnown := hermesYAMLKeyKnown(key, active)
+					valueKnown, present := hermesYAMLPathKnown(entries[index+1], path[1:], active)
+					return keyKnown && valueKnown, present
 				}
 			}
 		}
@@ -103,21 +219,35 @@ func hermesYAMLPathKnown(node *yaml.Node, path []string, active map[*yaml.Node]b
 	if node.Kind == yaml.ScalarNode && (node.ShortTag() == "!!binary" || hermesYAMLNativeTag(node) != node.ShortTag()) {
 		return false, true
 	}
-	children := node.Content
 	if node.Kind == yaml.MappingNode {
-		var known bool
-		children, known = hermesYAMLEffectiveEntries(node, make(map[*yaml.Node]bool))
+		entries, known := hermesYAMLEffectiveEntries(node, make(map[*yaml.Node]bool))
 		if !known {
 			return false, true
 		}
+		for index := 0; index < len(entries); index += 2 {
+			valueKnown, _ := hermesYAMLPathKnown(entries[index+1], nil, active)
+			if !hermesYAMLKeyKnown(entries[index], active) || !valueKnown {
+				return false, true
+			}
+		}
+		return true, true
 	}
-	for _, child := range children {
+	for _, child := range node.Content {
 		known, _ := hermesYAMLPathKnown(child, nil, active)
 		if !known {
 			return false, true
 		}
 	}
 	return true, true
+}
+
+func hermesYAMLKeyKnown(node *yaml.Node, active map[*yaml.Node]bool) bool {
+	resolved := hermesYAMLResolve(node)
+	if resolved != nil && resolved.Kind == yaml.ScalarNode && hermesYAMLNativeTag(resolved) == "!!value" {
+		return true
+	}
+	known, _ := hermesYAMLPathKnown(node, nil, active)
+	return known
 }
 
 var hermesYAMLSexagesimalInt = regexp.MustCompile(`^[-+]?[1-9][0-9_]*(?::[0-5]?[0-9])+$`)
@@ -127,6 +257,8 @@ func hermesYAMLNativeTag(node *yaml.Node) string {
 	tag := node.ShortTag()
 	if tag == "!!str" && node.Style == 0 {
 		switch {
+		case node.Value == "=":
+			return "!!value"
 		case hermesYAMLImplicitBoolean(node.Value):
 			return "!!bool"
 		case hermesYAMLSexagesimalInt.MatchString(node.Value):
@@ -166,6 +298,9 @@ func hermesYAMLEffectiveEntries(node *yaml.Node, active map[*yaml.Node]bool) ([]
 			return false
 		}
 		tag := hermesYAMLNativeTag(resolved)
+		if tag == "!!value" {
+			tag = "!!str"
+		}
 		identity := tag + "\x00" + resolved.Value
 		if !seen[identity] {
 			seen[identity] = true

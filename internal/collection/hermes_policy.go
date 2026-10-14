@@ -93,7 +93,7 @@ func (inputs *hermesInputs) readPolicy(request Request) {
 	inputs.pluginPolicy = make(map[string]hermesPolicyLeaf)
 	for _, key := range []string{"enabled", "disabled"} {
 		value, path, observation := user[key], inputs.config, inputs.configYAML
-		if managed, present := inputs.pluginManaged[key]; present {
+		if managed, present := inputs.pluginManaged[key]; present || (inputs.pluginManaged != nil && user != nil && !inputs.configYAML.mappingAt("plugins")) {
 			value, path, observation = managed, inputs.managedConfigPath, inputs.managedYAML
 		}
 		leaf := inputs.expandPluginPolicy(value, path, key)
@@ -300,13 +300,13 @@ func (inputs *hermesInputs) readManagedPlugins(path string) {
 		return
 	}
 	observation := observeHermesYAML(raw)
-	if !observation.nativeTagsSupported() {
-		inputs.pluginProblem(path, "managed plugin policy contains unsupported native YAML tags; native fail-open fallback is not observed")
+	if !observation.nativeConstructible() || !observation.mappingAt() {
+		inputs.pluginProblem(path, "managed plugin policy requires supported native YAML constructors and a mapping root; native fail-open fallback is not observed")
 		inputs.policyLayer(path, "managed-plugin-config", "unknown", "managed policy interpretation failed; its values are not applied")
 		return
 	}
 	value, present := data["plugins"]
-	if present && value != nil && hermesMap(data, "plugins") == nil {
+	if present && value != nil && (hermesMap(data, "plugins") == nil || !observation.mappingAt("plugins")) {
 		inputs.pluginProblem(path, "managed plugins must be a mapping")
 	}
 	inputs.managedYAML = observation
