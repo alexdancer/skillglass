@@ -9,6 +9,9 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 const geminiValidatedVersion = "Gemini CLI 0.63.0"
@@ -29,6 +32,10 @@ type geminiInputs struct {
 	extensionPolicy      bool
 	allowedPolicy        bool
 	blockGitPolicy       bool
+}
+
+func geminiComparisonKey(value string) string {
+	return cases.Lower(language.Und).String(value)
 }
 
 func geminiEvidence(kind EvidenceKind, rule, path, setting, reason string) Evidence {
@@ -182,7 +189,7 @@ func (in *geminiInputs) loadSettings(path, scope string, apply bool) {
 					layer.State = "unknown"
 					continue
 				}
-				in.disabled[strings.ToLower(name)] = path
+				in.disabled[geminiComparisonKey(name)] = path
 				layer.Choices = append(layer.Choices, PermissionChoice{Path: name, Enabled: false})
 			}
 		}
@@ -301,8 +308,8 @@ func (in *geminiInputs) readTrust() {
 		}
 		project := in.project
 		if runtime.GOOS == "darwin" {
-			target = strings.ToLower(target)
-			project = strings.ToLower(project)
+			target = geminiComparisonKey(target)
+			project = geminiComparisonKey(project)
 		}
 		rel, err := filepath.Rel(target, project)
 		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
@@ -328,7 +335,7 @@ func (in *geminiInputs) permission(name string) PermissionExplanation {
 		result.State = PermissionDenied
 		result.Evidence = geminiEvidence(EvidenceInferred, "skills-enabled", in.enabledPath, "skills.enabled=false", "skills subsystem is disabled")
 	}
-	if path, ok := in.disabled[strings.ToLower(name)]; ok {
+	if path, ok := in.disabled[geminiComparisonKey(name)]; ok {
 		result.State = PermissionDenied
 		result.Evidence = geminiEvidence(EvidenceInferred, "disabled-name-union", path, "skills.disabled", "case-insensitive disabled name remains disabled across settings layers")
 	}

@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"go.yaml.in/yaml/v3"
 )
 
 type geminiRootFact struct {
@@ -63,6 +65,7 @@ func buildGemini(ctx context.Context, request Request) (*Snapshot, error) {
 	ranks := make(map[SourceID]int)
 	uncertainRanks := make(map[SourceID]bool)
 	groups := make(map[string][]SourceID)
+	opaqueRank := -1
 	for _, id := range snapshot.order {
 		source := snapshot.sources[id]
 		name, nameEvidence, valid := geminiNativeName(source)
@@ -80,10 +83,11 @@ func buildGemini(ctx context.Context, request Request) (*Snapshot, error) {
 				fact.Evidence = native.evidence
 				fact.Permission = permission
 				fact.Provenance = native.provenance
-				if !valid {
+				if !valid && native.participation != ParticipationExcluded {
 					fact.Participation = ParticipationExcluded
 					if nameEvidence.Kind == EvidenceUnknown {
 						fact.Participation = ParticipationUnknown
+						opaqueRank = max(opaqueRank, native.rank)
 					}
 					fact.Evidence = nameEvidence
 				}
@@ -166,7 +170,7 @@ func buildGemini(ctx context.Context, request Request) (*Snapshot, error) {
 		source.Availability = explanation
 		snapshot.sources[id] = source
 	}
-	applyGeminiPrecedence(snapshot, ranks, groups, uncertainRanks)
+	applyGeminiPrecedence(snapshot, ranks, groups, uncertainRanks, opaqueRank)
 	applyCodexProblems(snapshot, in.problems, roots)
 	return snapshot, nil
 }
@@ -188,7 +192,8 @@ func geminiNativeName(source Source) (string, Evidence, bool) {
 	if match == nil {
 		return "", geminiEvidence(EvidenceInferred, "native-manifest-rejection", path, "", "frontmatter must begin on first line with name and description"), false
 	}
-	data, _, err := decodeMetadata([]byte(match[1]))
+	var data map[string]any
+	err := yaml.Unmarshal([]byte(match[1]), &data)
 	name, nameOK := data["name"].(string)
 	_, descriptionOK := data["description"].(string)
 	rule := "native-frontmatter-name"
@@ -218,7 +223,7 @@ func geminiNativeName(source Source) (string, Evidence, bool) {
 	}
 	return geminiNameCharacters.ReplaceAllString(name, "-"), geminiEvidence(EvidenceInferred, rule, path, "name", "native name sanitizes filename punctuation; reference identity remains separate"), true
 }
-func applyGeminiPrecedence(snapshot *Snapshot, ranks map[SourceID]int, groups map[string][]SourceID, uncertainRanks map[SourceID]bool) {
+func applyGeminiPrecedence(snapshot *Snapshot, ranks map[SourceID]int, groups map[string][]SourceID, uncertainRanks map[SourceID]bool, opaqueRank int) {
 	for _, group := range groups {
 		sort.Slice(group, func(i, j int) bool { return group[i] < group[j] })
 		best := -1
@@ -231,7 +236,7 @@ func applyGeminiPrecedence(snapshot *Snapshot, ranks map[SourceID]int, groups ma
 				winners = append(winners, id)
 			}
 		}
-		uncertainWinner := false
+		uncertainWinner := opaqueRank >= best
 		for _, id := range winners {
 			uncertainWinner = uncertainWinner || uncertainRanks[id]
 		}
@@ -246,9 +251,11 @@ func applyGeminiPrecedence(snapshot *Snapshot, ranks map[SourceID]int, groups ma
 			}
 			if len(winners) != 1 || uncertainWinner {
 				p.State = PrecedenceUnknown
+				p.Winner = ""
 				p.Evidence.Kind = EvidenceUnknown
 				source.Availability.State = AvailabilityUnknown
-				source.Availability.Reason = "highest-tier native participation or ordering is unverified"
+				source.Availability.Reason = "highest-tier native identity, participation or ordering is unverified"
+				p.Evidence.Reason = source.Availability.Reason
 				source.Availability.Evidence = &p.Evidence
 			} else {
 				p.Winner = winners[0]
