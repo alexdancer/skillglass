@@ -533,16 +533,17 @@ func hermesPlatformMatches(value any) bool {
 	if hermesFieldFalsy(value) {
 		return true
 	}
-	list, ok := hermesStrings(value)
+	list, ok := value.([]any)
 	if !ok {
-		return false
-	}
-	if len(list) == 0 {
-		return true
+		list = []any{value}
 	}
 	osName := map[string]string{"darwin": "darwin", "windows": "win32", "linux": "linux"}[runtime.GOOS]
-	for _, tag := range list {
-		tag = strings.ToLower(strings.TrimSpace(tag))
+	for _, item := range list {
+		tag, ok := item.(string)
+		if !ok {
+			continue
+		}
+		tag = strings.ToLower(strings.TrimFunc(tag, hermesDotenvSpace))
 		tag = mapPlatformTag(tag)
 		if strings.HasPrefix(osName, tag) {
 			return true
@@ -722,8 +723,38 @@ func applyHermesPrecedence(snapshot *Snapshot, roots []DiscoveryRoot, indexMetad
 	}
 }
 
+var hermesExplicitNamespace = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+func hermesExplicitPathValid(name string) bool {
+	candidate := strings.TrimFunc(name, hermesDotenvSpace)
+	if strings.HasPrefix(candidate, "/") || strings.HasPrefix(candidate, `\\`) || (len(candidate) >= 2 && candidate[1] == ':' && ((candidate[0] >= 'a' && candidate[0] <= 'z') || (candidate[0] >= 'A' && candidate[0] <= 'Z'))) {
+		return false
+	}
+	for _, part := range strings.FieldsFunc(candidate, func(char rune) bool { return char == '/' || char == '\\' }) {
+		if part == ".." {
+			return false
+		}
+	}
+	return true
+}
+
+func hermesExplicitSupportPath(path string, manifests map[string]bool) bool {
+	for parent := filepath.Dir(path); parent != filepath.Dir(parent); parent = filepath.Dir(parent) {
+		switch filepath.Base(parent) {
+		case "references", "templates", "assets", "scripts":
+			if manifests[filepath.Dir(parent)] {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func applyHermesExplicitLookup(snapshot *Snapshot, roots map[RootID]DiscoveryRoot, inputs *hermesInputs) {
 	matches := make(map[string]map[string]bool)
+	directPaths := make(map[string]string)
+	manifestDirs := make(map[string]bool)
+	searchRoots := make(map[string]bool)
 	selectors := make(map[SourceID]map[string]bool)
 	unknownNames := make(map[SourceID]bool)
 	unknownPaths := make(map[string]bool)
@@ -737,12 +768,17 @@ func applyHermesExplicitLookup(snapshot *Snapshot, roots map[RootID]DiscoveryRoo
 		if selectors[ref.Source] == nil {
 			selectors[ref.Source] = make(map[string]bool)
 		}
-		if hermesOrgExcluded(ref, root) != "" {
-			continue
-		}
 		source := snapshot.sources[ref.Source]
 		path := source.Manifest.ResolvedPath
 		searchKnown := root.Origin == "hermes-profile" || inputs.configYAML.known("skills.external_dirs")
+		manifestDirs[filepath.Clean(ref.DiscoveredPath)] = true
+		searchRoots[root.Path] = searchKnown
+		if searchKnown && path != "" {
+			directPaths[filepath.Clean(ref.DiscoveredPath)] = path
+		}
+		if hermesOrgExcluded(ref, root) != "" {
+			continue
+		}
 		add := func(name string) {
 			selectors[ref.Source][name] = true
 			if path == "" || !searchKnown {
@@ -785,7 +821,61 @@ func applyHermesExplicitLookup(snapshot *Snapshot, roots map[RootID]DiscoveryRoo
 		for _, name := range ordered {
 			setting := fmt.Sprintf("%q", name)
 			settings = append(settings, setting)
+			lookupNames := []string{name}
+			valid := hermesExplicitPathValid(name)
+			if namespace, bare, qualified := strings.Cut(name, ":"); qualified {
+				valid = valid && hermesExplicitNamespace.MatchString(namespace)
+				observedDispatch := false
+				for _, plugin := range inputs.plugins {
+					observedDispatch = observedDispatch || (plugin.admitted && plugin.state != ParticipationExcluded && plugin.namespace == namespace)
+				}
+				if valid && observedDispatch {
+					facts = append(facts, fmt.Sprintf("selector %s: unknown (plugin namespace dispatch precedes local lookup; registration/loading was not observed)", setting))
+					if state != "ambiguous-bare-name" {
+						state, kind = "unknown", EvidenceUnknown
+					}
+					continue
+				}
+				if bare != "" {
+					categorized := namespace + "/" + bare
+					valid = valid && hermesExplicitPathValid(categorized)
+					lookupNames = append(lookupNames, categorized)
+				}
+				facts = append(facts, fmt.Sprintf("selector %s local-tree facts are conditional on namespace dispatch falling through; unobserved plugin registrations are not known absent", setting))
+			}
+			if !valid {
+				facts = append(facts, fmt.Sprintf("selector %s: invalid-selector (native relative-path/namespace validation rejects it before local matching)", setting))
+				if state != "ambiguous-bare-name" {
+					state, kind = "unknown", EvidenceUnknown
+				}
+				continue
+			}
 			certain := scopeKnown
+			for _, lookup := range lookupNames {
+				for root, known := range searchRoots {
+					candidate := filepath.Join(root, lookup)
+					if !pathWithin(candidate, root) || hermesExplicitSupportPath(candidate, manifestDirs) {
+						continue
+					}
+					if directPaths[candidate] == "" && manifestDirs[filepath.Dir(candidate)] {
+						switch filepath.Base(candidate) {
+						case "references", "templates", "assets", "scripts":
+							certain = false
+						}
+					}
+					if path := directPaths[candidate]; known && path != "" {
+						if matches[name] == nil {
+							matches[name] = make(map[string]bool)
+						}
+						matches[name][path] = true
+					}
+				}
+				for _, part := range strings.Split(lookup, string(filepath.Separator)) {
+					if hermesExcludedDirs[part] {
+						certain = false
+					}
+				}
+			}
 			for path := range unknownPaths {
 				if !matches[name][path] {
 					certain = false
