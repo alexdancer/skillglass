@@ -27,16 +27,27 @@ func (token objectToken) String() string {
 }
 
 func directoryObjectToken(path string) (objectToken, error) {
+	return filesystemObjectToken(path, true)
+}
+
+func fileObjectToken(path string) (objectToken, error) {
+	return filesystemObjectToken(path, false)
+}
+
+func filesystemObjectToken(path string, directory bool) (objectToken, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return objectToken{}, err
 	}
-	if !info.IsDir() {
+	if directory && !info.IsDir() {
 		return objectToken{}, errors.New("source is not a directory")
+	}
+	if !directory && !info.Mode().IsRegular() {
+		return objectToken{}, errors.New("source is not a regular file")
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
-		return objectToken{}, errors.New("Darwin directory identity is unavailable")
+		return objectToken{}, errors.New("Darwin filesystem identity is unavailable")
 	}
 	return objectToken{
 		device:          uint64(stat.Dev),
