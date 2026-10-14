@@ -137,7 +137,7 @@ func runBrowse(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if snapshot == nil {
 		return code
 	}
-	filters, err := snapshot.NewFilters("", options.sourceRoot, options.context, options.problem)
+	filters, err := optionFilters(snapshot, options, "")
 	if err != nil {
 		writeError(stderr, err)
 		io.WriteString(stderr, usage)
@@ -281,6 +281,10 @@ func (model browserModel) updateSearch(key tea.KeyPressMsg) (tea.Model, tea.Cmd)
 
 func (model browserModel) updateCollection(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch key.String() {
+	case "a":
+		if model.snapshot.Scope().Agent != nil {
+			model.cycleAvailability()
+		}
 	case "m":
 		if model.mode == browserSources && len(model.sources) > 0 {
 			model.marked = model.sources[model.sourceFocus].ID
@@ -526,13 +530,17 @@ func (model *browserModel) clearSelectedSource() {
 }
 
 func (model *browserModel) cycleContext() {
-	switch model.filters.Context {
-	case collection.FilterAll:
-		model.filters.Context = collection.FilterProject
-	case collection.FilterProject:
-		model.filters.Context = collection.FilterCustom
-	default:
-		model.filters.Context = collection.FilterAll
+	states := []collection.ContextFilter{collection.FilterAll, collection.FilterProject, collection.FilterCustom}
+	if model.snapshot.Scope().Agent != nil {
+		states = append(states, collection.FilterGlobal, collection.FilterSystem, collection.FilterManaged)
+	}
+	current := model.filters.Context
+	model.filters.Context = collection.FilterAll
+	for index, state := range states {
+		if current == state {
+			model.filters.Context = states[(index+1)%len(states)]
+			break
+		}
 	}
 	model.feedback = "Context filter: " + string(model.filters.Context)
 	model.applyView()
@@ -669,6 +677,9 @@ func (model browserModel) renderCollection() []string {
 		"↑/↓ or j/k move", "/ search", detailHelp, "Tab sources/problems",
 		"m mark left", "v compare", "r refresh", "c context", "o root", "f problem", "s scope", "q quit",
 	}
+	if model.snapshot.Scope().Agent != nil {
+		helpGroups = append(helpGroups, "a availability")
+	}
 	if model.mode == browserSearch {
 		helpGroups = []string{"type to search", "Enter keep", "Esc cancel", "Ctrl+U clear"}
 	}
@@ -772,6 +783,9 @@ func (model browserModel) headerLines(mode browserMode) []string {
 		fitLine("Problem filter: "+browserFilterValue(string(model.filters.Problem)), model.width),
 		fitLine("Root filter: "+model.rootFilterSummary(), model.width),
 	}, model.width)...)
+	if scope.Agent != nil {
+		header = append(header, fitLine("Agent: codex | Availability filter: "+browserFilterValue(string(model.filters.Availability)), model.width))
+	}
 	return append(header, model.selectedSummaryLines(mode)...)
 }
 
@@ -853,7 +867,7 @@ func rootCountLabel(count int) string {
 func (model browserModel) inventoryBodyLines() ([]string, []int) {
 	if len(model.sources) == 0 {
 		lines := []string{"No matching sources."}
-		if model.filters.Search == "" && model.filters.SourceRoot == "" && model.filters.Context == collection.FilterAll && model.filters.Problem == "" {
+		if model.filters.Search == "" && model.filters.SourceRoot == "" && model.filters.Context == collection.FilterAll && model.filters.Problem == "" && model.filters.Availability == "" {
 			lines[0] = "No sources found in the selected roots."
 		}
 		return lines, nil
@@ -875,6 +889,9 @@ func (model browserModel) inventoryBodyLines() ([]string, []int) {
 			model.width,
 		)...)
 		lines = append(lines, wrapLine("  "+displayOptional(source.Description), model.width)...)
+		if source.Availability.Evidence != nil {
+			lines = append(lines, wrapLine("  "+string(source.Availability.State)+" ("+string(source.Availability.Evidence.Kind)+")", model.width)...)
+		}
 	}
 	return lines, focusLines
 }
@@ -903,7 +920,7 @@ func (model browserModel) problemBodyLines() ([]string, []int) {
 
 func (model browserModel) inventoryStatus() string {
 	if len(model.sources) == 0 {
-		if model.filters.Search == "" && model.filters.SourceRoot == "" && model.filters.Context == collection.FilterAll && model.filters.Problem == "" {
+		if model.filters.Search == "" && model.filters.SourceRoot == "" && model.filters.Context == collection.FilterAll && model.filters.Problem == "" && model.filters.Availability == "" {
 			return "0 sources"
 		}
 		return "0 matches | selected source unchanged"
@@ -946,6 +963,12 @@ func (model browserModel) detailBodyLines(source collection.Source) []string {
 	appendField := func(label, value string) {
 		lines = append(lines, wrapLine(label+": "+safeInline(value), model.width)...)
 	}
+	for _, line := range availabilitySummaryLines(source.Availability) {
+		lines = append(lines, wrapLine(safeInline(line), model.width)...)
+	}
+	if source.Availability.Evidence != nil {
+		lines = append(lines, "")
+	}
 	appendField("Description", optionalValue(source.Description))
 	appendField("Source", source.Directory)
 	for _, reference := range model.snapshot.References(source.ID) {
@@ -956,7 +979,10 @@ func (model browserModel) detailBodyLines(source collection.Source) []string {
 	}
 	appendField("Identity", source.Identity.Method+" ("+source.Identity.Certainty+")")
 	appendField("Ownership", source.Ownership.State+" ("+source.Ownership.Reason+")")
-	appendField("Availability", source.Availability.State+" ("+source.Availability.Reason+")")
+	appendField("Availability", string(source.Availability.State)+" ("+source.Availability.Reason+")")
+	for _, line := range availabilityLines(source.Availability) {
+		lines = append(lines, wrapLine(safeInline(line), model.width)...)
+	}
 	appendField("Manifest", string(source.Manifest.Status))
 	if source.Manifest.IsSymlink {
 		appendField("Manifest link", source.Manifest.Path+" -> "+source.Manifest.RawSymlinkTarget)
@@ -1089,6 +1115,9 @@ func (model browserModel) scopePage(header []string) pagedView {
 func (model browserModel) scopeBodyLines() []string {
 	scope := model.snapshot.Scope()
 	lines := make([]string, 0, 8+len(scope.Roots)*4)
+	if scope.Agent != nil {
+		lines = append(lines, "Agent: codex | Validated: "+scope.Agent.ValidatedVersion, "Session: unknown; local configuration inferred", "")
+	}
 	if scope.Project.Selected {
 		lines = append(lines, "Project:")
 		lines = append(lines, wrapLine("  "+safeInline(scope.Project.Path), model.width)...)
@@ -1100,6 +1129,9 @@ func (model browserModel) scopeBodyLines() []string {
 	lines = append(lines, wrapLine("  Source root: "+displayOptional(model.filters.SourceRoot), model.width)...)
 	lines = append(lines, "  Context: "+string(model.filters.Context))
 	lines = append(lines, "  Problem: "+optionalValue(string(model.filters.Problem)))
+	if scope.Agent != nil {
+		lines = append(lines, wrapLine("  Availability: "+browserFilterValue(string(model.filters.Availability)), model.width)...)
+	}
 	for index, root := range scope.Roots {
 		lines = append(lines, "")
 		lines = append(lines, wrapLine(fmt.Sprintf(
@@ -1111,8 +1143,17 @@ func (model browserModel) scopeBodyLines() []string {
 			root.ProblemCount,
 		), model.width)...)
 		lines = append(lines, wrapLine("  Requested: "+safeInline(root.Requested), model.width)...)
+		if root.Origin != "" {
+			lines = append(lines, wrapLine("  Origin: "+root.Origin, model.width)...)
+		}
 		if root.Resolved != "" && root.Resolved != root.Requested {
 			lines = append(lines, wrapLine("  Resolved: "+safeInline(root.Resolved), model.width)...)
+		}
+	}
+	if scope.Agent != nil {
+		lines = append(lines, "", "Validation and uncertainty:")
+		for _, line := range scopeAgentLines(scope)[2:] {
+			lines = append(lines, wrapLine(safeInline(line), model.width)...)
 		}
 	}
 	return lines
@@ -1203,7 +1244,7 @@ func wrapLine(line string, width int) []string {
 	if line == "" {
 		return []string{""}
 	}
-	wrapped := ansi.Hardwrap(line, max(width, 1), true)
+	wrapped := ansi.Wrap(line, max(width, 1), "")
 	return strings.Split(wrapped, "\n")
 }
 
@@ -1222,4 +1263,16 @@ func optionalValue(value string) string {
 		return "(none)"
 	}
 	return value
+}
+
+func (model *browserModel) cycleAvailability() {
+	states := append([]collection.AvailabilityState{""}, collection.AvailabilityStates()...)
+	for index, state := range states {
+		if model.filters.Availability == state {
+			model.filters.Availability = states[(index+1)%len(states)]
+			break
+		}
+	}
+	model.applyView()
+	model.feedback = "Availability filter: " + browserFilterValue(string(model.filters.Availability))
 }
