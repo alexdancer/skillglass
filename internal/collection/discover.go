@@ -172,9 +172,7 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 	}
 
 	rootIsBundle, manifestErr := hasManifest(resolvedRoot)
-	if rootIsBundle && strings.HasPrefix(root.Origin, "pi-") && root.piMode == "all" {
-		builder.discoverPiChildren(ctx, root, root.Path, make(map[string]bool), new(int), true)
-	} else if rootIsBundle {
+	if rootIsBundle {
 		if builder.discoverCandidate(ctx, root, root.Path, ".") {
 			report.SourceCount++
 		}

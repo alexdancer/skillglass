@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import crypto from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { spawnRecorded } from './invocation.mjs';
 const installed=process.argv[2];
 if (!installed) throw new Error('usage: python3 tests/native/pi-read-contained.py INSTALLED_PI_PACKAGE EVIDENCE_DIR');
 if (process.env.PI_FIXTURE_CONTAINED !== 'strict') throw new Error('native imports require the fail-closed contained launcher');
@@ -48,9 +48,9 @@ write(path.join(project,'.pi','settings.json'),JSON.stringify({skills:[configure
 const inspect=async()=>{const settings=SettingsManager.create(project,agentDir);const manager=new DefaultPackageManager({cwd:project,agentDir,settingsManager:settings});const resolved=await manager.resolve(()=>{throw new Error('install forbidden')});const loaded=loadSkills({cwd:project,agentDir,includeDefaults:false,skillPaths:resolved.skills.filter(r=>r.enabled).map(r=>r.path)});return {resolved:resolved.skills,loaded}};
 const baseline=await inspect();
 const rpcCommands=()=>new Promise((resolve,reject)=>{
- const child=spawn(process.execPath,[path.join(installed,'dist','bundle','cli.js'),'--mode','rpc','--offline','--no-session','--no-extensions','--no-mcp','--no-context-files','--no-tools'],{cwd:project,env:{HOME:home,PI_CODING_AGENT_DIR:path.relative(project,agentDir),PI_OFFLINE:'1',PATH:'/usr/bin:/bin',TERM:'dumb'}});
+ const child=spawnRecorded(process.execPath,[path.join(installed,'dist','bundle','cli.js'),'--mode','rpc','--offline','--no-session','--no-extensions','--no-mcp','--no-context-files','--no-tools'],{cwd:project,env:{HOME:home,PI_CODING_AGENT_DIR:path.relative(project,agentDir),PI_OFFLINE:'1',PATH:'/usr/bin:/bin',TERM:'dumb',PI_PROBE_INVOCATIONS:process.env.PI_PROBE_INVOCATIONS,PI_PROBE_PROFILE:process.env.PI_PROBE_PROFILE,PI_PROBE_PARENT_INVOCATION:process.env.PI_PROBE_PARENT_INVOCATION}});
  let output='',error='';const timer=setTimeout(()=>{child.kill('SIGTERM');reject(new Error('native RPC timeout '+error))},15000);
- child.stdout.on('data',chunk=>{output+=chunk.toString();for(const line of output.split('\n')) {try {const value=JSON.parse(line);if(value.type==='response'&&value.id==='ale33-commands') {clearTimeout(timer);child.once('exit',()=>resolve(value));child.kill('SIGTERM')}} catch {}}});
+ child.stdout.on('data',chunk=>{output+=chunk.toString();for(const line of output.split('\n')) {try {const value=JSON.parse(line);if(value.type==='response'&&value.id==='ale33-commands') {clearTimeout(timer);child.once('close',()=>resolve(value));child.kill('SIGTERM')}} catch {}}});
  child.stderr.on('data',chunk=>{error+=chunk.toString()});child.on('error',reject);
  child.stdin.write(JSON.stringify({id:'ale33-commands',type:'get_commands'})+'\n');
 });

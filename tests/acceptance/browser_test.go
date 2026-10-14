@@ -48,7 +48,7 @@ func TestBrowserPTYJourney(t *testing.T) {
 	command.Dir = fx.project
 	command.Env = fx.environment()
 	started := time.Now()
-	terminal, err := pty.StartWithSize(command, &pty.Winsize{Rows: 24, Cols: 80})
+	terminal, err := command.startPTY(&pty.Winsize{Rows: 24, Cols: 80})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,6 +89,9 @@ func TestBrowserPTYJourney(t *testing.T) {
 	err = command.Wait()
 	<-copyDone
 	_ = terminal.Close()
+	if receiptErr := command.completePTY(err, raw.Bytes()); receiptErr != nil {
+		t.Fatal(receiptErr)
+	}
 	if ctx.Err() != nil {
 		t.Fatal("browser PTY journey timed out")
 	}
@@ -677,7 +680,11 @@ func runTmuxIgnoringError(tmux string, fx fixture, socket string, args ...string
 	command := fx.command(context.Background(), tmux, commandArgs...)
 	command.Dir = fx.project
 	command.Env = fx.environment()
-	_ = command.Run()
+	if err := command.Run(); err != nil {
+		if _, expectedExit := err.(*exec.ExitError); !expectedExit {
+			panic(err)
+		}
+	}
 }
 
 func waitForPane(

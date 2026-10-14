@@ -220,7 +220,7 @@ func runSandboxCommand(
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	commandArgs := append([]string{"-f", profile, executable}, args...)
-	command := exec.CommandContext(ctx, "/usr/bin/sandbox-exec", commandArgs...)
+	command := fx.wrap(exec.CommandContext(ctx, "/usr/bin/sandbox-exec", commandArgs...))
 	command.Dir = canonicalPath(t, fx.project)
 	command.Env = fx.environment()
 	var stdout bytes.Buffer
@@ -259,7 +259,7 @@ func runSandboxBrowser(t *testing.T, fx fixture, profile, executable string) []b
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	command := exec.CommandContext(
+	command := fx.wrap(exec.CommandContext(
 		ctx,
 		"/usr/bin/sandbox-exec",
 		"-f",
@@ -270,11 +270,11 @@ func runSandboxBrowser(t *testing.T, fx fixture, profile, executable string) []b
 		fx.cleanRoot,
 		"--project",
 		fx.project,
-	)
+	))
 	command.Dir = canonicalPath(t, fx.project)
 	command.Env = fx.environment()
 	started := time.Now()
-	terminal, err := pty.StartWithSize(command, &pty.Winsize{Rows: 30, Cols: 80})
+	terminal, err := command.startPTY(&pty.Winsize{Rows: 30, Cols: 80})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -291,6 +291,9 @@ func runSandboxBrowser(t *testing.T, fx fixture, profile, executable string) []b
 	err = command.Wait()
 	<-copyDone
 	_ = terminal.Close()
+	if receiptErr := command.completePTY(err, raw.Bytes()); receiptErr != nil {
+		t.Fatal(receiptErr)
+	}
 	if ctx.Err() != nil {
 		t.Fatal("sandboxed browser timed out")
 	}

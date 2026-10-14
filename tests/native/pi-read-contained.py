@@ -5,9 +5,10 @@ import json
 import os
 from pathlib import Path
 import shutil
-import subprocess
 import sys
 import tempfile
+
+from invocation import run_recorded
 
 if len(sys.argv) != 3 or sys.platform != "darwin":
     raise SystemExit("usage on macOS: python3 pi-read-contained.py INSTALLED_PI_PACKAGE EVIDENCE_DIR")
@@ -33,6 +34,7 @@ excluded.write_text("OWNED_EXCLUDED_CANARY")
 assert excluded.read_text() == "OWNED_EXCLUDED_CANARY"
 script = allowed / "pi-read.mjs"
 shutil.copy2(Path(__file__).with_name("pi-read.mjs"), script)
+shutil.copy2(Path(__file__).with_name("invocation.mjs"), allowed / "invocation.mjs")
 def quoted(p):
     return json.dumps(str(p))
 ancestors = sorted({str(parent) for base in [allowed, package_store, node, Path("/usr/bin/sandbox-exec"), Path("/opt/homebrew/opt")] for parent in base.parents})
@@ -63,18 +65,22 @@ env = {"HOME":str(allowed/"home"), "PI_CODING_AGENT_DIR":str(allowed/"agent"),
        "TMPDIR":str(allowed/"tmp"), "PATH":"/usr/bin:/bin", "TERM":"dumb",
        "PI_OFFLINE":"1", "PI_FIXTURE_CONTAINED":"strict"}
 records = []
-def run(name, args):
+def run(name, args, timeout=90):
     command = ["/usr/bin/sandbox-exec", "-f", str(profile_path), str(node), *args]
-    result = subprocess.run(command, cwd=allowed/"project", env=env, capture_output=True, text=True, timeout=90)
-    (out/(name+".stdout")).write_text(result.stdout)
-    (out/(name+".stderr")).write_text(result.stderr)
-    records.append({"name":name,"argv":command,"cwd":str(allowed/"project"),"environment":env,"exit_code":result.returncode})
+    artifacts = [arg for arg in args if arg.endswith((".mjs", ".js"))]
+    result, identity = run_recorded(name, command, allowed/"project", env, allowed/"invocations", profile_path, artifacts, timeout=timeout)
+    (out/(name+".stdout")).write_bytes(result.stdout)
+    (out/(name+".stderr")).write_bytes(result.stderr)
+    records.append({**identity, "exit_code":result.returncode,
+                    "stdout_sha256":hashlib.sha256(result.stdout).hexdigest(),
+                    "stderr_sha256":hashlib.sha256(result.stderr).hexdigest()})
     (out/"commands.json").write_text(json.dumps(records, indent=2)+"\n")
     if result.returncode:
         raise SystemExit(f"{name} failed closed: {result.returncode}; see {out}")
-    return result.stdout
+    return result.stdout.decode("utf-8")
 controls = allowed/"controls.mjs"
-controls.write_text('''import fs from 'node:fs';
+controls.write_text('''import {spawnRecorded} from './invocation.mjs';
+import fs from 'node:fs';
 import net from 'node:net';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
@@ -87,8 +93,10 @@ const network=await new Promise(resolve=>{const socket=net.connect({host:'127.0.
 assert(network);
 const child=spawnSync('/usr/bin/true');assert(child.error && ['EPERM','EACCES'].includes(child.error.code));
 if (!process.env.INHERITED_CONTROL) {
- const nested=spawnSync(process.execPath,process.argv.slice(1),{env:{...process.env,INHERITED_CONTROL:'1'},encoding:'utf8'});
- assert.equal(nested.status,0,nested.stderr);
+ const nested=spawnRecorded(process.execPath,process.argv.slice(1),{cwd:process.cwd(),env:{...process.env,INHERITED_CONTROL:'1'}});
+ let error='';nested.stderr.on('data',chunk=>{error+=chunk.toString()});
+ const status=await new Promise((resolve,reject)=>{nested.on('error',reject);nested.on('close',resolve)});
+ assert.equal(status,0,error);
 }
 console.log(JSON.stringify({allowedRead:true,excludedSystemReadDenied:true,outsideWriteDenied:true,networkDenied:true,unapprovedChildDenied:true,inheritedBoundary:true,nodeVersion:process.version}));
 ''')
@@ -96,7 +104,7 @@ try:
     control_json = run("controls", [str(controls),str(positive),str(excluded),str(root/"forbidden-write")])
     json.loads(control_json)
     run("native-syntax", ["--check",str(script)])
-    version = run("pi-version", [str(installed/"dist/bundle/cli.js"),"--version"]).strip()
+    version = run("pi-version", [str(installed/"dist/bundle/cli.js"),"--version"], timeout=15).strip()
     # No native version/help, imports or RPC can run before the controls pass.
     receipt = json.loads(run("native", [str(script),str(installed)]))
     assert version == receipt["version"], (version, receipt["version"])
@@ -107,4 +115,6 @@ try:
                 "controls":json.loads(control_json),"native_children_waited":True}
     (out/"containment.json").write_text(json.dumps(manifest,indent=2)+"\n")
 finally:
+    if (allowed/"invocations").exists():
+        shutil.copytree(allowed/"invocations", out/"invocations", dirs_exist_ok=True)
     shutil.rmtree(root)

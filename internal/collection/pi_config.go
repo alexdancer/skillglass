@@ -28,6 +28,7 @@ type piPackage struct {
 	Skills    []string `json:"skills"`
 	Autoload  *bool    `json:"autoload"`
 	hasSkills bool
+	object    bool
 }
 type piRootFact struct {
 	rank            int
@@ -97,6 +98,7 @@ func (inputs *piInputs) settings(path, scope string) piSettings {
 						s.uncertain = true
 						continue
 					}
+					p.object = true
 					_, p.hasSkills = shape["skills"]
 					if p.hasSkills && string(shape["skills"]) == "null" {
 						s.uncertain = true

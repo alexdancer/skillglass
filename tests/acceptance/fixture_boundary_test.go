@@ -12,16 +12,14 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/creack/pty"
 )
 
 // Ordinary CLI, direct PTY and tmux share this process boundary. Codex has
 // absolute system inputs in addition to HOME; controlled absence keeps fixtures
 // deterministic without changing production discovery or inspecting live inputs.
-func (fx fixture) command(ctx context.Context, executable string, args ...string) *exec.Cmd {
+func (fx fixture) command(ctx context.Context, executable string, args ...string) *fixtureCommand {
 	if runtime.GOOS != "darwin" {
-		return exec.CommandContext(ctx, executable, args...)
+		return fx.wrap(exec.CommandContext(ctx, executable, args...))
 	}
 	account, err := user.Current()
 	if err != nil {
@@ -34,11 +32,11 @@ func (fx fixture) command(ctx context.Context, executable string, args ...string
 (deny file-write*)
 (allow file-write* (subpath %s) (subpath %s) (subpath "/dev"))
 (deny file-read* (subpath %s) (subpath %s))
-(allow file-read* (literal %s) (literal %s))
+(allow file-read* (literal %s) (literal %s) (literal %s))
 (deny file-read* (with errno ENOENT) (subpath "/etc/codex") (subpath "/private/etc/codex") (subpath %s))
-`, sandboxString(fx.tmuxTemporary), sandboxString(fx.base), sandboxString(fx.tmuxTemporary), sandboxString(account.HomeDir), sandboxString(filepath.Join(fx.base, "excluded", "live-home")), sandboxString(skillglassBinary), sandboxString(isolationProbeBinary), sandboxString(filepath.Join(fx.base, "excluded", "system-codex")))
+`, sandboxString(fx.tmuxTemporary), sandboxString(fx.base), sandboxString(fx.tmuxTemporary), sandboxString(account.HomeDir), sandboxString(filepath.Join(fx.base, "excluded", "live-home")), sandboxString(skillglassBinary), sandboxString(isolationProbeBinary), sandboxString(fixtureLaunchBinary), sandboxString(filepath.Join(fx.base, "excluded", "system-codex")))
 	argv := append([]string{"-p", profile, executable}, args...)
-	return exec.CommandContext(ctx, "/usr/bin/sandbox-exec", argv...)
+	return fx.wrap(exec.CommandContext(ctx, "/usr/bin/sandbox-exec", argv...))
 }
 
 func TestOrdinaryFixtureBoundary(t *testing.T) {
@@ -71,13 +69,16 @@ func TestOrdinaryFixtureBoundary(t *testing.T) {
 	}
 	command = fx.command(ctx, "/bin/cat", allowed, excluded)
 	command.Env = fx.environment()
-	terminal, err := pty.Start(command)
+	terminal, err := command.startPTY(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	output, _ = io.ReadAll(terminal)
 	err = command.Wait()
 	_ = terminal.Close()
+	if receiptErr := command.completePTY(err, output); receiptErr != nil {
+		t.Fatal(receiptErr)
+	}
 	writeEvidence(t, "fixture-boundary/direct-pty.txt", output)
 	if err == nil || !strings.Contains(string(output), "OWNED_ALLOWED_CANARY") || !strings.Contains(string(output), "No such file or directory") {
 		t.Errorf("direct PTY must see controlled absence: %v %s", err, output)

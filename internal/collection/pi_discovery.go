@@ -69,12 +69,10 @@ func (builder *discoveryBuilder) discoverPiChildren(ctx context.Context, root Di
 	*count++
 	ancestors[resolved] = true
 	defer delete(ancestors, resolved)
-	if root.piMode != "all" {
-		if present, _ := hasManifest(path); present {
-			rel, _ := filepath.Rel(root.Path, path)
-			builder.discoverCandidate(ctx, root, path, rel)
-			return
-		}
+	if present, _ := hasManifest(path); present {
+		rel, _ := filepath.Rel(root.Path, path)
+		builder.discoverCandidate(ctx, root, path, rel)
+		return
 	}
 	entries, err := os.ReadDir(path)
 	if err != nil {
@@ -110,7 +108,7 @@ func (builder *discoveryBuilder) discoverPiChildren(ctx context.Context, root Di
 		if !strings.HasSuffix(e.Name(), ".md") {
 			continue
 		}
-		include := root.piMode == "all" || (root.piMode == "pi" && first) || (root.piMode == "agents" && !first)
+		include := (root.piMode == "pi" && first) || (root.piMode == "agents" && !first)
 		if include {
 			builder.discoverPiFile(ctx, root, child, rel)
 		}

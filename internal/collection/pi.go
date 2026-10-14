@@ -49,7 +49,7 @@ func buildPi(ctx context.Context, request Request) (*Snapshot, error) {
 			if piPattern(entry) {
 				continue
 			}
-			inputs.addRoot(&request, piPath(entry, base, request.home), context, "pi-configured-"+string(context), "all", piRootFact{rank: rank, base: base, path: settings.path, patterns: settings.skills, trust: trust, uncertain: settings.uncertain, provenance: Provenance{Kind: string(context), Evidence: piEvidence(EvidenceObserved, "configured-resource", settings.path, "skills", "resource root selected by Pi settings")}}, false)
+			inputs.addRoot(&request, piPath(entry, base, request.home), context, "pi-configured-"+string(context), "pi", piRootFact{rank: rank, base: base, path: settings.path, patterns: settings.skills, trust: trust, uncertain: settings.uncertain, provenance: Provenance{Kind: string(context), Evidence: piEvidence(EvidenceObserved, "configured-resource", settings.path, "skills", "resource root selected by Pi settings")}}, false)
 		}
 	}
 	if request.Project.Selected {
@@ -76,7 +76,7 @@ func buildPi(ctx context.Context, request Request) (*Snapshot, error) {
 			continue
 		}
 		for _, kind := range []string{"git", "npm/node_modules"} {
-			inputs.addRoot(&request, filepath.Join(base, kind), ContextManaged, "pi-inactive-cache", "all", piRootFact{rank: 9, trust: "inactive", provenance: Provenance{Kind: "plugin", Evidence: piEvidence(EvidenceObserved, "managed-storage", base, "", "cache storage alone is not an active package registration")}}, true)
+			inputs.addRoot(&request, filepath.Join(base, kind), ContextManaged, "pi-inactive-cache", "pi", piRootFact{rank: 9, trust: "inactive", provenance: Provenance{Kind: "plugin", Evidence: piEvidence(EvidenceObserved, "managed-storage", base, "", "cache storage alone is not an active package registration")}}, true)
 		}
 	}
 	snapshot, err := discover(ctx, request)
@@ -96,7 +96,7 @@ func buildPi(ctx context.Context, request Request) (*Snapshot, error) {
 			root.Evidence = &e
 		}
 	}
-	suppressed := inputs.lexicalDuplicates(snapshot)
+	suppressed := inputs.occurrenceDuplicates(snapshot)
 	ranks := make(map[SourceID]int)
 	for _, id := range snapshot.order {
 		source, rank := inputs.explain(snapshot, id, roots, suppressed)
@@ -108,7 +108,7 @@ func buildPi(ctx context.Context, request Request) (*Snapshot, error) {
 	return snapshot, nil
 }
 
-func (inputs *piInputs) explain(snapshot *Snapshot, id SourceID, roots map[RootID]DiscoveryRoot, suppressed map[ReferenceID]bool) (Source, int) {
+func (inputs *piInputs) explain(snapshot *Snapshot, id SourceID, roots map[RootID]DiscoveryRoot, suppressed map[ReferenceID]Evidence) (Source, int) {
 	source := snapshot.sources[id]
 	ex := AvailabilityExplanation{State: AvailabilityUnknown, Reason: "explicit viewer root does not establish Pi participation"}
 	e := piEvidence(EvidenceUnknown, "inspection-only", source.Directory, "", ex.Reason)
@@ -168,11 +168,12 @@ func (inputs *piInputs) explain(snapshot *Snapshot, id SourceID, roots map[RootI
 			if fact.trust == "denied" || fact.trust == "inactive" {
 				candidateRank += 100
 			}
-			if suppressed[rid] {
+			if selection, isSuppressed := suppressed[rid]; isSuppressed {
 				ra.Participation = ParticipationExcluded
-				ra.Evidence = piEvidence(EvidenceInferred, "native-first-lexical-occurrence", file, "", "earlier native registration retained this identical lexical resource")
+				ra.Evidence = selection
+				candidateRank += 10
 			}
-			if !suppressed[rid] && candidateRank < bestRank {
+			if candidateRank < bestRank {
 				copy := ra
 				best = &copy
 				bestRank = candidateRank
@@ -252,9 +253,10 @@ func piOccurrenceFile(source Source, ref Reference) string {
 
 // The package manager inserts packages, configured paths, then automatic paths.
 // Its lexical map keeps the first registration before rank/canonical selection.
-func (inputs *piInputs) lexicalDuplicates(snapshot *Snapshot) map[ReferenceID]bool {
+func (inputs *piInputs) occurrenceDuplicates(snapshot *Snapshot) map[ReferenceID]Evidence {
 	seen := make(map[string]bool)
-	suppressed := make(map[ReferenceID]bool)
+	suppressed := make(map[ReferenceID]Evidence)
+	var retained []ReferenceID
 	for _, rid := range snapshot.referenceOrder {
 		ref := snapshot.references[rid]
 		fact, native := inputs.facts[ref.Root]
@@ -263,9 +265,27 @@ func (inputs *piInputs) lexicalDuplicates(snapshot *Snapshot) map[ReferenceID]bo
 		}
 		file := piOccurrenceFile(snapshot.sources[ref.Source], ref)
 		if seen[file] {
-			suppressed[rid] = true
+			suppressed[rid] = piEvidence(EvidenceInferred, "native-first-lexical-occurrence", file, file, "earlier native registration retained this identical lexical resource")
 		} else {
 			seen[file] = true
+			retained = append(retained, rid)
+		}
+	}
+	sort.SliceStable(retained, func(i, j int) bool {
+		return inputs.facts[snapshot.references[retained[i]].Root].rank < inputs.facts[snapshot.references[retained[j]].Root].rank
+	})
+	canonicalSeen := make(map[string]string)
+	for _, rid := range retained {
+		ref := snapshot.references[rid]
+		file := piOccurrenceFile(snapshot.sources[ref.Source], ref)
+		canonical, err := filepath.EvalSymlinks(file)
+		if err != nil {
+			continue
+		}
+		if winner, exists := canonicalSeen[canonical]; exists {
+			suppressed[rid] = piEvidence(EvidenceInferred, "native-first-canonical-occurrence", canonical, winner, "rank-ordered native selection retained the canonical instruction file at "+winner)
+		} else {
+			canonicalSeen[canonical] = file
 		}
 	}
 	return suppressed
@@ -415,10 +435,8 @@ func (inputs *piInputs) addPackages(request *Request, agentDir string) {
 		}
 		raw, err := nativeBytes(filepath.Join(root, "package.json"))
 		var manifest struct {
-			Version string `json:"version"`
-			Pi      *struct {
-				Skills []string `json:"skills"`
-			} `json:"pi"`
+			Version string                      `json:"version"`
+			Pi      *map[string]json.RawMessage `json:"pi"`
 		}
 		if !nativeAbsent(filepath.Join(root, "package.json"), err) && (err != nil || json.Unmarshal(raw, &manifest) != nil) {
 			fact.uncertain = true
@@ -427,9 +445,19 @@ func (inputs *piInputs) addPackages(request *Request, agentDir string) {
 		fact.provenance.Version = manifest.Version
 		skillRoots := []string{"skills"}
 		if manifest.Pi != nil {
-			skillRoots = manifest.Pi.Skills
-			if p.hasSkills && len(skillRoots) == 0 {
-				skillRoots = []string{"skills"}
+			value, hasSkills := (*manifest.Pi)["skills"]
+			var entries []string
+			if hasSkills && (json.Unmarshal(value, &entries) != nil || string(value) == "null") {
+				fact.uncertain = true
+				inputs.problem(filepath.Join(root, "package.json"), "Pi package skills must be an array of strings")
+			}
+			switch {
+			case p.hasSkills || fact.delta:
+				if len(entries) > 0 {
+					skillRoots = entries
+				}
+			case !p.object || hasSkills:
+				skillRoots = entries
 			}
 		}
 		var manifestPatterns []string
@@ -453,12 +481,12 @@ func (inputs *piInputs) addPackages(request *Request, agentDir string) {
 						inputs.problem(root, "Pi package glob cannot be resolved")
 					}
 					for _, path := range matches {
-						inputs.addRoot(request, path, ContextManaged, "pi-package", "all", fact, false)
+						inputs.addRoot(request, path, ContextManaged, "pi-package", "pi", fact, false)
 					}
 				}
 				continue
 			}
-			inputs.addRoot(request, piPath(value, root, request.home), ContextManaged, "pi-package", "all", fact, false)
+			inputs.addRoot(request, piPath(value, root, request.home), ContextManaged, "pi-package", "pi", fact, false)
 		}
 	}
 }
