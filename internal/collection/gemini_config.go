@@ -1,6 +1,7 @@
 package collection
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
+	"unicode/utf16"
 
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -32,6 +34,51 @@ type geminiInputs struct {
 	extensionPolicy      bool
 	allowedPolicy        bool
 	blockGitPolicy       bool
+}
+
+type geminiTrustRule struct {
+	path, level string
+}
+
+type geminiTrustRules []geminiTrustRule
+
+func (rules *geminiTrustRules) UnmarshalJSON(raw []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return errors.New("trusted folders must be a JSON object")
+	}
+	*rules = make(geminiTrustRules, 0)
+	positions := make(map[string]int)
+	for decoder.More() {
+		key, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		var value any
+		if err := decoder.Decode(&value); err != nil {
+			return err
+		}
+		path := key.(string)
+		level, _ := value.(string)
+		rule := geminiTrustRule{path, level}
+		if index, ok := positions[path]; ok {
+			(*rules)[index] = rule
+		} else {
+			positions[path] = len(*rules)
+			*rules = append(*rules, rule)
+		}
+	}
+	_, err = decoder.Token()
+	return err
+}
+
+func geminiTrustKey(path string) string {
+	key := strings.ReplaceAll(filepath.Clean(path), "\\", "/")
+	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+		key = geminiComparisonKey(key)
+	}
+	return key
 }
 
 func geminiComparisonKey(value string) string {
@@ -254,6 +301,9 @@ func readGeminiInputs(request Request) geminiInputs {
 	}
 	// Reapply the final override without duplicating its report.
 	in.loadSettings(system, "system", true)
+	if in.project != "" {
+		in.readTrust()
+	}
 	in.extensionPolicy = in.allowedPolicy || in.blockGitPolicy
 	if in.extensionPolicy {
 		in.scope.Gaps = append(in.scope.Gaps, "extension security policy requires unverified install-metadata matching")
@@ -261,6 +311,7 @@ func readGeminiInputs(request Request) geminiInputs {
 	return in
 }
 func (in *geminiInputs) readTrust() {
+	in.trust = ParticipationExcluded
 	path := geminiEnvPath("GEMINI_CLI_TRUSTED_FOLDERS_PATH", filepath.Join(in.home, ".gemini", "trustedFolders.json"))
 	reason := "no folder-trust choice exists; native CLI omits workspace skills until trusted"
 	in.trustEvidence = geminiEvidence(EvidenceInferred, "workspace-trust", path, "trustedFolders", reason)
@@ -286,46 +337,63 @@ func (in *geminiInputs) readTrust() {
 	if nativeAbsent(path, err) {
 		return
 	}
-	var rules map[string]string
+	var rules geminiTrustRules
 	if err != nil || geminiJSON(raw, &rules) != nil || rules == nil {
 		in.problem(path, "trusted folders input is unreadable or invalid")
 		in.trust = ParticipationUnknown
 		return
 	}
-	length := -1
-	for rule, level := range rules {
-		if level != "TRUST_FOLDER" && level != "TRUST_PARENT" && level != "DO_NOT_TRUST" {
+	type normalizedRule struct {
+		key, rawPath, level string
+	}
+	var ordered []normalizedRule
+	positions := make(map[string]int)
+	for _, rule := range rules {
+		if rule.level != "TRUST_FOLDER" && rule.level != "TRUST_PARENT" && rule.level != "DO_NOT_TRUST" {
 			in.problem(path, "trusted folders contains an invalid level")
 			in.trust = ParticipationUnknown
-			continue
+			return
 		}
-		target := rule
-		if level == "TRUST_PARENT" {
-			target = filepath.Dir(rule)
+		if !filepath.IsAbs(rule.path) {
+			reason := "relative trusted-folder keys require an uninspected native working directory"
+			in.problem(path, reason)
+			in.scope.Gaps = append(in.scope.Gaps, reason)
+			in.trust = ParticipationUnknown
+			return
+		}
+		key := geminiTrustKey(rule.path)
+		normalized := normalizedRule{key, rule.path, rule.level}
+		if index, ok := positions[key]; ok {
+			ordered[index] = normalized
+		} else {
+			positions[key] = len(ordered)
+			ordered = append(ordered, normalized)
+		}
+	}
+	length := -1
+	project := geminiTrustKey(in.project)
+	for _, rule := range ordered {
+		target := rule.key
+		if rule.level == "TRUST_PARENT" {
+			target = filepath.Dir(target)
 		}
 		if resolved, err := filepath.EvalSymlinks(target); err == nil {
 			target = resolved
 		}
-		project := in.project
-		if runtime.GOOS == "darwin" {
-			target = geminiComparisonKey(target)
-			project = geminiComparisonKey(project)
-		}
+		target = geminiTrustKey(target)
 		rel, err := filepath.Rel(target, project)
 		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			continue
 		}
 		state := ParticipationEligible
-		if level == "DO_NOT_TRUST" {
+		if rule.level == "DO_NOT_TRUST" {
 			state = ParticipationExcluded
 		}
-		if len(rule) > length {
-			length = len(rule)
+		specificity := len(utf16.Encode([]rune(rule.key)))
+		if specificity > length {
+			length = specificity
 			in.trust = state
-			in.trustEvidence = geminiEvidence(EvidenceInferred, "workspace-trust", path, level, "longest matching native trust rule: "+rule)
-		} else if len(rule) == length && in.trust != state {
-			in.problem(path, "equal-length trust rules disagree")
-			in.trust = ParticipationUnknown
+			in.trustEvidence = geminiEvidence(EvidenceInferred, "workspace-trust", path, rule.level, "longest matching native trust rule: "+rule.rawPath)
 		}
 	}
 }
