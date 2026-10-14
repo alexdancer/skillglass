@@ -740,16 +740,28 @@ func hermesExplicitPathValid(name string) bool {
 	return true
 }
 
-func hermesExplicitSupportPath(path string, manifests map[string]bool) bool {
+func hermesExplicitSupportPath(path, root string, manifests map[string]bool) (bool, bool) {
+	known := true
 	for parent := filepath.Dir(path); parent != filepath.Dir(parent); parent = filepath.Dir(parent) {
 		switch filepath.Base(parent) {
 		case "references", "templates", "assets", "scripts":
-			if manifests[filepath.Dir(parent)] {
-				return true
+			owner := filepath.Dir(parent)
+			if manifests[owner] {
+				return true, true
 			}
+			if pathWithin(owner, root) {
+				_, err := os.Stat(filepath.Join(owner, "SKILL.md"))
+				if err == nil {
+					return true, true
+				}
+				if hermesManifestAbsent(err) {
+					continue
+				}
+			}
+			known = false
 		}
 	}
-	return false
+	return false, known
 }
 
 func applyHermesExplicitLookup(snapshot *Snapshot, roots map[RootID]DiscoveryRoot, inputs *hermesInputs) {
@@ -856,7 +868,7 @@ func applyHermesExplicitLookup(snapshot *Snapshot, roots map[RootID]DiscoveryRoo
 			for _, lookup := range lookupNames {
 				for root, known := range searchRoots {
 					candidate := filepath.Join(root, lookup)
-					if !pathWithin(candidate, root) || hermesExplicitSupportPath(candidate, manifestDirs) {
+					if !pathWithin(candidate, root) {
 						continue
 					}
 					if directPaths[candidate] == "" && manifestDirs[filepath.Dir(candidate)] {
@@ -866,6 +878,17 @@ func applyHermesExplicitLookup(snapshot *Snapshot, roots map[RootID]DiscoveryRoo
 						}
 					}
 					if path := directPaths[candidate]; known && path != "" {
+						support, supportKnown := hermesExplicitSupportPath(candidate, root, manifestDirs)
+						if support {
+							continue
+						}
+						if !supportKnown {
+							if !matches[name][path] {
+								certain = false
+								facts = append(facts, fmt.Sprintf("selector %s: support ownership along direct path %q is unobserved", setting, candidate))
+							}
+							continue
+						}
 						if matches[name] == nil {
 							matches[name] = make(map[string]bool)
 						}
