@@ -37,7 +37,7 @@ Historical ALE-23 hostile inventory and purported detail captures were byte-iden
 
 ## Reproduce the acceptance evidence
 
-Use macOS, the [README's Go toolchain and dependency setup](../../README.md#build-and-use), and `tmux` on PATH. Containment checks require macOS `sandbox-exec`; scheduler checks require Python 3.10 or later; shell lint requires `shellcheck` on PATH. Dependency downloads must already be present because the run disables Go network access. Supply a fresh absolute evidence directory so terminal captures and command receipts cannot mix with an earlier run:
+Use macOS, the [README's Go toolchain and dependency setup](../../README.md#build-and-use), and `tmux` on PATH. Containment checks require macOS `sandbox-exec`; scheduler checks require Python 3.10 or later, and native-helper receipt checks require Python 3.11 or later; shell lint requires `shellcheck` on PATH. Dependency downloads must already be present because the run disables Go network access. Supply a fresh absolute evidence directory so terminal captures and command receipts cannot mix with an earlier run:
 
 ```sh
 evidence="$(pwd)/.agent-loop/ale-24-evidence-$(date +%Y%m%d-%H%M%S)"
@@ -46,13 +46,15 @@ test ! -e "$evidence" && ./tests/acceptance/run.sh "$evidence"
 
 Inspect `cases.json`, raw PTY bytes, driven keys, pane dimensions, and current tmux cells. The acceptance driver builds the public executable and launches it with synthetic HOME, XDG, project, temporary, and current directories. Inspect fixture before/after manifests alongside command and browser receipts for source/settings immutability. The [inherited containment boundary](ale-23.md#runtime-containment-boundary) defines runtime restrictions, positive controls, and their limits.
 
-Run repository checks after the last source or documentation change:
+Run repository checks after the last source or documentation change. Set TMPDIR and GOTMPDIR to a dedicated temporary directory under /private/tmp, outside every Git checkout, so fixture ancestor discovery cannot inherit repository state:
 
 ```sh
 /opt/homebrew/bin/gofmt -l cmd internal tests/acceptance
 env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go vet ./...
 env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go test -count=1 -mod=readonly ./...
 python3 -m unittest discover -s tests/agent_loop -v
+python3 -m unittest discover -s tests/native -v
+python3 -m py_compile tools/native_containment.py tools/native_receipts.py tools/verify_opencode.py tests/native/test_opencode_containment.py tests/native/test_opencode_receipts.py
 shellcheck tests/acceptance/run.sh
 sh -n tests/acceptance/run.sh
 git diff --check
