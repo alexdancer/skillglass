@@ -120,10 +120,10 @@ func TestVerifyReviewC086QuotedRootBrowser(t *testing.T) {
 				g2Inspect(t, fx, env, list, local, "unknown")
 				socket := fmt.Sprintf("ale31-quoted-root-%d-%d-%s", os.Getpid(), width, mode)
 				defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-				command := "export SKILL_ROOT=stale; exec " + shellQuote(skillglassBinary) + " browse --agent hermes --project " + shellQuote(fx.project) + " --availability unknown"
-				launch := []string{"new-session", "-d", "-x", strconv.Itoa(width), "-y", "30", "-s", "browser", command}
-				output := runTmux(t, tmux, fx, socket, launch...)
-				recordEvidenceCommand(t, "terminal-browser-launch", tmux, append([]string{"-L", socket, "-f", "/dev/null"}, fx.containTmuxLaunch(launch)...), fx.project, commandResult{stdout: []byte(output)})
+				command := fx.productCommand(t, "browse", "--agent", "hermes", "--project", fx.project, "--availability", "unknown")
+				command.Env = append(fx.environment(), env...)
+				launch := runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", strconv.Itoa(width), "-y", "30", "-s", "browser")
+				assertRecordedContext(t, launch, command)
 				runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 				runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(width), "-y", "30")
 				frame := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "unknown (unknown)")

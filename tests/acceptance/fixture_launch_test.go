@@ -3,15 +3,12 @@ package acceptance_test
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -20,53 +17,13 @@ import (
 	"github.com/creack/pty"
 )
 
-// Fixture launches treat machine-wide policy as absent. Production paths stay native.
-func (fx fixture) launchProfile(executable string) string {
-	return filepath.Join(fx.temporary, filepath.Base(executable)+".sb")
-}
-func (fx fixture) prepareLaunchProfiles(t *testing.T) {
+// Fixture probes use the same sealed ordinary policy as product launches.
+func (fx fixture) fixtureCommand(t *testing.T, ctx context.Context, executable string, args ...string) *exec.Cmd {
 	t.Helper()
-	if runtime.GOOS != "darwin" {
-		t.Fatal("ordinary acceptance requires macOS OS containment")
-	}
-	if _, err := exec.LookPath("/usr/bin/sandbox-exec"); err != nil {
-		t.Fatal(err)
-	}
-	for _, executable := range []string{skillglassBinary, isolationProbeBinary} {
-		policy := runtimeProfile(canonicalPath(t, executable), canonicalPath(t, fx.base), filepath.Join(canonicalPath(t, fx.base), "excluded", "system-inputs"))
-		// Each test owns the complete fixture, including comparison roots beside allowed/.
-		// Keep modeled live-home input denied and modeled machine policy absent.
-		policy += fmt.Sprintf("(deny file-read* (require-all (subpath %s) (require-not (subpath %s))))\n", sandboxString(filepath.Join(canonicalPath(t, fx.base), "excluded")), sandboxString(filepath.Join(canonicalPath(t, fx.base), "excluded", "system-inputs")))
-		policy += fmt.Sprintf("(deny file-read* (require-all (subpath \"/Users\") (require-not (literal %s))))\n", sandboxString(canonicalPath(t, executable)))
-		// Ancestor enumeration supports project boundary discovery without reading sibling data.
-		for path := filepath.Dir(canonicalPath(t, fx.base)); path != "/"; path = filepath.Dir(path) {
-			policy += fmt.Sprintf("(allow file-read-data (literal %s))\n", sandboxString(path))
-		}
-		writeFile(t, fx.launchProfile(executable), []byte(policy), 0600)
-		raw, err := os.ReadFile(fx.launchProfile(executable))
-		if err != nil {
-			t.Fatal(err)
-		}
-		writeEvidence(t, fmt.Sprintf("launch-profiles/%x.sb", sha256.Sum256(raw)), raw)
-	}
-}
-func (fx fixture) fixtureCommand(ctx context.Context, executable string, args ...string) *exec.Cmd {
-	argv := append([]string{"-f", fx.launchProfile(executable), executable}, args...)
-	return exec.CommandContext(ctx, "/usr/bin/sandbox-exec", argv...)
-}
-func (fx fixture) containTmuxLaunch(args []string) []string {
-	if len(args) == 0 || args[0] != "new-session" {
-		return args
-	}
-	args = append([]string(nil), args...)
-	command := args[len(args)-1]
-	for _, executable := range []string{skillglassBinary, isolationProbeBinary} {
-		quoted := shellQuote(executable)
-		prefix := "/usr/bin/sandbox-exec -f " + shellQuote(fx.launchProfile(executable)) + " " + quoted
-		command = strings.ReplaceAll(command, quoted, prefix)
-	}
-	args[len(args)-1] = command
-	return args
+	argv := fx.invocation(t, executable, args...)
+	command := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	command.Dir, command.Env = fx.project, fx.environment()
+	return command
 }
 
 func TestOrdinaryLaunchSystemFixtureIsolation(t *testing.T) {
@@ -93,18 +50,24 @@ func TestOrdinaryLaunchSystemFixtureIsolation(t *testing.T) {
 			var raw []byte
 			switch mode {
 			case "cli":
-				command := fx.fixtureCommand(ctx, isolationProbeBinary, "--system", path)
+				command := fx.fixtureCommand(t, ctx, isolationProbeBinary, "--system", path)
 				command.Env = fx.environment()
 				command.Dir = fx.project
+				launch := recordLaunch(t, command)
+				started := time.Now()
 				var err error
 				raw, err = command.CombinedOutput()
+				recordEvidenceCommand(t, "ordinary-system-cli", commandResult{code: launchExitCode(err), stdout: raw, duration: time.Since(started), launch: launch})
+				assertRecordedContext(t, launch, command)
 				if err != nil {
 					t.Fatalf("CLI: %v %s", err, raw)
 				}
 			case "pty":
-				command := fx.fixtureCommand(ctx, isolationProbeBinary, "--system", path)
+				command := fx.fixtureCommand(t, ctx, isolationProbeBinary, "--system", path)
 				command.Env = fx.environment()
 				command.Dir = fx.project
+				launch := recordLaunch(t, command)
+				started := time.Now()
 				terminal, err := pty.StartWithSize(command, &pty.Winsize{Rows: 24, Cols: 80})
 				if err != nil {
 					t.Fatal(err)
@@ -112,6 +75,8 @@ func TestOrdinaryLaunchSystemFixtureIsolation(t *testing.T) {
 				raw, _ = io.ReadAll(terminal)
 				err = command.Wait()
 				terminal.Close()
+				recordEvidenceCommand(t, "ordinary-system-pty", commandResult{code: launchExitCode(err), stdout: raw, duration: time.Since(started), launch: launch})
+				assertRecordedContext(t, launch, command)
 				if err != nil {
 					t.Fatalf("PTY: %v %s", err, raw)
 				}
@@ -122,11 +87,14 @@ func TestOrdinaryLaunchSystemFixtureIsolation(t *testing.T) {
 				}
 				socket := "ale31-isolation-" + strconv.Itoa(os.Getpid())
 				defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-				command := shellQuote(isolationProbeBinary) + " --system " + shellQuote(path) + "; /bin/sleep 10"
-				runTmux(t, tmux, fx, socket, "new-session", "-d", "-s", "browser", command)
+				runTmux(t, tmux, fx, socket, "new-session", "-d", "-s", "browser", "exec /bin/sleep 30")
+				runTmux(t, tmux, fx, socket, "set-option", "-w", "-t", "browser:0", "remain-on-exit", "on")
+				command := fx.fixtureCommand(t, ctx, isolationProbeBinary, "--system", path)
+				launch := runTmuxProduct(t, tmux, fx, socket, command, "respawn-pane", "-k", "-t", "browser:0.0")
+				assertRecordedContext(t, launch, command)
 				deadline := time.Now().Add(3 * time.Second)
 				for time.Now().Before(deadline) {
-					raw = []byte(capturePane(t, tmux, fx, socket, false))
+					raw = []byte(runTmux(t, tmux, fx, socket, "capture-pane", "-p", "-J", "-S", "-", "-t", "browser:0.0"))
 					if bytes.Contains(raw, []byte(`"passed":true`)) {
 						break
 					}
@@ -165,10 +133,14 @@ func TestOrdinaryLaunchReadWriteNetworkChildControls(t *testing.T) {
 	before := treeManifest(t, fx.base)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	command := fx.fixtureCommand(ctx, isolationProbeBinary, allowed, excluded, blocked, listener.Addr().String())
+	command := fx.fixtureCommand(t, ctx, isolationProbeBinary, allowed, excluded, blocked, listener.Addr().String())
 	command.Env = fx.environment()
 	command.Dir = fx.project
+	launch := recordLaunch(t, command)
+	started := time.Now()
 	raw, err := command.CombinedOutput()
+	recordEvidenceCommand(t, "ordinary-full-controls", commandResult{code: launchExitCode(err), stdout: raw, duration: time.Since(started), launch: launch})
+	assertRecordedContext(t, launch, command)
 	if err != nil {
 		t.Fatalf("ordinary contained probe: %v %s", err, raw)
 	}

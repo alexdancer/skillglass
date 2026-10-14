@@ -81,6 +81,7 @@ type Request struct {
 	home       string
 	codexHome  string
 	hermesHome string
+	claudeHome string
 }
 
 func NewRequest(rawRoots, rawProjectRoots []string, rawProject *string) (Request, error) {
@@ -88,8 +89,8 @@ func NewRequest(rawRoots, rawProjectRoots []string, rawProject *string) (Request
 }
 
 func NewRequestWithAgent(rawRoots, rawProjectRoots []string, rawProject *string, agent string) (Request, error) {
-	if agent != "" && agent != "codex" && agent != "hermes" {
-		return Request{}, fmt.Errorf("unknown agent %q; use codex or hermes", agent)
+	if agent != "" && agent != "codex" && agent != "hermes" && agent != "claude-code" {
+		return Request{}, fmt.Errorf("unknown agent %q; use codex, claude-code or hermes", agent)
 	}
 	request := Request{Roots: make([]DiscoveryRoot, 0, len(rawRoots)+len(rawProjectRoots))}
 	if rawProject != nil {
@@ -132,20 +133,14 @@ func NewRequestWithAgent(rawRoots, rawProjectRoots []string, rawProject *string,
 		return Request{}, err
 	}
 	request.Agent = agent
-	if agent == "codex" {
+	if agent != "" {
 		var err error
 		request.home, err = nativeHome()
 		if err != nil {
 			return Request{}, err
 		}
 		request.codexHome = codexHome(request.home)
-	}
-	if agent == "hermes" {
-		var err error
-		request.home, err = nativeHome()
-		if err != nil {
-			return Request{}, err
-		}
+		request.claudeHome = claudeHome(request.home)
 		request.hermesHome = hermesBaseHome(request.home)
 	}
 	return request, nil
@@ -363,10 +358,10 @@ type Snapshot struct {
 }
 
 func Build(ctx context.Context, request Request) (*Snapshot, error) {
-	if request.Agent != "" && request.Agent != "codex" && request.Agent != "hermes" {
+	if request.Agent != "" && request.Agent != "codex" && request.Agent != "hermes" && request.Agent != "claude-code" {
 		return nil, fmt.Errorf("unknown agent %q", request.Agent)
 	}
-	if request.Agent == "codex" && (request.home == "" || request.codexHome == "") {
+	if request.Agent != "" && request.home == "" {
 		return nil, errors.New("native scope requires NewRequestWithAgent")
 	}
 	if len(request.Roots) == 0 && request.Agent == "" {
@@ -388,6 +383,9 @@ func Build(ctx context.Context, request Request) (*Snapshot, error) {
 			return nil, errors.New("native scope requires NewRequestWithAgent")
 		}
 		return buildHermes(ctx, request)
+	}
+	if request.Agent == "claude-code" {
+		return buildClaude(ctx, request)
 	}
 	return discover(ctx, request)
 }

@@ -29,7 +29,7 @@ func hermesRun(t *testing.T, fx fixture, env []string, args ...string) commandRe
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	command := fx.fixtureCommand(ctx, skillglassBinary, args...)
+	command := fx.command(t, ctx, args...)
 	command.Dir = fx.project
 	command.Env = append(fx.environment(), env...)
 	var stdout, stderr bytes.Buffer
@@ -37,6 +37,7 @@ func hermesRun(t *testing.T, fx fixture, env []string, args ...string) commandRe
 	command.Stderr = &stderr
 	command.Stdin = bytes.NewReader(nil)
 	started := time.Now()
+	launch := recordLaunch(t, command)
 	err := command.Run()
 	code := 0
 	if err != nil {
@@ -49,8 +50,9 @@ func hermesRun(t *testing.T, fx fixture, env []string, args ...string) commandRe
 	if ctx.Err() != nil {
 		t.Fatal("Hermes public command timed out")
 	}
-	result := commandResult{code: code, stdout: stdout.Bytes(), stderr: stderr.Bytes(), duration: time.Since(started)}
-	recordEvidenceCommand(t, "public-cli", skillglassBinary, args, fx.project, result)
+	result := commandResult{code: code, stdout: stdout.Bytes(), stderr: stderr.Bytes(), duration: time.Since(started), launch: launch}
+	recordEvidenceCommand(t, "hermes-public-cli-contained", result)
+	assertRecordedContext(t, launch, command)
 	return result
 }
 func hermesList(t *testing.T, fx fixture, exit int, env []string, extra ...string) codexList {

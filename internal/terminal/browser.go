@@ -784,7 +784,7 @@ func (model browserModel) headerLines(mode browserMode) []string {
 		fitLine("Root filter: "+model.rootFilterSummary(), model.width),
 	}, model.width)...)
 	if scope.Agent != nil {
-		header = append(header, fitLine("Agent: "+scope.Agent.Application+" | Availability filter: "+browserFilterValue(string(model.filters.Availability)), model.width))
+		header = append(header, wrapLine("Agent: "+scope.Agent.Application+" | Availability filter: "+browserFilterValue(string(model.filters.Availability)), model.width)...)
 	}
 	return append(header, model.selectedSummaryLines(mode)...)
 }

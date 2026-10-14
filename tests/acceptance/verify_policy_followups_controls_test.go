@@ -139,8 +139,8 @@ func TestVerifyPolicyFollowupsBrowser(t *testing.T) {
 				}
 				socket := fmt.Sprintf("ale31-followups-%d-%d-%s", os.Getpid(), width, mode)
 				defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-				command := "exec " + shellQuote(skillglassBinary) + " browse --agent hermes --project " + shellQuote(fx.project) + " --availability " + state
-				runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", strconv.Itoa(width), "-y", "30", "-s", "browser", command)
+				command := fx.productCommand(t, "browse", "--agent", "hermes", "--project", fx.project, "--availability", state)
+				runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", strconv.Itoa(width), "-y", "30", "-s", "browser")
 				runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 				runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(width), "-y", "30")
 				frame := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", state+" (")

@@ -37,9 +37,12 @@ Historical ALE-23 hostile inventory and purported detail captures were byte-iden
 
 ## Reproduce the acceptance evidence
 
-Use macOS, the [README's Go toolchain and dependency setup](../../README.md#build-and-use), and `tmux` on PATH. Containment checks require macOS `sandbox-exec`; scheduler checks require Python 3.10 or later; shell lint requires `shellcheck` on PATH. Dependency downloads must already be present because the run disables Go network access. Supply a fresh absolute evidence directory so terminal captures and command receipts cannot mix with an earlier run:
+Use macOS, the [README's Go toolchain and dependency setup](../../README.md#build-and-use), and `tmux` on PATH. Containment checks require macOS `sandbox-exec`; scheduler checks require Python 3.10 or later; shell lint requires `shellcheck` on PATH. Dependency downloads must already be present because the run disables Go network access. Use a dedicated temporary directory outside every Git checkout for each worker's `TMPDIR` and `GOTMPDIR`: placing temporary homes or projects under a checkout can make ancestor discovery inherit its real Git boundary. Supply a fresh absolute evidence directory so terminal captures and command receipts cannot mix with an earlier run:
 
 ```sh
+export TMPDIR="$(mktemp -d /private/tmp/ale-acceptance.XXXXXX)"
+export GOTMPDIR="$TMPDIR/go"
+mkdir -p "$GOTMPDIR"
 evidence="$(pwd)/.agent-loop/ale-24-evidence-$(date +%Y%m%d-%H%M%S)"
 test ! -e "$evidence" && ./tests/acceptance/run.sh "$evidence"
 ```
@@ -55,6 +58,8 @@ env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go test -count=1 -mod=readonly ./.
 python3 -m unittest discover -s tests/agent_loop -v
 python3 -m unittest discover -s tests/native -v
 python3 -m py_compile tools/verify_hermes.py tools/verify_hermes_policy.py tests/native/test_verify_hermes_retired.py
+python3 -m unittest discover -s tests/native_verification -v
+python3 -m py_compile tools/claude_containment.py tools/verify_claude.py tools/verify_claude_plugin_manifest.py tests/native_verification/test_verify_claude.py
 shellcheck tests/acceptance/run.sh
 sh -n tests/acceptance/run.sh
 git diff --check
