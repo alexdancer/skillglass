@@ -381,28 +381,37 @@ func readOpencodeInputs(request Request, ancestors []string) *opencodeInputs {
 			in.loadPair(ancestors[i], "project")
 		}
 	}
-	in.dirs = append(in.dirs, global)
+	dirs := []string{global}
 	if !opencodeBool("OPENCODE_DISABLE_PROJECT_CONFIG") {
 		for _, ancestor := range ancestors {
-			in.dirs = append(in.dirs, filepath.Join(ancestor, ".opencode"))
+			dirs = append(dirs, filepath.Join(ancestor, ".opencode"))
 		}
 	}
-	in.dirs = append(in.dirs, filepath.Join(home, ".opencode"))
-	if raw := os.Getenv("OPENCODE_CONFIG_DIR"); raw != "" {
-		in.dirs = append(in.dirs, opencodePath(raw, project, home))
+	dirs = append(dirs, filepath.Join(home, ".opencode"))
+	configuredDir := os.Getenv("OPENCODE_CONFIG_DIR")
+	if configuredDir != "" {
+		dirs = append(dirs, configuredDir)
+		dir := opencodePath(configuredDir, project, home)
+		resolved, err := filepath.EvalSymlinks(dir)
+		if !filepath.IsAbs(configuredDir) || (configuredDir != dir && configuredDir != dir+"/" && configuredDir != dir+"/.") || (err == nil && resolved != dir) || (err != nil && !nativeAbsent(dir, err)) {
+			in.problem("OPENCODE_CONFIG_DIR", "configured directory spelling or alias resolution is unverified; normalized paths are inspection-only evidence")
+		}
 	}
-	seen := map[string]bool{}
-	dirs := in.dirs
-	in.dirs = nil
-	for _, dir := range dirs {
-		if seen[dir] {
+	seen, physical := map[string]bool{}, map[string]bool{}
+	for _, raw := range dirs {
+		if seen[raw] {
 			continue
 		}
-		seen[dir] = true
-		in.dirs = append(in.dirs, dir)
-		if dir != global {
+		seen[raw] = true
+		dir := opencodePath(raw, project, home)
+		if strings.HasSuffix(raw, ".opencode") || raw == configuredDir {
 			in.loadPair(dir, "native-directory")
 		}
+		if physical[dir] {
+			continue
+		}
+		physical[dir] = true
+		in.dirs = append(in.dirs, dir)
 		in.detectDynamic(dir)
 		in.detectMarkdown(dir)
 	}
@@ -605,7 +614,7 @@ func (in *opencodeInputs) permission(name string) PermissionExplanation {
 		selected, ok := raw.(string)
 		if !ok {
 			in.problem(in.config.paths["default_agent"], "default agent is not a string")
-		} else {
+		} else if selected != "" {
 			agent = selected
 		}
 	}

@@ -28,6 +28,10 @@ func TestALE35OrderedInputTerminal(t *testing.T) {
 			{"action-only", `{"permission":{"skill":"allow","question":{"*":"allow"}}}`, "unknown", "unknown", "10"},
 			{"utf16-one", `{"permission":{"skill":{"*":"deny","?":"allow"}}}`, "disabled", "denied", "🔍"},
 			{"utf16-two-agent", `{"agent":{"build":{"permission":{"skill":{"*":"deny","??":"allow"}}}}}`, "available", "allowed", "🔍"},
+			{"directory-exact", `{"permission":{"skill":"deny"}}`, "available", "allowed", "10"},
+			{"directory-slash", `{"permission":{"skill":"deny"}}`, "disabled", "denied", "10"},
+			{"empty-default-ask", `{"default_agent":"","agent":{"build":{"permission":{"skill":"ask"}}}}`, "ask", "ask", "10"},
+			{"empty-default-tools", `{"default_agent":"","agent":{"build":{"tools":{"skill":false}}}}`, "disabled", "denied", "10"},
 		} {
 			t.Run(fmt.Sprintf("%s-%dx%d", tc.name, size.width, size.height), func(t *testing.T) {
 				fx := newFixture(t)
@@ -40,11 +44,24 @@ func TestALE35OrderedInputTerminal(t *testing.T) {
 				if tc.name == "markdown" {
 					writeFile(t, filepath.Join(fx.project, ".opencode", "agents", "override.md"), []byte("---\nname: build\npermission:\n  skill: deny\n---\nInert prompt\n"), 0600)
 				}
+				var env []string
+				if strings.HasPrefix(tc.name, "directory-") {
+					opencodeConfig(t, filepath.Join(fx.project, "opencode.json"), `{"permission":{"skill":"allow"}}`)
+					opencodeConfig(t, filepath.Join(fx.project, ".opencode", "opencode.json"), `{"permission":{"skill":"allow"}}`)
+					dir := filepath.Join(fx.xdgConfig, "opencode")
+					if tc.name == "directory-slash" {
+						dir += "/"
+					}
+					env = []string{"OPENCODE_CONFIG_DIR=" + dir}
+				}
 				before := treeManifest(t, fx.base)
-				ale35PreserveInputs(t, fx, tc.skill, nil, before)
+				ale35PreserveInputs(t, fx, tc.skill, env, before)
 				socket := fmt.Sprintf("ale35-ordered-%d-%s-%d", os.Getpid(), tc.name, size.width)
 				defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
 				line := shellQuote(skillglassBinary) + " browse --agent opencode --project " + shellQuote(fx.project) + "; code=$?; printf '\\nORDERED_BROWSER_EXIT=%s\\n' \"$code\"; /bin/sleep 30"
+				if len(env) != 0 {
+					line = "OPENCODE_CONFIG_DIR=" + shellQuote(strings.TrimPrefix(env[0], "OPENCODE_CONFIG_DIR=")) + " " + line
+				}
 				runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser", line)
 				runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 				runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height))
