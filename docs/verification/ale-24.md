@@ -57,6 +57,8 @@ env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go vet ./...
 : "${SKILLGLASS_TEST_EXEC:?Supply the proved contained collection-test launcher}"
 env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go test -count=1 -mod=readonly -exec "$SKILLGLASS_TEST_EXEC" ./...
 python3 -m unittest discover -s tests/agent_loop -v
+python3 -m unittest discover -s tests/native -v
+python3 -m py_compile tools/verify_hermes.py tools/verify_hermes_policy.py tests/native/test_verify_hermes_retired.py
 python3 -m unittest discover -s tests/native_verification -v
 python3 -m py_compile tools/claude_containment.py tools/verify_claude.py tools/verify_claude_plugin_manifest.py tests/native_verification/test_verify_claude.py \
   tools/codex_containment.py tools/codex_probe.py tools/verify_codex_control.py tests/native_verification/test_verify_codex_control.py
@@ -65,7 +67,7 @@ sh -n tests/acceptance/run.sh
 git diff --check
 ```
 
-The formatting check must print no files; use `gofmt -w` on any reported files and rerun. These are local checks, not a claim of green CI. Earlier verification does not cover later changes.
+The formatting check must print no files; use `gofmt -w` on any reported files and rerun. The native test suite verifies the retired Hermes entrypoint's refusal using owned fixtures, without importing installed Hermes or running native discovery. See [Hermes evidence and limits](ale-31.md#recorded-native-version-and-provenance) for the separate bounded policy helper and historical receipts. These are local checks, not a claim of green CI. Earlier verification does not cover later changes.
 
 ## Evidence limits
 

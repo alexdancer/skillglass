@@ -1027,10 +1027,11 @@ func (model browserModel) detailBodyLines(source collection.Source) []string {
 	if len(source.Problems) > 0 {
 		lines = append(lines, "", "Diagnostics:")
 		for _, problem := range source.Problems {
-			lines = append(lines, wrapLine(
-				"  "+string(problem.Code)+": "+safeInline(problem.Summary)+" ("+safeInline(problem.Detail)+")",
-				model.width,
-			)...)
+			line := "  " + string(problem.Code) + ": " + safeInline(problem.Summary)
+			if problem.Detail != "" {
+				line += " (" + safeInline(problem.Detail) + ")"
+			}
+			lines = append(lines, wrapLine(line, model.width)...)
 		}
 	}
 	if source.Manifest.Status == collection.ManifestParsed {
@@ -1153,7 +1154,8 @@ func (model browserModel) scopeBodyLines() []string {
 	lines := make([]string, 0, 8+len(scope.Roots)*4)
 	if scope.Agent != nil {
 		lines = append(lines, wrapLine("Agent: "+scope.Agent.Application+" | Validated: "+scope.Agent.ValidatedVersion, model.width)...)
-		lines = append(lines, "Session: unknown; local configuration inferred", "")
+		lines = append(lines, wrapLine("Session: unknown; local configuration inferred", model.width)...)
+		lines = append(lines, "")
 	}
 	if scope.Project.Selected {
 		lines = append(lines, "Project:")
