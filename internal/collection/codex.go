@@ -112,7 +112,7 @@ func buildCodex(ctx context.Context, request Request) (*Snapshot, error) {
 		snapshot.sources[id] = explainCodexSource(snapshot, id, roots, plugins, &inputs)
 	}
 	applyCodexCoexistence(snapshot)
-	applyCodexProblems(snapshot, inputs.problems, roots)
+	applyNativeProblems(snapshot, inputs.problems, roots)
 
 	return snapshot, nil
 }
@@ -323,7 +323,7 @@ func explainCodexSource(snapshot *Snapshot, id SourceID, roots map[RootID]Discov
 	return source
 }
 
-func applyCodexProblems(snapshot *Snapshot, problems []Problem, roots map[RootID]DiscoveryRoot) {
+func applyNativeProblems(snapshot *Snapshot, problems []Problem, roots map[RootID]DiscoveryRoot) {
 	merged := make(map[ProblemID]Problem, len(problems))
 	for _, problem := range problems {
 		current, exists := merged[problem.ID]
@@ -348,7 +348,7 @@ func applyCodexProblems(snapshot *Snapshot, problems []Problem, roots map[RootID
 		for _, rid := range snapshot.referenceOrder {
 			reference := snapshot.references[rid]
 			if sourceLocal {
-				if !codexContainsSource(problem.SourceIDs, reference.Source) {
+				if !nativeContainsSource(problem.SourceIDs, reference.Source) {
 					continue
 				}
 			} else if roots[reference.Root].Origin == "" {
@@ -384,7 +384,7 @@ func applyCodexProblems(snapshot *Snapshot, problems []Problem, roots map[RootID
 	recountRootReports(snapshot.scope.Roots, snapshot.references, snapshot.problems)
 }
 
-func codexContainsSource(values []SourceID, id SourceID) bool {
+func nativeContainsSource(values []SourceID, id SourceID) bool {
 	for _, value := range values {
 		if value == id {
 			return true

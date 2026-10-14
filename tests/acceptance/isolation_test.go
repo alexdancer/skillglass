@@ -59,6 +59,23 @@ func TestRuntimeContentIsolation(t *testing.T) {
 	writeEvidence(t, "isolation/positive-controls.json", append(positiveJSON, '\n'))
 
 	before := treeManifest(t, fx.base)
+	probe := runSandboxCommand(t, fx, probeProfile, canonicalProbe, allowedSentinel, liveHomeSentinel, blockedWrite, listener.Addr().String())
+	assertExit(t, probe, 0)
+	var controls struct {
+		Passed bool            `json:"passed"`
+		Checks map[string]bool `json:"checks"`
+	}
+	decodeJSON(t, probe.stdout, &controls)
+	if !controls.Passed {
+		t.Fatalf("sandbox controls failed: %s", probe.stdout)
+	}
+	for _, name := range []string{"allowed_read", "excluded_read_denied", "file_write_denied", "network_denied", "child_exec_denied"} {
+		if !controls.Checks[name] {
+			t.Fatalf("sandbox control %q did not pass", name)
+		}
+	}
+	writeEvidence(t, "isolation/controls.json", probe.stdout)
+	assertNoSandboxedConnection(t, listener)
 	list := runSandboxCommand(
 		t,
 		fx,
@@ -103,39 +120,6 @@ func TestRuntimeContentIsolation(t *testing.T) {
 		t.Fatalf("sandboxed browser output is incomplete: %q", browseRaw)
 	}
 	writeEvidence(t, "isolation/browse.ansi", browseRaw)
-
-	probe := runSandboxCommand(
-		t,
-		fx,
-		probeProfile,
-		canonicalProbe,
-		allowedSentinel,
-		liveHomeSentinel,
-		blockedWrite,
-		listener.Addr().String(),
-	)
-	assertExit(t, probe, 0)
-	var controls struct {
-		Passed bool            `json:"passed"`
-		Checks map[string]bool `json:"checks"`
-	}
-	decodeJSON(t, probe.stdout, &controls)
-	if !controls.Passed {
-		t.Fatalf("sandbox controls failed: %s", probe.stdout)
-	}
-	for _, name := range []string{
-		"allowed_read",
-		"excluded_read_denied",
-		"file_write_denied",
-		"network_denied",
-		"child_exec_denied",
-	} {
-		if !controls.Checks[name] {
-			t.Errorf("sandbox control %q did not pass", name)
-		}
-	}
-	writeEvidence(t, "isolation/controls.json", probe.stdout)
-	assertNoSandboxedConnection(t, listener)
 
 	after := treeManifest(t, fx.base)
 	writeEvidence(t, "isolation/tree-before.json", before)
@@ -228,12 +212,16 @@ func runSandboxCommand(
 	command.Stdout = &stdout
 	command.Stderr = &stderr
 	started := time.Now()
+	launch := recordLaunch(t, command)
 	err := command.Run()
 	result := commandResult{
+		code:     launchExitCode(err),
+		launch:   launch,
 		stdout:   stdout.Bytes(),
 		stderr:   stderr.Bytes(),
 		duration: time.Since(started),
 	}
+	recordEvidenceCommand(t, "sandboxed-command", result)
 	if ctx.Err() != nil {
 		t.Fatalf("sandboxed command timed out: %s %s", executable, strings.Join(args, " "))
 	}
@@ -242,16 +230,8 @@ func runSandboxCommand(
 		if !errors.As(err, &exitError) {
 			t.Fatalf("run sandboxed command: %v", err)
 		}
-		result.code = exitError.ExitCode()
 	}
-	recordEvidenceCommand(
-		t,
-		"sandboxed-command",
-		"/usr/bin/sandbox-exec",
-		commandArgs,
-		command.Dir,
-		result,
-	)
+	assertRecordedContext(t, launch, command)
 	return result
 }
 
@@ -267,6 +247,7 @@ func runSandboxBrowser(t *testing.T, fx fixture, profile, executable string, bro
 	command.Dir = canonicalPath(t, fx.project)
 	command.Env = fx.environment()
 	started := time.Now()
+	launch := recordLaunch(t, command)
 	terminal, err := pty.StartWithSize(command, &pty.Winsize{Rows: 30, Cols: 80})
 	if err != nil {
 		t.Fatal(err)
@@ -284,20 +265,14 @@ func runSandboxBrowser(t *testing.T, fx fixture, profile, executable string, bro
 	err = command.Wait()
 	<-copyDone
 	_ = terminal.Close()
+	recordEvidenceCommand(t, "sandboxed-browser-pty", commandResult{code: launchExitCode(err), stdout: raw.Bytes(), duration: time.Since(started), launch: launch})
 	if ctx.Err() != nil {
 		t.Fatal("sandboxed browser timed out")
 	}
 	if err != nil {
 		t.Fatalf("sandboxed browser exit: %v\n%q", err, raw.Bytes())
 	}
-	recordEvidenceCommand(
-		t,
-		"sandboxed-browser-pty",
-		"/usr/bin/sandbox-exec",
-		commandArgs,
-		command.Dir,
-		commandResult{stdout: raw.Bytes(), duration: time.Since(started)},
-	)
+	assertRecordedContext(t, launch, command)
 	return raw.Bytes()
 }
 
@@ -308,13 +283,15 @@ func runtimeProfile(executable, allowedRoot string) string {
 (deny file-write*)
 (deny file-read-data (require-not (require-any
  (literal %s)
- (literal "/")
+ (literal "/") %s
  (subpath %s)
+ (subpath "/Library/Application Support/ClaudeCode") (subpath "/Library/Managed Preferences")
+ (literal "/Library/Preferences/com.anthropic.claudecode.plist") (subpath "/etc/codex")
  (subpath "/System")
  (subpath "/usr/lib")
  (subpath "/dev"))))
 (deny process-exec (require-not (literal %s)))
-`, sandboxString(executable), sandboxString(allowedRoot), sandboxString(executable))
+`, sandboxString(executable), ancestorReadLiterals(allowedRoot), sandboxString(allowedRoot), sandboxString(executable)) + absentSystemPolicy()
 }
 
 func sandboxString(value string) string {

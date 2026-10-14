@@ -51,13 +51,14 @@ func TestRound3OpaqueNamePrecedence(t *testing.T) {
 				if kind == "inspection-only" {
 					args = append(args, "--root", fx.cleanRoot)
 				}
-				command := fx.productCommand(t, context.Background(), args...)
+				command := fx.command(t, context.Background(), args...)
 				command.Dir = fx.project
 				command.Env = fx.environment()
 				if kind == "excluded-higher" {
 					command.Env = append(command.Env, "GEMINI_CLI_TRUST_WORKSPACE=false")
 				}
 				before := treeManifest(t, fx.base)
+				launch := recordLaunch(t, command)
 				raw, err := command.Output()
 				code := 0
 				if err != nil {
@@ -67,8 +68,8 @@ func TestRound3OpaqueNamePrecedence(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				result := commandResult{code: code, stdout: raw}
-				recordEvidenceCommand(t, "public-cli", command.Path, command.Args[1:], command.Dir, result)
+				result := commandResult{code: code, stdout: raw, launch: launch}
+				recordEvidenceCommand(t, "public-cli-contained", result)
 				exit := 1
 				if kind == "readable-higher" || kind == "missing-higher" {
 					exit = 0

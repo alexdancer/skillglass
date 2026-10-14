@@ -14,11 +14,11 @@ import (
 
 func round4List(t *testing.T, fx fixture, wantExit int, env ...string) (codexList, []byte) {
 	t.Helper()
-	command := fx.productCommand(t, context.Background(), "list", "--agent", "gemini", "--project", fx.project, "--json")
+	command := fx.command(t, context.Background(), "list", "--agent", "gemini", "--project", fx.project, "--json")
 	command.Dir = fx.project
 	command.Env = append(fx.environment(), env...)
 	hashes := make(map[string]string)
-	for _, path := range []string{skillglassBinary, fx.productProfile(t)} {
+	for _, path := range []string{skillglassBinary, fx.policy} {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
@@ -32,6 +32,7 @@ func round4List(t *testing.T, fx fixture, wantExit int, env ...string) (codexLis
 	prefix := "round4/" + t.Name()
 	writeEvidence(t, prefix+"/invocation-hashes.json", receipt)
 	before := treeManifest(t, fx.base)
+	launch := recordLaunch(t, command)
 	raw, err := command.Output()
 	code := 0
 	if err != nil {
@@ -46,8 +47,8 @@ func round4List(t *testing.T, fx fixture, wantExit int, env ...string) (codexLis
 		writeEvidence(t, prefix+"/"+name+".json", manifest)
 	}
 	assertTreeUnchanged(t, before, after)
-	result := commandResult{code: code, stdout: raw}
-	recordEvidenceCommand(t, "public-cli", command.Path, command.Args[1:], command.Dir, result)
+	result := commandResult{code: code, stdout: raw, launch: launch}
+	recordEvidenceCommand(t, "public-cli-contained", result)
 	assertExit(t, result, wantExit)
 	var list codexList
 	decodeJSON(t, raw, &list)

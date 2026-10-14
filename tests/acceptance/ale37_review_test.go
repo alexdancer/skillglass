@@ -124,16 +124,18 @@ func TestALE37ReviewTrustEvidence(t *testing.T) {
 			for _, alias := range []string{".gemini", ".agents"} {
 				codexSkill(t, filepath.Join(fx.project, alias, "skills"), "source", "evidence-"+alias)
 			}
-			command := fx.productCommand(t, context.Background(), "list", "--agent", "gemini", "--project", fx.project, "--json")
+			command := fx.command(t, context.Background(), "list", "--agent", "gemini", "--project", fx.project, "--json")
 			command.Dir = fx.project
 			command.Env = fx.environment()
 			if tc.env != "" {
 				command.Env = append(command.Env, tc.env)
 			}
+			launch := recordLaunch(t, command)
 			raw, err := command.Output()
 			if err != nil {
 				t.Fatal(err)
 			}
+			recordEvidenceCommand(t, "public-cli-contained", commandResult{stdout: raw, launch: launch})
 			var output struct {
 				Sources []struct {
 					Availability struct {

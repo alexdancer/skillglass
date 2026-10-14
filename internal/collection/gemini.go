@@ -171,7 +171,7 @@ func buildGemini(ctx context.Context, request Request) (*Snapshot, error) {
 		snapshot.sources[id] = source
 	}
 	applyGeminiPrecedence(snapshot, ranks, groups, uncertainRanks, opaqueRank)
-	applyCodexProblems(snapshot, in.problems, roots)
+	applyNativeProblems(snapshot, in.problems, roots)
 	return snapshot, nil
 }
 func geminiWithin(root, path string) bool {

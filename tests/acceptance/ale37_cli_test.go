@@ -280,9 +280,10 @@ func TestALE37ConfiguredHomeAndManagedAliases(t *testing.T) {
 	fx := geminiFixture(t)
 	alternate := filepath.Join(fx.base, "allowed", "alternate-home")
 	codexSkill(t, filepath.Join(alternate, ".agents", "skills"), "alternate", "configured-home")
-	command := fx.productCommand(t, context.Background(), "list", "--agent", "gemini", "--json")
+	command := fx.command(t, context.Background(), "list", "--agent", "gemini", "--json")
 	command.Dir = fx.project
 	command.Env = append(fx.environment(), "GEMINI_CLI_HOME="+alternate)
+	launch := recordLaunch(t, command)
 	raw, err := command.Output()
 	if err != nil {
 		t.Fatal(err)
@@ -292,7 +293,7 @@ func TestALE37ConfiguredHomeAndManagedAliases(t *testing.T) {
 	if len(list.Sources) != 1 || codexNamed(t, list, "configured-home").Availability.State != "ask" {
 		t.Fatalf("configured home: %s", raw)
 	}
-	recordEvidenceCommand(t, "public-cli", command.Path, command.Args[1:], command.Dir, commandResult{stdout: raw})
+	recordEvidenceCommand(t, "public-cli-contained", commandResult{stdout: raw, launch: launch})
 	extension := filepath.Join(fx.home, ".gemini", "extensions", "sample")
 	writeFile(t, filepath.Join(extension, "gemini-extension.json"), []byte(`{"name":"sample","version":"1.0.0"}`), 0600)
 	managed := filepath.Dir(codexSkill(t, filepath.Join(extension, "skills"), "managed", "managed-alias"))

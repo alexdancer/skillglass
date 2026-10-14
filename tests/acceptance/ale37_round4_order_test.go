@@ -138,8 +138,8 @@ func TestRound4R14TerminalFinalTrust(t *testing.T) {
 					}
 					socket := fmt.Sprintf("ale37-r14-%d-%d", os.Getpid(), width)
 					defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-					command := "exec " + fx.productShell(t) + " browse --agent gemini --project " + shellQuote(fx.project)
-					runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", fmt.Sprint(width), "-y", "24", "-s", "browser", command)
+					command := fx.productCommand(t, "browse", "--agent", "gemini", "--project", fx.project)
+					runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", fmt.Sprint(width), "-y", "24", "-s", "browser")
 					runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 					runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", fmt.Sprint(width), "-y", "24")
 					waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "final-trust-control")

@@ -22,9 +22,10 @@ func round2Extension(t *testing.T, fx fixture) string {
 
 func round2List(t *testing.T, fx fixture, wantExit int, environment ...string) codexList {
 	t.Helper()
-	command := fx.productCommand(t, context.Background(), "list", "--agent", "gemini", "--project", fx.project, "--json")
+	command := fx.command(t, context.Background(), "list", "--agent", "gemini", "--project", fx.project, "--json")
 	command.Dir = fx.project
 	command.Env = append(fx.environment(), environment...)
+	launch := recordLaunch(t, command)
 	raw, err := command.Output()
 	code := 0
 	if err != nil {
@@ -34,8 +35,8 @@ func round2List(t *testing.T, fx fixture, wantExit int, environment ...string) c
 			t.Fatal(err)
 		}
 	}
-	result := commandResult{code: code, stdout: raw}
-	recordEvidenceCommand(t, "public-cli", command.Path, command.Args[1:], command.Dir, result)
+	result := commandResult{code: code, stdout: raw, launch: launch}
+	recordEvidenceCommand(t, "public-cli-contained", result)
 	assertExit(t, result, wantExit)
 	var list codexList
 	decodeJSON(t, raw, &list)
@@ -259,14 +260,15 @@ func TestRound2R10OrdinaryControllingDiscoverySettings(t *testing.T) {
 				t.Fatal("expected both project aliases")
 			}
 			for _, source := range list.Sources {
-				command := fx.productCommand(t, context.Background(), "explain", "--agent", "gemini", "--project", fx.project, source.ID)
+				command := fx.command(t, context.Background(), "explain", "--agent", "gemini", "--project", fx.project, source.ID)
 				command.Dir = fx.project
 				command.Env = append(fx.environment(), control)
+				launch := recordLaunch(t, command)
 				raw, err := command.Output()
 				if err != nil {
 					t.Fatal(err)
 				}
-				recordEvidenceCommand(t, "public-cli", command.Path, command.Args[1:], command.Dir, commandResult{stdout: raw})
+				recordEvidenceCommand(t, "public-cli-contained", commandResult{stdout: raw, launch: launch})
 				if !strings.Contains(string(raw), control) {
 					t.Errorf("ordinary explain omits %s:\n%s", control, raw)
 				}
@@ -290,8 +292,9 @@ func TestRound2R10BrowserControllingDiscoverySetting(t *testing.T) {
 					before := treeManifest(t, fx.base)
 					socket := fmt.Sprintf("ale37-r10-%d-%d", os.Getpid(), width)
 					defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-					command := control + " exec " + fx.productShell(t) + " browse --agent gemini --project " + shellQuote(fx.project)
-					runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", fmt.Sprint(width), "-y", "24", "-s", "browser", command)
+					command := fx.productCommand(t, "browse", "--agent", "gemini", "--project", fx.project)
+					command.Env = append(command.Env, control)
+					runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", fmt.Sprint(width), "-y", "24", "-s", "browser")
 					runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 					runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", fmt.Sprint(width), "-y", "24")
 					frame := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "browser-control")

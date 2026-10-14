@@ -370,7 +370,7 @@ func (builder *discoveryBuilder) discoverCandidate(
 		return true
 	}
 
-	manifest, manifestProblems := inspectManifest(resolvedPath)
+	manifest, manifestProblems := inspectManifest(resolvedPath, builder.request.Agent == "claude-code")
 	resources, resourceProblems := inventoryResources(ctx, resolvedPath)
 	problems := append(manifestProblems, resourceProblems...)
 	if identityErr != nil {

@@ -59,23 +59,22 @@ func TestALE26BrowserAvailabilityEmptyAndGenericShortcut(t *testing.T) {
 		for _, kind := range []string{"native-initial", "native-cycle", "generic-sources", "generic-problems", "generic-empty"} {
 			t.Run(fmt.Sprintf("%dx%d/%s", size.width, size.height, kind), func(t *testing.T) {
 				fx := newFixture(t)
-				scope := "--root " + shellQuote(fx.cleanRoot)
+				scope := []string{"browse", "--root", fx.cleanRoot}
 				if strings.HasPrefix(kind, "native-") {
 					fx, _ = codexFixture(t)
-					scope = "--agent codex --project " + shellQuote(fx.project) + " --availability "
+					state := "available"
 					if kind == "native-initial" {
-						scope += "disabled"
-					} else {
-						scope += "available"
+						state = "disabled"
 					}
+					scope = []string{"browse", "--agent", "codex", "--project", fx.project, "--availability", state}
 				} else if kind == "generic-empty" {
-					scope = "--root " + shellQuote(fx.emptyRoot)
+					scope = []string{"browse", "--root", fx.emptyRoot}
 				}
 				before := treeManifest(t, fx.base)
 				t.Cleanup(func() { assertTreeUnchanged(t, before, treeManifest(t, fx.base)) })
 				socket := fmt.Sprintf("ale26-empty-%d-%d-%s", os.Getpid(), size.width, kind)
 				defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-				runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser", "exec "+fx.productShell(t)+" browse "+scope)
+				runTmuxProduct(t, tmux, fx, socket, fx.productCommand(t, scope...), "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser")
 				runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 				runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height))
 				pane := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "Root filter: all")
