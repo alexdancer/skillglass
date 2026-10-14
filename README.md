@@ -2,7 +2,7 @@
 
 A clear view into your local agent skills.
 
-Skillglass is a Go terminal tool for browsing, reading, and comparing local agent skills. The planned product will also control skills across agent applications, explain where a skill comes from, and show what a proposed change would affect.
+Skillglass is a Go terminal tool for browsing, reading, and comparing local agent skills. The planned product will also control skills across agent applications and show what a proposed change would affect.
 
 ## Status
 
@@ -12,7 +12,7 @@ The project was planned as **Skill Viewer**. Existing Linear titles and historic
 
 ## Planned capabilities
 
-- Explain availability by agent application and project, including precedence and unsupported controls.
+- Extend availability explanations to the remaining agent applications.
 - Preview and apply validated enable/disable controls, or permanently delete explicitly selected content after confirmation.
 - Work offline, with the first release targeting macOS.
 
