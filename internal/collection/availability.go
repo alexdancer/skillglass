@@ -62,6 +62,8 @@ type PrecedenceState string
 
 const (
 	PrecedenceUnique     PrecedenceState = "unique"
+	PrecedenceWinning    PrecedenceState = "winning"
+	PrecedenceShadowed   PrecedenceState = "shadowed"
 	PrecedenceCoexisting PrecedenceState = "coexisting"
 	PrecedenceUnknown    PrecedenceState = "unknown"
 )
