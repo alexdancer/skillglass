@@ -27,13 +27,14 @@ func TestALE37BrowserExplanationAvailabilityAndRefresh(t *testing.T) {
 			runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", strconv.Itoa(width), "-y", "24", "-s", "browser")
 			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(width), "-y", "24")
-			pane := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "browser-gemini", "ask (inferred)", "Agent: gemini")
+			pane := waitForPane(t, tmux, fx, socket, false, "Skillglass", "browser-gemini", "ask (inferred)", "Agent: gemini")
 			assertPaneCells(t, pane, width, 24)
 			writeEvidence(t, fmt.Sprintf("tmux/ale37/%d/01-sources.txt", width), []byte(pane))
 			send := func(key string, needles ...string) string {
 				return actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", key) }, needles...)
 			}
-			pane = send("Enter", "Read lines", "Availability: ask", "Session: unknown")
+			send("Enter", "Rendered instructions")
+			pane = send("d", "Read lines", "Availability: ask", "Session: unknown")
 			assertPaneCells(t, pane, width, 24)
 			collect := func(prefix string, needles ...string) {
 				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "g")
@@ -72,7 +73,7 @@ func TestALE37BrowserExplanationAvailabilityAndRefresh(t *testing.T) {
 			before = treeManifest(t, fx.base)
 			send("r", "Refresh: selected directory object retained")
 			collect("03-refreshed", "Availability: disabled", "Permission: denied", "disabled-name-union", "Session: unknown")
-			send("Escape", "SKILLGLASS | Sources", "hidden by filters", "0 matches")
+			send("Escape", "Search /", "hidden by filters", "0 matches")
 			// The shared cycle is all, available, disabled, explicit-only, ask, ...
 			send("a", "Availability filter: shadowed")
 			send("a", "Availability filter: unavailable")
@@ -82,10 +83,10 @@ func TestALE37BrowserExplanationAvailabilityAndRefresh(t *testing.T) {
 			pane = send("a", "Availability filter: disabled", "browser-gemini", "disabled (inferred)")
 			assertPaneCells(t, pane, width, 24)
 			writeEvidence(t, fmt.Sprintf("tmux/ale37/%d/04-filter.txt", width), []byte(pane))
-			pane = send("s", "SKILLGLASS | Scope and filters", "Agent: gemini", "Gemini CLI 0.63.0")
+			pane = send("s", "Scope and filters", "Agent: gemini", "Gemini CLI 0.63.0")
 			assertPaneCells(t, pane, width, 24)
 			writeEvidence(t, fmt.Sprintf("tmux/ale37/%d/05-scope.txt", width), []byte(pane))
-			send("Escape", "SKILLGLASS | Sources")
+			send("Escape", "Search /")
 			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "q")
 			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 		})
@@ -109,9 +110,9 @@ func TestALE37BrowserMalformedDisabledNativeName(t *testing.T) {
 			runTmuxProduct(t, tmux, fx, socket, shell, "new-session", "-d", "-x", strconv.Itoa(width), "-y", "24", "-s", "browser")
 			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(width), "-y", "24")
-			frame := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "disabled (inferred)", "Focus: 1/1")
+			frame := waitForPane(t, tmux, fx, socket, false, "Skillglass", "disabled (inferred)", "Focus: 1/1")
 			writeEvidence(t, fmt.Sprintf("tmux/ale37-repair/%d/01-disabled.txt", width), []byte(frame))
-			frame = actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter") }, "Read lines")
+			frame = actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter", "d") }, "Read lines")
 			rows := make(map[int]string)
 			var complete string
 			for page := 0; page < 40; page++ {

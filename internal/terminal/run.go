@@ -32,6 +32,9 @@ Filters:
   --problem CODE       one documented problem code
   --availability STATE all, available, disabled, explicit-only, ask, shadowed, unavailable, unknown
 
+Browser:
+  --theme VALUE        auto, dark, light, or none (default auto)
+
 Without --agent, at least one explicit --root or --project-root is required. Native rules are version-specific; the scope reports roots and remaining gaps.
 `
 

@@ -121,11 +121,12 @@ func TestALE31ExactPluginPolicyBrowserRefreshAndFilter(t *testing.T) {
 				assertPaneCells(t, frame, width, 30)
 				writeEvidence(t, fmt.Sprintf("tmux/ale31-exact/%d/%s.txt", width, label), []byte(frame))
 			}
-			record("01-sources", waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "explicit", "unavailable (inferred)"))
+			record("01-sources", waitForPane(t, tmux, fx, socket, false, "Skillglass", "explicit", "unavailable (inferred)"))
 			send := func(key string, needles ...string) string {
 				return actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", key) }, needles...)
 			}
-			frame := send("Enter", "Availability: unavailable", "Configured permission: allowed", "Session: unknown", "Read lines")
+			send("Enter", "Rendered instructions")
+			frame := send("d", "Availability: unavailable", "Configured permission: allowed", "Session: unknown", "Read lines")
 			record("02-detail", frame)
 			for page := 0; page < 10 && !paneContains(frame, "plugins are opt-in"); page++ {
 				previous := frame
@@ -144,11 +145,11 @@ func TestALE31ExactPluginPolicyBrowserRefreshAndFilter(t *testing.T) {
 			writeFile(t, filepath.Join(profile, "config.yaml"), []byte("plugins:\n  enabled: [category/registry-folder]\n"), 0600)
 			before = treeManifest(t, fx.base)
 			record("04-refresh", send("r", "Refresh: selected directory object retained", "Availability: explicit-only", "Configured permission: allowed"))
-			send("Escape", "SKILLGLASS | Sources", "explicit-only (inferred)")
+			send("Escape", "Search /", "explicit-only (inferred)")
 			record("05-available-filter", send("a", "Availability filter: available", "0 matches"))
 			send("a", "Availability filter: disabled", "0 matches")
 			record("06-explicit-filter", send("a", "Availability filter: explicit-only", "explicit", "explicit-only (inferred)"))
-			record("07-scope", send("s", "Scope and filters", "Validated: Hermes 0.20.0", "Availability: explicit-only"))
+			record("07-scope", send("s", "Scope and filters", "Validated rules: Hermes 0.20.0", "Availability: explicit-only"))
 			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "q")
 			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 		})

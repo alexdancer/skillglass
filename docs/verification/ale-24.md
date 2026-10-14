@@ -7,8 +7,8 @@ ALE-24 adds reference-aware source identity, custom and project provenance, sear
 - The accepted ALE-23 executable rejected `--project-root`, which reproduced the missing public capability before implementation.
 - Darwin can report a symlink cycle as a bare `EvalSymlinks: too many links` error. Cycle classification now recognizes typed `ELOOP` or that exact unwrapped sentinel instead of scanning arbitrary path text. Missing targets containing `too many links` or `too many levels of symbolic links` remain `broken-reference` problems.
 - An early query projection retained references only through resolved sources. Unresolved broken and cyclic references therefore disappeared while problems still named their IDs. Views now retain references selected through either visible sources or visible problem relationships, including their original path, status, filter match, and diagnostic.
-- A fixed filter row allowed a long selected root to hide context and problem values. The browser now renders complete bounded filter fields, combines them only when they fit, and puts the full root path in the scrollable scope view.
-- Adding selection identity to the header initially reduced the 80 by 24 detail body enough to hide the inherited final-instruction PTY evidence. Selection and filter fields now share rows only when complete, preserving the body, controls, selector, and filter dimensions.
+- A fixed filter row allowed a long selected root to hide context and problem values. ALE-24 repaired field allocation without moving the full root path out of Scope; [DESIGN.md](../../DESIGN.md#responsive-layout) owns the current ALE-43 chrome rules.
+- Adding selection identity to the header initially reduced the 80 by 24 detail body enough to hide the inherited final-instruction PTY evidence. The ALE-24 repair preserved the body, controls, selector, and filter dimensions; current instruction-first coverage is recorded in [ALE-43](ale-43.md#public-behavior-covered).
 - Terminal delta rendering could emit only the changed suffix of `Resources:` after an end jump. The end action requests a complete repaint, retaining the raw PTY proof as well as the current-cell proof.
 
 ## Public behavior covered
@@ -23,7 +23,7 @@ ALE-24 adds reference-aware source identity, custom and project provenance, sear
 
 `TestALE24FreshInvocationRetainsObjectIdentityAcrossReferenceChanges` proves that a new CLI invocation sees source insertion, manifest edits, broken references, and alias retargeting. A surviving alias retains the original source ID.
 
-`TestALE24BrowserModesAndReferencesAtRequiredWidths` drives real tmux panes at 48, 60, 80, 96, and 120 columns. It inspects Sources and Problems headings, complete active filter fields, both custom and project references through scrolling, body space, controls, and safe cell widths.
+`TestALE24BrowserModesAndReferencesAtRequiredWidths` drives real tmux panes at 48, 60, 80, 96, and 120 columns. It inspects Sources and Problems headings, active filter indicators, both custom and project references through scrolling, body space, controls, and safe cell widths.
 
 `TestALE24BrowserRefreshSelectionAndProblemPaste` selects a source by its public ID, then applies external rename, row insertion, manifest edit, one-alias retarget, final-alias retarget, and equal-byte path replacement changes. Refresh retains the same proven object through rename and a surviving alias, retains it while filters hide it, and visibly clears it after loss or replacement. The same journey searches Problems with bracketed-pasted shortcut letters and opens the related problem detail.
 

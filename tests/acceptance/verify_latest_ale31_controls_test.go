@@ -123,11 +123,11 @@ func TestVerifyLatestALE31Browser(t *testing.T) {
 				runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", strconv.Itoa(width), "-y", "30", "-s", "browser")
 				runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 				runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(width), "-y", "30")
-				frame := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "available (inferred)")
+				frame := waitForPane(t, tmux, fx, socket, false, "Skillglass", "available (inferred)")
 				prefix := fmt.Sprintf("tmux/ale31-latest/%d/%s/", width, mode)
 				writeEvidence(t, prefix+"00-sources.txt", []byte(frame))
 				frame = actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() {
-					runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter")
+					runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter", "d")
 				}, "Read lines", "Availability: available")
 				seenPermission, seenFact := false, false
 				fact := `selector "category/second": ambiguous-bare-name (2 known distinct manifests)`

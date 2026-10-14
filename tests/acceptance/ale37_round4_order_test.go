@@ -142,8 +142,8 @@ func TestRound4R14TerminalFinalTrust(t *testing.T) {
 					runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", fmt.Sprint(width), "-y", "24", "-s", "browser")
 					runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 					runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", fmt.Sprint(width), "-y", "24")
-					waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "final-trust-control")
-					frame := actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter") }, "Read lines")
+					waitForPane(t, tmux, fx, socket, false, "Skillglass", "final-trust-control")
+					frame := actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter", "d") }, "Read lines")
 					rows := map[int]string{}
 					content := ""
 					prefix := fmt.Sprintf("round4/r14-browser/%t/%s/%d", finalTrust, alias, width)

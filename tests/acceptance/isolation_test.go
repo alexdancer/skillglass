@@ -117,7 +117,7 @@ func TestRuntimeContentIsolation(t *testing.T) {
 
 	browseRaw := runSandboxBrowser(t, fx, productProfile, canonicalProduct)
 	if !bytes.Contains(browseRaw, []byte("normal-skill")) ||
-		!bytes.Contains(browseRaw, []byte("Coverage: complete")) {
+		!bytes.Contains(browseRaw, []byte("coverage complete")) {
 		t.Fatalf("sandboxed browser output is incomplete: %q", browseRaw)
 	}
 	writeEvidence(t, "isolation/browse.ansi", browseRaw)
@@ -263,7 +263,7 @@ func runSandboxBrowser(t *testing.T, fx fixture, profile, executable string, bro
 		_, _ = io.Copy(&raw, terminal)
 		close(copyDone)
 	}()
-	raw.wait(t, 0, "Selected: none", "Enter read")
+	raw.wait(t, 0, "Focused: normal-skill", "? help")
 	if _, err := io.WriteString(terminal, "q"); err != nil {
 		t.Fatal(err)
 	}

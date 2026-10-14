@@ -291,8 +291,8 @@ func TestALE33ResourcePatternsBrowser(t *testing.T) {
 			defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
 			runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", "80", "-y", "30", "-s", "browser", "exec "+shellQuote(skillglassBinary)+" browse --agent pi --project "+shellQuote(fx.project)+" --availability "+shellQuote(state))
 			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
-			waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", name)
-			frame := actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter") }, "Read lines", "Configured permission:")
+			waitForPane(t, tmux, fx, socket, false, "Skillglass", name)
+			frame := actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter", "d") }, "Read lines", "Configured permission:")
 			permission, kind := "denied", "inferred"
 			if state == "unknown" {
 				permission, kind = "unknown", "unknown"

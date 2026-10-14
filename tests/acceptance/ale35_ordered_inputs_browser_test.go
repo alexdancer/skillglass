@@ -76,7 +76,7 @@ func TestALE35OrderedInputTerminal(t *testing.T) {
 				prefix := "tmux/ordered-inputs/" + t.Name() + "/"
 				assertPaneCells(t, frame, size.width, size.height)
 				writeEvidence(t, prefix+"sources.txt", []byte(frame))
-				detail := actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter") }, "Configured permission: "+tc.permission, "Session: unknown")
+				detail := actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter", "d") }, "Configured permission: "+tc.permission, "Session: unknown")
 				assertPaneCells(t, detail, size.width, size.height)
 				writeEvidence(t, prefix+"detail.txt", []byte(detail))
 				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "q")

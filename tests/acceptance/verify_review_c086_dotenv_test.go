@@ -126,7 +126,7 @@ func TestVerifyReviewC086QuotedRootBrowser(t *testing.T) {
 				assertRecordedContext(t, launch, command)
 				runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 				runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(width), "-y", "30")
-				frame := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "unknown (unknown)")
+				frame := waitForPane(t, tmux, fx, socket, false, "Skillglass", "unknown (unknown)")
 				prefix := fmt.Sprintf("tmux/ale31-quoted-root/%d/%s/", width, mode)
 				assertPaneCells(t, frame, width, 30)
 				writeEvidence(t, prefix+"00-sources.txt", []byte(frame))
@@ -134,7 +134,7 @@ func TestVerifyReviewC086QuotedRootBrowser(t *testing.T) {
 					t.Fatalf("stale inherited content leaked through unknown filter: %s", frame)
 				}
 				frame = actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() {
-					runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter")
+					runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter", "d")
 				}, "Read lines", "Availability: unknown")
 				seenPermission, seenReason := false, false
 				for step := 0; step < 100; step++ {

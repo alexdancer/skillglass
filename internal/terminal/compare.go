@@ -138,7 +138,7 @@ func (model browserModel) comparisonPage() pagedView {
 		}
 		header = append(header, fitLine("Coverage: "+string(model.comparison.Coverage)+" | "+string(model.comparison.Outcome), model.width))
 	}
-	return pagedView{header: header, body: body, help: wrapGroups([]string{"j/k scroll", "PgUp/PgDn", "g/G top/end", "Esc back", "r refresh", "q quit"}, model.width), statusLabel: "Compare lines", feedback: model.feedback, scroll: model.compareScroll, width: model.width, height: model.height}
+	return pagedView{palette: model.palette(), header: header, body: body, help: wrapGroups([]string{"j/k scroll", "PgUp/PgDn", "g/G top/end", "Esc back", "r refresh", "? help", "q quit"}, model.width), statusLabel: "Compare lines", feedback: model.feedback, scroll: model.compareScroll, width: model.width, height: model.height}
 }
 func (model browserModel) updateComparison(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	layout := model.comparisonPage().layout()

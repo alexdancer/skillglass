@@ -29,7 +29,7 @@ func TestALE26BrowserAvailabilityExplanationFilterAndRefresh(t *testing.T) {
 			runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", strconv.Itoa(width), "-y", strconv.Itoa(height), "-s", "browser")
 			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(width), "-y", strconv.Itoa(height))
-			pane := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "browser-codex", "available (inferred)")
+			pane := waitForPane(t, tmux, fx, socket, false, "Skillglass", "browser-codex", "available (inferred)")
 			assertPaneCells(t, pane, width, height)
 			writeEvidence(t, fmt.Sprintf("tmux/ale26/%dx%d/01-sources.txt", width, height), []byte(pane))
 			send := func(key string, needles ...string) string {
@@ -38,8 +38,9 @@ func TestALE26BrowserAvailabilityExplanationFilterAndRefresh(t *testing.T) {
 			send("/", "Enter keep")
 			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "browser-codex")
 			waitForPane(t, tmux, fx, socket, false, "Focus: 1/1")
-			send("Enter", "Enter read")
-			topSummary := send("Enter", "Read lines", "Availability: available", "Configured permission: allowed", "Session: unknown")
+			send("Enter", "Enter open")
+			send("Enter", "Rendered instructions")
+			topSummary := send("d", "Read lines", "Availability: available", "Configured permission: allowed", "Session: unknown")
 			assertPaneCells(t, topSummary, width, height)
 			collect := func(prefix string, needles ...string) string {
 				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "g")
@@ -94,15 +95,15 @@ func TestALE26BrowserAvailabilityExplanationFilterAndRefresh(t *testing.T) {
 			before = treeManifest(t, fx.base)
 			send("r", "Refresh: selected directory object retained")
 			collect("03-after", "Availability: disabled", "Permission: denied", "manifest-selector", "Session: unknown")
-			hidden := send("Escape", "SKILLGLASS | Sources", "0 matches", "hidden by filters")
+			hidden := send("Escape", "Search /", "0 matches", "hidden by filters")
 			assertPaneCells(t, hidden, width, height)
 			filtered := send("a", "Availability filter: disabled", "browser-codex", "disabled (inferred)")
 			assertPaneCells(t, filtered, width, height)
 			writeEvidence(t, fmt.Sprintf("tmux/ale26/%dx%d/04-filter.txt", width, height), []byte(filtered))
-			scope := send("s", "SKILLGLASS | Scope and filters", "Validated: codex-cli 0.155.1")
+			scope := send("s", "Scope and filters", "Validated rules: codex-cli 0.155.1")
 			assertPaneCells(t, scope, width, height)
 			writeEvidence(t, fmt.Sprintf("tmux/ale26/%dx%d/05-scope.txt", width, height), []byte(scope))
-			send("Escape", "SKILLGLASS | Sources")
+			send("Escape", "Search /")
 			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "q")
 			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 		})
@@ -131,7 +132,7 @@ func TestALE26BrowserContextCycleRecoversGenericAndPreservesNativeOrder(t *testi
 			if initial == "native" {
 				current = "all"
 			}
-			before := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "Context filter: "+current)
+			before := waitForPane(t, tmux, fx, socket, false, "Skillglass", map[bool]string{true: "Filters:", false: "context " + current}[current == "all"])
 			writeEvidence(t, "tmux/ale26/context/"+initial+"-before.txt", []byte(before))
 			next := []string{"all"}
 			if initial == "native" {
@@ -157,19 +158,13 @@ func sourceDetailBody(t *testing.T, cells string) (first, last, total int, body 
 	rows := strings.Split(strings.TrimSuffix(cells, "\n"), "\n")
 	start := -1
 	for index, row := range rows {
-		if strings.HasPrefix(row, "Selected:") {
+		if strings.Contains(row, "Read lines ") {
 			start = index + 1
 			break
 		}
 	}
 	if start < 0 {
-		t.Fatalf("source detail lacks selection header:\n%s", cells)
-	}
-	if start < len(rows) && strings.HasPrefix(rows[start], "Selector:") {
-		start++
-	}
-	if start < len(rows) && strings.HasPrefix(rows[start], "Selection:") {
-		start++
+		t.Fatalf("source detail lacks pager: %s", cells)
 	}
 	first, last, total = sourceDetailRange(cells)
 	count := last - first + 1
@@ -181,8 +176,8 @@ func sourceDetailBody(t *testing.T, cells string) (first, last, total int, body 
 
 func sourceDetailRange(cells string) (first, last, total int) {
 	for _, row := range strings.Split(cells, "\n") {
-		if strings.HasPrefix(row, "Read lines ") {
-			if count, err := fmt.Sscanf(row, "Read lines %d-%d of %d", &first, &last, &total); err == nil && count == 3 {
+		if offset := strings.Index(row, "Read lines "); offset >= 0 {
+			if count, err := fmt.Sscanf(row[offset:], "Read lines %d-%d of %d", &first, &last, &total); err == nil && count == 3 {
 				return first, last, total
 			}
 		}

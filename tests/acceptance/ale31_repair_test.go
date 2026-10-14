@@ -230,16 +230,17 @@ func TestALE31RepairBrowserPolicyAndExclusionParity(t *testing.T) {
 					assertPaneCells(t, frame, width, 30)
 					writeEvidence(t, fmt.Sprintf("tmux/ale31-repair/%s/%d/%s.txt", kind, width, label), []byte(frame))
 				}
-				record("01-sources", waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", name, "Agent: hermes", "unavailable (inferred)"))
+				record("01-sources", waitForPane(t, tmux, fx, socket, false, "Skillglass", name, "Agent: hermes", "unavailable (inferred)"))
 				send := func(key string, needles ...string) string {
 					return actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", key) }, needles...)
 				}
-				record("02-detail", send("Enter", "Read lines", "Availability: unavailable", "Configured permission: allowed", "Session: unknown"))
+				send("Enter", "Rendered instructions")
+				record("02-detail", send("d", "Read lines", "Availability: unavailable", "Configured permission: allowed", "Session: unknown"))
 				record("03-refresh", send("r", "Refresh: selected directory object retained", "Availability: unavailable"))
-				send("Escape", "SKILLGLASS | Sources")
+				send("Escape", "Search /")
 				record("04-filter", send("a", "Availability filter: unknown", "0 matches"))
 				record("05-all", send("a", "Availability filter: all", name, "unavailable (inferred)"))
-				record("06-scope", send("s", "Scope and filters", "Agent: hermes", "Validated: Hermes 0.20.0"))
+				record("06-scope", send("s", "Scope and filters", "Agent: hermes", "Validated rules: Hermes 0.20.0"))
 				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "q")
 				assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 			})

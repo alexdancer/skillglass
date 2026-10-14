@@ -93,17 +93,17 @@ func (model browserModel) changePage() pagedView {
 	help := []string{"g Global | p Project unavailable", "Enter/Esc Cancel | q quit"}
 	if model.mode == browserChangePreview {
 		body = changePreviewLines(model.changePreview.View())
-		help = wrapGroups([]string{"j/k scroll", "PgUp/PgDn", "g/G top/end", "y Apply global " + string(model.changeChoice), "Enter/Esc Cancel", "q quit"}, model.width)
+		help = wrapGroups([]string{"j/k scroll", "PgUp/PgDn", "g/G top/end", "y Apply global " + string(model.changeChoice), "Enter/Esc Cancel", "? help", "q quit"}, model.width)
 		if model.changePreview.View().State != "ready" {
-			help = wrapGroups([]string{"j/k scroll", "PgUp/PgDn", "Enter/Esc Back", "q quit"}, model.width)
+			help = wrapGroups([]string{"j/k scroll", "PgUp/PgDn", "Enter/Esc Back", "? help", "q quit"}, model.width)
 		}
 	} else if model.mode == browserChangeResult {
 		body = changeOutcomeLines(model.changeOutcome)
-		help = wrapGroups([]string{"j/k scroll", "PgUp/PgDn", "g/G top/end", "Enter/Esc Back", "r reinspect", "q quit"}, model.width)
+		help = wrapGroups([]string{"j/k scroll", "PgUp/PgDn", "g/G top/end", "Enter/Esc Back", "r reinspect", "? help", "q quit"}, model.width)
 	}
 	lines := []string{}
 	for _, line := range body {
 		lines = append(lines, wrapLine(safeInline(line), model.width)...)
 	}
-	return pagedView{header: header, body: lines, help: help, statusLabel: "Control lines", feedback: model.feedback, scroll: model.changeScroll, width: model.width, height: model.height}
+	return pagedView{palette: model.palette(), header: header, body: lines, help: help, statusLabel: "Control lines", feedback: model.feedback, scroll: model.changeScroll, width: model.width, height: model.height}
 }

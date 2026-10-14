@@ -42,11 +42,11 @@ func TestALE35RouteIdentityTerminal(t *testing.T) {
 				if disabled {
 					state = "unavailable"
 				}
-				frame := waitForPane(t, tmux, fx, socket, false, "Context filter: global", "agents-route", "Focus: 1/1", state+" (inferred)")
+				frame := waitForPane(t, tmux, fx, socket, false, "context global", "agents-route", "Focus: 1/1", state+" (inferred)")
 				prefix := "tmux/route-identity/" + t.Name() + "/"
 				assertPaneCells(t, frame, size.width, size.height)
 				writeEvidence(t, prefix+"sources.txt", []byte(frame))
-				frame = actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter") }, "Configured permission: ask", "Session: unknown", "Read lines 1-")
+				frame = actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter", "d") }, "Configured permission: ask", "Session: unknown", "Read lines 1-")
 				rows := map[int]string{}
 				var joined string
 				for page := 0; page < 40; page++ {
@@ -67,7 +67,7 @@ func TestALE35RouteIdentityTerminal(t *testing.T) {
 					frame = actOnPane(t, tmux, fx, socket, "browser:0.0", func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "PageDown") }, func(next paneSnapshot) bool { start, _, _ := sourceDetailRange(next.cells); return start > first }).cells
 				}
 				writeEvidence(t, prefix+"detail-body.txt", []byte(joined))
-				if joined == "" || strings.Count(joined, "Reference global:") != 1 || strings.Count(joined, "Reference project:") != 1 || strings.Count(joined, "Provenance: global") != 1 || strings.Count(joined, "Provenance: project") != 1 {
+				if joined == "" || strings.Count(joined, "Context: global") != 1 || strings.Count(joined, "Context: project") != 1 || strings.Count(joined, "Provenance: global") != 1 || strings.Count(joined, "Provenance: project") != 1 {
 					t.Fatalf("terminal provenance lost or repeated: %s", joined)
 				}
 				if !paneContains(joined, "Permission: ask") || !paneContains(joined, "unsupported") {

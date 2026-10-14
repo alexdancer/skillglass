@@ -94,10 +94,10 @@ func TestVerifyConfigDiagnosticDisclosureBrowser(t *testing.T) {
 	command := fx.productCommand(t, "browse", "--agent", "hermes", "--project", fx.project)
 	runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", "80", "-y", "40", "-s", "browser")
 	runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
-	frame := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "diagnostic-skill")
+	frame := waitForPane(t, tmux, fx, socket, false, "Skillglass", "diagnostic-skill")
 	writeEvidence(t, "browser/01-sources.txt", []byte(frame))
 	actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Tab") }, "Enter problem", "native-input")
-	detail := actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter") }, "Summary:", "Hermes input is invalid YAML")
+	detail := actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter", "d") }, "Summary:", "Hermes input is invalid YAML")
 	assertPaneCells(t, detail, 80, 40)
 	writeEvidence(t, "browser/02-problem.txt", []byte(detail))
 	if strings.Contains(detail, disclosureSentinel) {

@@ -560,6 +560,10 @@ func (snapshot *Snapshot) Source(id SourceID) (Source, bool) {
 }
 
 func (snapshot *Snapshot) References(id SourceID) []Reference {
+	return snapshot.ReferencesMatchingFilters(id, Filters{Context: FilterAll})
+}
+
+func (snapshot *Snapshot) ReferencesMatchingFilters(id SourceID, filters Filters) []Reference {
 	source, ok := snapshot.sources[id]
 	if !ok {
 		return nil
@@ -567,7 +571,7 @@ func (snapshot *Snapshot) References(id SourceID) []Reference {
 	references := make([]Reference, 0, len(source.References))
 	for _, referenceID := range source.References {
 		reference := cloneReference(snapshot.references[referenceID])
-		reference.MatchesFilters = true
+		reference.MatchesFilters = snapshot.referenceMatches(reference, filters)
 		references = append(references, reference)
 	}
 	return references

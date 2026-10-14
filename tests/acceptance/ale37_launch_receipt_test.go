@@ -86,7 +86,7 @@ func TestALE37FinalizedConfiguredHomeReceipts(t *testing.T) {
 			socket := fmt.Sprintf("gemini-finalized-%d", width)
 			defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
 			launch := runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", fmt.Sprint(width), "-y", "24", "-s", "browser")
-			frame := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "configured-gemini-literal", "Focus: 1/1")
+			frame := waitForPane(t, tmux, fx, socket, false, "Skillglass", "configured-gemini-literal", "Focus: 1/1")
 			assertPaneCells(t, frame, width, 24)
 			if strings.Contains(frame, "default-gemini-literal") {
 				t.Fatal("tmux lost finalized Gemini home")

@@ -297,8 +297,8 @@ func TestRound2R10BrowserControllingDiscoverySetting(t *testing.T) {
 					runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", fmt.Sprint(width), "-y", "24", "-s", "browser")
 					runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 					runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", fmt.Sprint(width), "-y", "24")
-					frame := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "browser-control")
-					frame = actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter") }, "Read lines")
+					frame := waitForPane(t, tmux, fx, socket, false, "Skillglass", "browser-control")
+					frame = actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter", "d") }, "Read lines")
 					rows := map[int]string{}
 					content := ""
 					prefix := fmt.Sprintf("round2/r10-browser/%s/%s/%d", control, alias, width)

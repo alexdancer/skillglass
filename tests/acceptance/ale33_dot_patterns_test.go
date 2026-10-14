@@ -147,8 +147,8 @@ func TestALE33DotPatternBrowser(t *testing.T) {
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
 	runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", "80", "-y", "30", "-s", "browser", "exec "+shellQuote(skillglassBinary)+" browse --agent pi --project "+shellQuote(fx.project))
 	runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
-	waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "dot-target")
-	frame := actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter") }, "Read lines", "Configured permission:")
+	waitForPane(t, tmux, fx, socket, false, "Skillglass", "dot-target")
+	frame := actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter", "d") }, "Read lines", "Configured permission:")
 	for _, line := range []string{"Availability: available (inferred)", "Configured permission: allowed (inferred)"} {
 		if !strings.Contains(frame, line) {
 			t.Errorf("browser lacks %s: %s", line, frame)

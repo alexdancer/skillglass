@@ -32,9 +32,9 @@ func TestDecision5PrecedenceBrowser(t *testing.T) {
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
 	runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", "80", "-y", "30", "-s", "browser", "exec "+shellQuote(skillglassBinary)+" browse --agent pi --project "+shellQuote(fx.project)+" --source-root "+shellQuote(global)+" --availability unknown")
 	runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
-	waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "collision")
+	waitForPane(t, tmux, fx, socket, false, "Skillglass", "collision")
 	frame := actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() {
-		runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter")
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter", "d")
 	}, "Read lines", "Availability: unknown")
 	for _, line := range []string{"Selector: " + string(low.ID), "Availability: unknown (unknown)", "Configured permission: allowed (inferred)"} {
 		if !strings.Contains(frame, line) {

@@ -8,20 +8,20 @@ Skillglass is a Go terminal tool for browsing, reading, comparing, and controlli
 
 The production inventory, identity, comparison, and application discovery slices are implemented. Skillglass discovers explicit custom and project roots, groups references only when they resolve to the same proven source object, reports collection problems without discarding healthy sources, and exposes the same immutable snapshot through the CLI and keyboard browser. Codex, Claude Code, Pi, OpenCode, CodeAF, Gemini CLI, and Hermes integrations add native scope and local configured-availability explanations. Validated global Codex enable and disable controls use source-bound preview and explicit confirmation. Other write controls remain unsupported, and running-session enforcement remains unknown. Generic explicit-root inventory keeps unknown ownership and availability.
 
-This checkout is a local integration preview of PRs #7 through #12, including the previously merged Codex and Claude Code behavior. Its integration and checks do not merge the PRs on GitHub.
-
 The project was planned as **Skill Viewer**. Existing Linear titles and historical planning documents retain that name; **Skillglass** is the product and repository name.
 
 ## Planned capabilities
 
-- Extend availability explanations to the remaining agent applications.
-- Preview and apply validated enable/disable controls, or permanently delete explicitly selected content after confirmation.
+- Extend version-specific availability evidence and remaining validation coverage.
+- Extend validated enable/disable controls beyond global Codex, and add permanent deletion of explicitly selected content after confirmation.
 - Work offline, with the first release targeting macOS.
 
-Planned integrations cover Codex, Claude Code, Hermes, Pi, OpenCode, Gemini CLI, and CodeAF. Capabilities must be validated per application, version, and scope. CodeAF browsing with explicit persistent-control limitations is an accepted first-release exception.
+Native integrations cover Codex, Claude Code, Hermes, Pi, OpenCode, Gemini CLI, and CodeAF. Capabilities must be validated per application, version, and scope. CodeAF browsing with explicit persistent-control limitations is an accepted first-release exception.
 
 ## Start here
 
+- [Product principles](PRODUCT.md)
+- [Terminal design](DESIGN.md)
 - [Specification](docs/specs/skill-viewer-v1.md)
 - [Published ticket breakdown](docs/plans/skill-viewer-v1-ticket-breakdown.md)
 - [Coding workflow](docs/agents/coding-workflow.md)
@@ -34,6 +34,7 @@ Planned integrations cover Codex, Claude Code, Hermes, Pi, OpenCode, Gemini CLI,
 - [ALE-26 Codex verification](docs/verification/ale-26.md)
 - [ALE-27 global Codex control verification](docs/verification/ale-27.md)
 - [ALE-29 Claude Code verification](docs/verification/ale-29.md)
+- [ALE-43 verification](docs/verification/ale-43.md)
 
 [Linear](https://linear.app/alex-dancer/project/skill-viewer-58706f175bed) holds live ticket requirements, status, and dependencies. The local copies are references.
 
@@ -60,7 +61,7 @@ bin/skillglass list --root /path/to/custom --project /path/to/project --project-
 bin/skillglass problems --root /path/to/custom --project /path/to/project --project-root /path/to/project-skills --search broken --json
 bin/skillglass read --root /path/to/custom --project /path/to/project --project-root /path/to/project-skills SOURCE_ID
 bin/skillglass compare --root /path/to/custom --json LEFT_SOURCE_ID RIGHT_SOURCE_ID
-bin/skillglass browse --root /path/to/custom --project /path/to/project --project-root /path/to/project-skills
+bin/skillglass browse --root /path/to/custom --project /path/to/project --project-root /path/to/project-skills --theme auto
 ```
 
 To change one source's global Codex choice, obtain its ID from `list`, inspect a preview, then repeat the exact request with its confirmation token:
@@ -73,7 +74,7 @@ bin/skillglass enable --agent codex --scope global SOURCE_ID
 
 Preview changes no settings. Add `--project /path/to/repository` to inspect the effective result in that project while explicitly saving a global choice. See [global Codex control behavior and limits](docs/verification/ale-27.md) for contextual blockers, persistence outcomes and unsupported scopes.
 
-In browser source detail, press `d` to disable or `e` to enable, then `g` to select global scope. Press `p` instead to inspect the unsupported project-control explanation. Inspect the paged preview. Press `y` to apply the displayed choice, or Enter or Escape to cancel. Long paths remain accessible by scrolling.
+In browser source detail, press `D` to disable or `e` to enable, then `g` to select global scope. Press `p` instead to inspect the unsupported project-control explanation. Inspect the paged preview. Press `y` to apply the displayed choice, or Enter or Escape to cancel. Long paths remain accessible by scrolling.
 
 `list` and `problems` accept `--source-root`, `--context all|project|custom|global|system|managed`, `--availability STATE`, and `--problem CODE`; `browse` accepts the same filters for its initial view, with search entered interactively. Use `bin/skillglass help` for supported availability values; the default is all. All supplied filters combine with AND. The source-root value must be one of the selected normalized absolute roots and never expands discovery. Search is case-insensitive. `list --search` matches source names and descriptions. `problems --search` matches problem codes, summaries, details, reported diagnostic paths, and all associated original discovery and requested-root paths. Context and source-root must match the same associated reference or root, but search may match any known provenance of that eligible problem. Availability filters match a source's overall configured state, not an individual reference's participation. Source-associated problems require a related source with that state and a reference matching the context/root filters; diagnostics without an associated source remain visible under availability filtering. Filters change the view of the selected snapshot, not its completeness or exit status. Each CLI invocation performs a fresh scan.
 
@@ -87,11 +88,17 @@ Directory symlinks that reach the same proven directory object produce one sourc
 
 The documented problem codes are `root-missing`, `root-unreadable`, `broken-reference`, `symlink-cycle`, `unreadable-manifest`, `malformed-manifest`, `metadata-non-finite-float`, `manifest-too-large`, `manifest-invalid-encoding`, `unreadable-resource`, `resource-limit`, `identity-uncertain`, `duplicate-name`, `shared-manifest`, and `native-input`. Duplicate names, shared manifests, and non-finite metadata are informational and do not make otherwise complete coverage incomplete. External resource links remain visible through their resource path, target, and `link_scope: external`; they are not traversed. Failures that prevent selected content from being discovered or read preserve useful partial output, mark coverage incomplete, and return status 1.
 
-In the browser, move with the arrow keys or `j`/`k`, press `/` to search the current Sources or Problems view, `Enter` to keep a search or open the focused item, `Tab` to switch views, `Esc` or the left arrow to return from detail, and `q` to quit outside search. Search supports bracketed paste as query data and `Ctrl+U` to clear. Source and problem detail scroll with the same movement keys, `PgUp`/`PgDn`, and `g`/`G` for top/end.
+At 96 columns and wider, the browser keeps a 32 to 36 column source list beside a live rendered-instruction preview. Moving focus updates the preview; `Enter` opens the full-width reader. Below 96 columns, Sources uses the full width and `Enter` opens the focused reader. The reader starts on Instructions. Press `d` for exact Details, `i` to return to Instructions, and `v` to switch between rendered and escaped raw instructions. Details retains full source IDs, paths, identity, ownership and availability evidence, every reference, diagnostics, raw metadata, and supporting resources. Compact labels distinguish independent sources before Details, including same-name sources under different roots. See [source identity presentation](DESIGN.md#source-inventory-and-identity) for hint and truncation rules, and [responsive layout](DESIGN.md#responsive-layout) for compact filter indicators.
 
 In Sources, press `m` to mark the focused source as the left side, navigate or search for a partner, then press `v` to compare. The same marked source can also be selected to inspect shared-source semantics. Comparison runs asynchronously and shows pair identity, coverage and paged differences; scroll with `j`/`k`, `PgUp`/`PgDn`, and `g`/`G`, and press `Esc` to return. Press `r` in Comparison to refresh the inventory and return to Sources, then `v` to compare again. `Esc` in Sources clears the mark; refresh retains it only while the same proven source object remains reachable.
 
 For a selected native agent, press `a` to cycle configured availability and `c` to cycle global/system/managed as well as the ordinary reference contexts. Press `c` to cycle all, project, and custom reference contexts in generic inventory; `o` to cycle selected roots; `f` to cycle problem codes; and `r` to refresh explicitly. The browser has no watcher. Refresh observes external edits and retains a selected source only while the same proven source object remains reachable. A rename or one retargeted alias can retain selection when another reference still reaches that object. Replacement, loss, uncertain identity, or retargeting its final reference clears selection visibly. A selected source hidden by filters remains explicitly identified as hidden and is never rebound to a visible row.
+
+Move with the arrow keys or `j`/`k`, press `/` to search the current Sources or Problems view, `Enter` to keep a search or open the focused item, and `Tab` to switch views. While editing search, `Esc` cancels and restores the pre-edit query; the left arrow leaves the editor and query unchanged. Outside search, `Esc` or the left arrow returns from a reader, Scope, or Help. Press `q` to quit outside search. Search supports bracketed paste as query data and `Ctrl+U` to clear. Readers, Scope, and Help also support `PgUp`/`PgDn`, `Home`/`End`, and `g`/`G` for top and end. Press `?` for complete scrollable help.
+
+Refresh also clears a selected problem when it is no longer reported in the snapshot, not merely hidden by filters. Its open detail returns to Problems; if Scope is open, its return target changes instead. Disappearance feedback appears in the active Problems context without replacing source-selection feedback in Sources, source readers, or their Scope view.
+
+`browse --theme auto` uses `COLORFGBG` to choose light when it reports a light background and otherwise uses dark. Choose `dark`, `light`, or `none` for deterministic output. Theme values must use these exact spellings. A non-empty `NO_COLOR` forces no-color output. Theme selection never writes settings or reads ambient Glamour style files. Rendered Markdown and Details use the [browser visual system](DESIGN.md#visual-system). Raw and Markdown-decoded terminal controls are shown as inert escape notation, and renderer-created terminal links are removed while their visible text and URL remain.
 
 Press `s` from either inventory view or source/problem detail to inspect the full selected project, every discovery root, and active filters. The scope view scrolls with the arrow keys or `j`/`k`, `PgUp`/`PgDn`, and `g`/`G`; press `Esc` or the left arrow to return. While search input is active, `a`, `c`, `o`, `f`, `r`, and `s` remain ordinary query text. Long searches retain the complete query for filtering and show its current tail on one row with a leading ellipsis.
 

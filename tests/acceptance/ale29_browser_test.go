@@ -32,18 +32,19 @@ func TestALE29ClaudeBrowserExplainsFiltersAndRefreshesWithoutWrites(t *testing.T
 			runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser")
 			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height))
-			first := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "Agent: claude-code", "browser-claude", "explicit-only (inferred)")
+			first := waitForPane(t, tmux, fx, socket, false, "Skillglass", "Agent: claude-code", "browser-claude", "explicit-only (inferred)")
 			assertPaneCells(t, first, size.width, size.height)
 			writeEvidence(t, fmt.Sprintf("tmux/ale29/%dx%d/01-sources.txt", size.width, size.height), []byte(first))
 			send := func(key string, needles ...string) string {
 				return actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", key) }, needles...)
 			}
-			send("Enter", "Read lines", "Availability: explicit-only")
-			for _, key := range []string{"e", "d"} {
-				if key == "d" {
+			send("Enter", "Rendered instructions")
+			send("d", "Read lines", "Availability: explicit-only")
+			for _, key := range []string{"e", "D"} {
+				if key == "D" {
 					send("r", "Refresh: selected directory object retained")
 				}
-				controls := send(key, "SKILLGLASS | Source", "Read lines", "Controls are unsupported")
+				controls := send(key, "Selected:", "Read lines", "Controls are unsupported")
 				assertPaneCells(t, controls, size.width, size.height)
 				if paneContains(controls, "Codex control") || paneContains(controls, "Apply global") {
 					t.Fatalf("Claude inspection exposed Codex controls: %s", controls)
@@ -82,13 +83,13 @@ func TestALE29ClaudeBrowserExplainsFiltersAndRefreshesWithoutWrites(t *testing.T
 				}
 				t.Fatal("Claude detail pager did not finish")
 			}
-			collect("02-explicit", "Source:", "Reference global:", "Config layer:", "Winning source:", "Related independent source:", "disable-model-invocation", "Capability: disable", "unsupported", "Session: unknown", "Reload: unknown")
+			collect("02-explicit", "Source path:", "Context: global", "Config layer:", "Winning source:", "Related independent source:", "disable-model-invocation", "Capability: disable", "unsupported", "Session: unknown", "Reload: unknown")
 			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 			claudeSettings(t, settings, map[string]any{"skillOverrides": map[string]string{"browser-claude": "off"}})
 			before = treeManifest(t, fx.base)
 			send("r", "Refresh: selected directory object retained")
 			collect("03-disabled", "Availability: disabled", "skillOverrides.browser-claude=off", "Skill tool permissions")
-			send("Escape", "SKILLGLASS | Sources", "0 matches")
+			send("Escape", "Search /", "0 matches")
 			filter := send("a", "Availability filter: ask")
 			assertPaneCells(t, filter, size.width, size.height)
 			send("a", "Availability filter: shadowed")
@@ -98,8 +99,9 @@ func TestALE29ClaudeBrowserExplainsFiltersAndRefreshesWithoutWrites(t *testing.T
 			send("/", "Enter keep")
 			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "root-action")
 			waitForPane(t, tmux, fx, socket, false, "Focus: 1/1")
-			send("Enter", "Enter read")
-			send("Enter", "Read lines", "Availability: unavailable")
+			send("Enter", "Enter open")
+			send("Enter", "Rendered instructions")
+			send("d", "Read lines", "Availability: unavailable")
 			collect("04-plugin", "Plugin: demo@market", "plugin-disabled", "Capability: disable | plugin", "unsupported")
 			claudeSettings(t, filepath.Join(fx.home, ".claude", "settings.json"), map[string]any{"enabledPlugins": map[string]bool{"demo@market": true}})
 			before = treeManifest(t, fx.base)
@@ -123,7 +125,7 @@ func TestALE29ClaudeBrowserExplainsFiltersAndRefreshesWithoutWrites(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
-			resourceSize := fmt.Sprintf("size=%d", manifestInfo.Size())
+			resourceSize := fmt.Sprintf("%d bytes", manifestInfo.Size())
 			actOnPane(t, tmux, fx, socket, "browser:0.0", func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "r") }, func(next paneSnapshot) bool { return paneContains(next.cells, resourceSize) })
 			collect("07-invalid-port", "Availability: unknown", "WHATWG URL parsing", "Plugin: demo@market", "port")
 			claudeSettings(t, filepath.Join(plugin, ".claude-plugin/plugin.json"), map[string]any{"name": "demo", "version": "1.0.0", "homepage": "https:///example.invalid/docs"})
@@ -180,11 +182,11 @@ func TestALE29ClaudeBrowserExplainsFiltersAndRefreshesWithoutWrites(t *testing.T
 				collect(fmt.Sprintf("14-supported-skills-path-%02d", index), "Availability: available", "local-marketplace-plugin", "Plugin: demo@market")
 				assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 			}
-			send("Escape", "SKILLGLASS | Sources")
-			scope := send("s", "SKILLGLASS | Scope and filters", "Agent: claude-code", "Validated: Claude Code 2.1.282")
+			send("Escape", "Search /")
+			scope := send("s", "Scope and filters", "Agent: claude-code", "Validated rules: Claude Code 2.1.282")
 			assertPaneCells(t, scope, size.width, size.height)
 			writeEvidence(t, fmt.Sprintf("tmux/ale29/%dx%d/04-scope.txt", size.width, size.height), []byte(scope))
-			send("Escape", "SKILLGLASS | Sources")
+			send("Escape", "Search /")
 			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "q")
 			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 		})

@@ -27,9 +27,9 @@ func TestRound5RelativeTrustGapBrowser(t *testing.T) {
 			runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", fmt.Sprint(width), "-y", "24", "-s", "browser")
 			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", fmt.Sprint(width), "-y", "24")
-			waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "relative-trust", "unknown")
+			waitForPane(t, tmux, fx, socket, false, "Skillglass", "relative-trust", "unknown")
 			for _, phase := range []string{"initial", "refreshed"} {
-				actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "s") }, "SKILLGLASS | Scope and filters")
+				actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "s") }, "Scope and filters")
 				reason := "Unverified: relative trusted-folder keys require an uninspected native working directory"
 				frame := actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "G") }, reason)
 				assertPaneCells(t, frame, width, 24)
@@ -38,7 +38,7 @@ func TestRound5RelativeTrustGapBrowser(t *testing.T) {
 					t.Errorf("browser scope contains relative-key gap %d times, want once:\n%s", count, frame)
 				}
 				writeEvidence(t, fmt.Sprintf("round5/browser/%d/%s.txt", width, phase), []byte(frame))
-				actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Escape") }, "SKILLGLASS | Sources", "relative-trust", "unknown")
+				actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Escape") }, "Search /", "relative-trust", "unknown")
 				if phase == "initial" {
 					actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "r") }, "Refresh: collection updated", "unknown")
 				}
