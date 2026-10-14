@@ -1,6 +1,7 @@
 package acceptance_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -17,15 +18,21 @@ func TestALE35OrderedInputTerminal(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, size := range []struct{ width, height int }{{48, 24}, {80, 30}} {
-		for _, tc := range []struct{ name, config, state, permission string }{
-			{"numeric", `{"permission":{"skill":{"*":"deny","10":"allow"}}}`, "disabled", "denied"},
-			{"tools", `{"tools":{"skill":false},"permission":{"*":"allow","skill":"ask"}}`, "available", "allowed"},
-			{"plugins", `{"plugin":["./hooks.js"]}`, "unknown", "unknown"},
-			{"markdown", `{}`, "unknown", "unknown"},
+		for _, tc := range []struct{ name, config, state, permission, skill string }{
+			{"numeric", `{"permission":{"skill":{"*":"deny","10":"allow"}}}`, "disabled", "denied", "10"},
+			{"tools", `{"tools":{"skill":false},"permission":{"*":"allow","skill":"ask"}}`, "available", "allowed", "10"},
+			{"plugins", `{"plugin":["./hooks.js"]}`, "unknown", "unknown", "10"},
+			{"markdown", `{}`, "unknown", "unknown", "10"},
+			{"explore-default", `{"default_agent":"explore","agent":{"explore":{"mode":"primary"}}}`, "disabled", "denied", "10"},
+			{"summary-hidden", `{"default_agent":"summary","agent":{"summary":{}}}`, "unknown", "unknown", "10"},
+			{"action-only", `{"permission":{"skill":"allow","question":{"*":"allow"}}}`, "unknown", "unknown", "10"},
+			{"utf16-one", `{"permission":{"skill":{"*":"deny","?":"allow"}}}`, "disabled", "denied", "🔍"},
+			{"utf16-two-agent", `{"agent":{"build":{"permission":{"skill":{"*":"deny","??":"allow"}}}}}`, "available", "allowed", "🔍"},
 		} {
 			t.Run(fmt.Sprintf("%s-%dx%d", tc.name, size.width, size.height), func(t *testing.T) {
 				fx := newFixture(t)
-				codexSkill(t, filepath.Join(fx.xdgConfig, "opencode", "skills"), "source", `"10"`)
+				quotedName, _ := json.Marshal(tc.skill)
+				codexSkill(t, filepath.Join(fx.xdgConfig, "opencode", "skills"), "source", string(quotedName))
 				opencodeConfig(t, filepath.Join(fx.xdgConfig, "opencode", "opencode.json"), tc.config)
 				if tc.name == "plugins" {
 					opencodeConfig(t, filepath.Join(fx.project, "opencode.json"), `{"plugin":[]}`)
@@ -34,7 +41,7 @@ func TestALE35OrderedInputTerminal(t *testing.T) {
 					writeFile(t, filepath.Join(fx.project, ".opencode", "agents", "override.md"), []byte("---\nname: build\npermission:\n  skill: deny\n---\nInert prompt\n"), 0600)
 				}
 				before := treeManifest(t, fx.base)
-				ale35PreserveInputs(t, fx, "10", nil, before)
+				ale35PreserveInputs(t, fx, tc.skill, nil, before)
 				socket := fmt.Sprintf("ale35-ordered-%d-%s-%d", os.Getpid(), tc.name, size.width)
 				defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
 				line := shellQuote(skillglassBinary) + " browse --agent opencode --project " + shellQuote(fx.project) + "; code=$?; printf '\\nORDERED_BROWSER_EXIT=%s\\n' \"$code\"; /bin/sleep 30"

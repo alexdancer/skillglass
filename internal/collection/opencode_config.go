@@ -13,9 +13,12 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf16"
 )
 
 const opencodeValidatedVersion = "OpenCode 1.17.15"
+
+var errOpencodeSurrogate = errors.New("native JSON contains an unpaired UTF-16 surrogate; lossless literal matching is unsupported")
 
 // JSON object order is native permission semantics, not presentation order.
 type opencodeObject struct {
@@ -220,6 +223,37 @@ func parseOpencodeValue(dec *json.Decoder, path string, depth int) (any, error) 
 	}
 	return nil, errors.New("invalid delimiter")
 }
+func validateOpencodeUnicode(raw []byte) error {
+	quoted := false
+	for i := 0; i < len(raw); i++ {
+		if raw[i] == '"' {
+			quoted = !quoted
+			continue
+		}
+		if !quoted || raw[i] != '\\' {
+			continue
+		}
+		i++
+		if i >= len(raw) || raw[i] != 'u' || i+4 >= len(raw) {
+			continue
+		}
+		unit, err := strconv.ParseUint(string(raw[i+1:i+5]), 16, 16)
+		i += 4
+		if err != nil || unit < 0xd800 || unit > 0xdfff {
+			continue
+		}
+		if unit >= 0xdc00 || i+6 >= len(raw) || raw[i+1] != '\\' || raw[i+2] != 'u' {
+			return errOpencodeSurrogate
+		}
+		low, err := strconv.ParseUint(string(raw[i+3:i+7]), 16, 16)
+		if err != nil || low < 0xdc00 || low > 0xdfff {
+			return errOpencodeSurrogate
+		}
+		i += 6
+	}
+	return nil
+}
+
 func parseOpencode(raw []byte, path string) (*opencodeObject, error) {
 	// Substitution may read arbitrary secret files natively. Offline browsing never performs it.
 	if bytes.Contains(raw, []byte("{env:")) || bytes.Contains(raw, []byte("{file:")) {
@@ -227,6 +261,9 @@ func parseOpencode(raw []byte, path string) (*opencodeObject, error) {
 	}
 	cleaned, err := opencodeJSONC(raw)
 	if err != nil {
+		return nil, err
+	}
+	if err := validateOpencodeUnicode(cleaned); err != nil {
 		return nil, err
 	}
 	dec := json.NewDecoder(bytes.NewReader(cleaned))
@@ -271,6 +308,9 @@ func (in *opencodeInputs) load(path, scope string, raw []byte, required bool) {
 	if err != nil || parseErr != nil {
 		layer.State = "unknown"
 		layer.Reason = "config cannot be interpreted safely; content is not reported"
+		if errors.Is(parseErr, errOpencodeSurrogate) {
+			layer.Reason = errOpencodeSurrogate.Error() + "; content is not reported"
+		}
 		in.problem(path, layer.Reason)
 	} else {
 		layer.State = "loaded"
@@ -483,13 +523,34 @@ func (in *opencodeInputs) detectDynamic(dir string) {
 func opencodeWildcard(value, pattern string) bool {
 	value = strings.ReplaceAll(value, `\`, "/")
 	pattern = strings.ReplaceAll(pattern, `\`, "/")
-	quoted := regexp.QuoteMeta(pattern)
-	quoted = strings.ReplaceAll(quoted, `\*`, ".*")
-	quoted = strings.ReplaceAll(quoted, `\?`, ".")
-	if strings.HasSuffix(quoted, " .*") {
-		quoted = strings.TrimSuffix(quoted, " .*") + "( .*)?"
+	const unitOffset = 0x10000
+	var input, expression strings.Builder
+	for _, unit := range utf16.Encode([]rune(value)) {
+		input.WriteRune(rune(unit) + unitOffset)
 	}
-	ok, _ := regexp.MatchString("(?s)^"+quoted+"$", value)
+	units := utf16.Encode([]rune(pattern))
+	optionalTail := strings.HasSuffix(pattern, " *")
+	if optionalTail {
+		units = units[:len(units)-2]
+	}
+	expression.WriteString("(?s)^")
+	for _, unit := range units {
+		switch unit {
+		case '*':
+			expression.WriteString(".*")
+		case '?':
+			expression.WriteByte('.')
+		default:
+			expression.WriteRune(rune(unit) + unitOffset)
+		}
+	}
+	if optionalTail {
+		expression.WriteByte('(')
+		expression.WriteRune(' ' + unitOffset)
+		expression.WriteString(".*)?")
+	}
+	expression.WriteByte('$')
+	ok, _ := regexp.MatchString(expression.String(), input.String())
 	return ok
 }
 
@@ -539,37 +600,57 @@ func (in *opencodeInputs) rules(value any, setting string) []opencodeRule {
 	return rules
 }
 func (in *opencodeInputs) permission(name string) PermissionExplanation {
-	rules := []opencodeRule{{tool: "*", pattern: "*", action: "allow", setting: "native default"}}
-	rules = append(rules, in.rules(in.config.get("permission"), "permission")...)
 	agent := "build"
 	if raw := in.config.get("default_agent"); raw != nil {
 		selected, ok := raw.(string)
 		if !ok {
-			in.problem("default_agent", "default agent is not a string")
+			in.problem(in.config.paths["default_agent"], "default agent is not a string")
 		} else {
 			agent = selected
 		}
 	}
-	if agent != "build" && agent != "plan" {
-		agents, ok := in.config.get("agent").(*opencodeObject)
-		if !ok || agents.get(agent) == nil {
-			in.problem("default_agent", "selected native agent is not known in local config")
+	action, mode, hidden, builtin := "allow", "all", false, true
+	switch agent {
+	case "build", "plan":
+		mode = "primary"
+	case "general":
+		mode = "subagent"
+	case "explore":
+		action, mode = "deny", "subagent"
+	case "compaction", "title", "summary":
+		action, mode, hidden = "deny", "primary", true
+	default:
+		builtin = false
+	}
+	setting := "native default"
+	if action == "deny" {
+		setting = "native agent " + agent + " default"
+	}
+	rules := []opencodeRule{{tool: "*", pattern: "*", action: action, setting: setting}}
+	rules = append(rules, in.rules(in.config.get("permission"), "permission")...)
+	agents, _ := in.config.get("agent").(*opencodeObject)
+	a, _ := agents.get(agent).(*opencodeObject)
+	hiddenPath, modePath := in.config.paths["default_agent"], in.config.paths["default_agent"]
+	if !builtin && a == nil {
+		in.problem(in.config.paths["default_agent"], "selected native agent is not known in local config")
+	}
+	if a != nil {
+		rules = append(rules, in.rules(a.get("permission"), "agent."+agent+".permission")...)
+		if value, ok := a.get("hidden").(bool); ok {
+			hidden, hiddenPath = value, a.paths["hidden"]
+		}
+		if value, ok := a.get("mode").(string); ok {
+			mode, modePath = value, a.paths["mode"]
+		}
+		if disabled, ok := a.get("disable").(bool); ok && disabled {
+			in.problem(a.paths["disable"], "selected default agent is disabled; implicit native fallback is unverified")
 		}
 	}
-	if agents, ok := in.config.get("agent").(*opencodeObject); ok {
-		if a, ok := agents.get(agent).(*opencodeObject); ok {
-			rules = append(rules, in.rules(a.get("permission"), "agent."+agent+".permission")...)
-
-			if hidden, ok := a.get("hidden").(bool); ok && hidden {
-				in.problem(agents.paths[agent], "selected default agent is hidden")
-			}
-			if mode, ok := a.get("mode").(string); ok && mode == "subagent" {
-				in.problem(agents.paths[agent], "selected default agent is subagent-only")
-			}
-			if disabled, ok := a.get("disable").(bool); ok && disabled {
-				in.problem(agents.paths[agent], "selected default agent is disabled")
-			}
-		}
+	if hidden {
+		in.problem(hiddenPath, "selected default agent is hidden; inherited native state includes built-in defaults")
+	}
+	if mode == "subagent" {
+		in.problem(modePath, "selected default agent is subagent-only; inherited native state includes built-in defaults")
 	}
 	selected := rules[0]
 	for _, rule := range rules {
@@ -675,30 +756,33 @@ func expandOpencodePattern(pattern, home string) string {
 	return pattern
 }
 func (in *opencodeInputs) validate(obj *opencodeObject, path string, agentConfig bool) {
-	var permission func(any)
-	permission = func(value any) {
-		if action, ok := value.(string); ok {
-			if action != "allow" && action != "ask" && action != "deny" {
-				in.problem(path, "permission action is invalid")
-			}
+	validateAction := func(value any) {
+		action, ok := value.(string)
+		if !ok || (action != "allow" && action != "ask" && action != "deny") {
+			in.problem(path, "permission action must be allow, ask or deny")
+		}
+	}
+	permission := func(value any) {
+		p, ok := value.(*opencodeObject)
+		if !ok {
+			validateAction(value)
 			return
 		}
-		if p, ok := value.(*opencodeObject); ok {
-			for _, key := range p.orderedKeys() {
-				if nested, ok := p.get(key).(*opencodeObject); ok {
-					for _, pattern := range nested.orderedKeys() {
-						if _, ok := nested.get(pattern).(string); !ok {
-							in.problem(path, "permission pattern action is invalid")
-						}
-						permission(nested.get(pattern))
-					}
-				} else {
-					permission(p.get(key))
+		for _, key := range p.orderedKeys() {
+			value := p.get(key)
+			switch key {
+			case "todowrite", "question", "webfetch", "websearch", "doom_loop":
+				validateAction(value)
+				continue
+			}
+			if patterns, ok := value.(*opencodeObject); ok {
+				for _, pattern := range patterns.orderedKeys() {
+					validateAction(patterns.get(pattern))
 				}
+			} else {
+				validateAction(value)
 			}
-			return
 		}
-		in.problem(path, "permission action/object is invalid")
 	}
 	if value, present := obj.values["permission"]; present {
 		permission(value)
