@@ -2,6 +2,7 @@ package collection
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -264,6 +265,7 @@ func buildHermes(ctx context.Context, request Request) (*Snapshot, error) {
 		snapshot.sources[id] = explainHermesSource(snapshot, id, roots, &inputs, indexMetadata[id])
 	}
 	applyHermesPrecedence(snapshot, request.Roots, indexMetadata)
+	applyHermesExplicitLookup(snapshot, roots, &inputs)
 	// Missing/unreadable discovery can hide a same-name candidate or a higher-priority definition.
 	uncertain := inputs.uncertain || !snapshot.Complete()
 	if uncertain {
@@ -583,6 +585,9 @@ func hermesExcluded(ref Reference, root DiscoveryRoot) string {
 			return "native index excludes dependency, archive and metadata directories"
 		}
 	}
+	return hermesOrgExcluded(ref, root)
+}
+func hermesOrgExcluded(ref Reference, root DiscoveryRoot) string {
 	rel, _ := filepath.Rel(root.Path, ref.DiscoveredPath)
 	parts := strings.Split(rel, string(filepath.Separator))
 	if len(parts) > 1 && parts[0] == "_org" {
@@ -679,11 +684,6 @@ func applyHermesPrecedence(snapshot *Snapshot, roots []DiscoveryRoot, indexMetad
 			if len(ids) > 1 {
 				state = PrecedenceCoexisting
 			}
-			if len(named) > 1 {
-				reason += ". skill_view refuses ambiguous bare names and requires an unambiguous relative path, independently of index environment filtering"
-				source.Availability.Invocation.State = "ambiguous-bare-name"
-				source.Availability.Invocation.Evidence.Reason = "native explicit loading refuses multiple independent candidates for this bare name"
-			}
 			if len(named) > 1 && named[0].rank == named[1].rank && roots[named[0].rank].Origin == "hermes-profile" {
 				state = PrecedenceUnknown
 				reason += ". Multiple primary definitions can coexist in system-prompt offers; effective automatic precedence is unknown"
@@ -719,6 +719,95 @@ func applyHermesPrecedence(snapshot *Snapshot, roots []DiscoveryRoot, indexMetad
 			}
 			snapshot.sources[id] = source
 		}
+	}
+}
+
+func applyHermesExplicitLookup(snapshot *Snapshot, roots map[RootID]DiscoveryRoot, inputs *hermesInputs) {
+	matches := make(map[string]map[string]bool)
+	selectors := make(map[SourceID]map[string]bool)
+	unknownNames := make(map[SourceID]bool)
+	unknownPaths := make(map[string]bool)
+	scopeKnown := snapshot.Complete() && !inputs.uncertain && inputs.configYAML.known("skills.external_dirs")
+	for _, rid := range snapshot.referenceOrder {
+		ref := snapshot.references[rid]
+		root := roots[ref.Root]
+		if ref.Source == "" || (root.Origin != "hermes-profile" && root.Origin != "hermes-external") {
+			continue
+		}
+		if selectors[ref.Source] == nil {
+			selectors[ref.Source] = make(map[string]bool)
+		}
+		if hermesOrgExcluded(ref, root) != "" {
+			continue
+		}
+		source := snapshot.sources[ref.Source]
+		path := source.Manifest.ResolvedPath
+		searchKnown := root.Origin == "hermes-profile" || inputs.configYAML.known("skills.external_dirs")
+		add := func(name string) {
+			selectors[ref.Source][name] = true
+			if path == "" || !searchKnown {
+				return
+			}
+			if matches[name] == nil {
+				matches[name] = make(map[string]bool)
+			}
+			matches[name][path] = true
+		}
+		add(filepath.Base(ref.DiscoveredPath))
+		full := observeHermesMetadata(source.Manifest, 0)
+		if full.nameKnown() {
+			if name, ok := full.metadata["name"].(string); ok && name != "" {
+				add(name)
+			}
+		} else {
+			unknownNames[ref.Source] = true
+		}
+		if !full.nameKnown() || !searchKnown {
+			unknownPaths[path] = true
+		}
+	}
+	for id, names := range selectors {
+		source := snapshot.sources[id]
+		state, kind := "unambiguous-bare-name", EvidenceInferred
+		var ordered []string
+		for name := range names {
+			ordered = append(ordered, name)
+		}
+		sort.Strings(ordered)
+		var facts, settings []string
+		if len(ordered) == 0 {
+			state = "not-in-native-scope"
+			facts = append(facts, "native traversal excludes this source's references")
+		} else if unknownNames[id] {
+			state, kind = "unknown", EvidenceUnknown
+			facts = append(facts, "additional full-content lookup names cannot be established")
+		}
+		for _, name := range ordered {
+			setting := fmt.Sprintf("%q", name)
+			settings = append(settings, setting)
+			certain := scopeKnown
+			for path := range unknownPaths {
+				if !matches[name][path] {
+					certain = false
+				}
+			}
+			count := len(matches[name])
+			selectorState := "unambiguous-bare-name"
+			switch {
+			case count > 1:
+				selectorState = "ambiguous-bare-name"
+				state, kind = selectorState, EvidenceInferred
+			case !certain || count == 0:
+				selectorState = "unknown"
+				if state != "ambiguous-bare-name" {
+					state, kind = selectorState, EvidenceUnknown
+				}
+			}
+			facts = append(facts, fmt.Sprintf("selector %s: %s (%d known distinct manifests)", setting, selectorState, count))
+		}
+		reason := source.Availability.Invocation.Evidence.Reason + ". Native explicit lookup within the observed SKILL.md scope checks collisions before platform and disabled policy; match counts do not establish loading success. " + strings.Join(facts, "; ")
+		source.Availability.Invocation = &SessionExplanation{State: state, Evidence: hermesEvidence(kind, "native-explicit-selectors", source.Manifest.Path, strings.Join(settings, ", "), reason)}
+		snapshot.sources[id] = source
 	}
 }
 
