@@ -371,9 +371,11 @@ func applyClaudePrecedence(snapshot *Snapshot, roots map[RootID]DiscoveryRoot, a
 				precedence.Evidence.Reason = "an eligible shared-name contender may win this command; native name selection is unverified"
 			}
 			if ownRank == best {
-				source.Availability.State = AvailabilityUnknown
-				source.Availability.Reason = precedence.Evidence.Reason
-				source.Availability.Evidence = &precedence.Evidence
+				if source.Availability.State != AvailabilityDisabled && source.Availability.State != AvailabilityUnavailable {
+					source.Availability.State = AvailabilityUnknown
+					source.Availability.Reason = precedence.Evidence.Reason
+					source.Availability.Evidence = &precedence.Evidence
+				}
 			} else {
 				precedence.Evidence.Reason += "; higher-priority eligible definitions establish this lower source is shadowed"
 			}

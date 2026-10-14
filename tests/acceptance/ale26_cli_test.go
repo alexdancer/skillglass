@@ -21,9 +21,9 @@ type codexAvailability struct {
 	NativeNameEvidence codexEvidence `json:"native_name_evidence"`
 	NativeName         string        `json:"native_name"`
 
-	State      string
-	Evidence   codexEvidence
-	References []struct {
+	State, Reason string
+	Evidence      codexEvidence
+	References    []struct {
 		ReferenceID   string `json:"reference_id"`
 		Participation string
 		Evidence      codexEvidence
