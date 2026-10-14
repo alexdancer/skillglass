@@ -70,7 +70,8 @@ func hermesYAMLConstructorValid(node *yaml.Node, seen map[*yaml.Node]bool) bool 
 	}
 	switch hermesYAMLNativeTag(node) {
 	case "!!null", "!!bool", "!!int", "!!float", "!!binary", "!!str":
-		return hermesYAMLScalarNode(node) != nil
+		scalar := hermesYAMLScalarNode(node)
+		return scalar != nil && hermesYAMLScalarValid(hermesYAMLNativeTag(node), scalar.Value)
 	case "!!timestamp":
 		return node.Kind == yaml.ScalarNode
 	case "!!map", "!!set":
