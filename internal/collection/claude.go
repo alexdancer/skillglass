@@ -49,7 +49,7 @@ func buildClaude(ctx context.Context, request Request) (*Snapshot, error) {
 	applyNativeProblems(snapshot, inputs.problems, roots)
 	return snapshot, nil
 }
-func explainClaudeSource(snapshot *Snapshot, id SourceID, roots map[RootID]DiscoveryRoot, plugins map[string]claudePluginFact, inputs *claudeInputs) Source {
+func explainClaudeSource(snapshot *Snapshot, id SourceID, roots map[RootID]DiscoveryRoot, plugins map[RootID][]claudePluginFact, inputs *claudeInputs) Source {
 	source := snapshot.sources[id]
 	e := claudeEvidence(EvidenceUnknown, "inspection-only", source.Directory, "", "an arbitrary viewer root does not establish native loading")
 	result := AvailabilityExplanation{State: AvailabilityUnknown, Reason: e.Reason, Evidence: &e}
@@ -58,78 +58,105 @@ func explainClaudeSource(snapshot *Snapshot, id SourceID, roots map[RootID]Disco
 	var activationDiagnostic, unresolvedDiagnostic *Evidence
 	nativeName := ""
 	nativeNames := map[string]bool{}
-	pluginFact, managed := managedClaudeSource(source.Directory, plugins)
+	managers := managedClaudeSource(source.Directory, plugins)
+	managed := len(managers) > 0
+	registrations := map[string]bool{}
+	for _, rid := range source.References {
+		for _, plugin := range plugins[snapshot.references[rid].Root] {
+			if plugin.applicable {
+				registrations[plugin.provenance.PluginID] = true
+			}
+		}
+	}
+	multipleRegistrations := len(registrations) > 1
+	registrationLimitation := claudeEvidence(EvidenceUnknown, "multiple-plugin-registrations", source.Directory, "enabledPlugins", "distinct applicable plugin registrations share this physical source; native coalescing and selection are unverified")
 	if managed {
 		source.Ownership = EvidenceState{State: "managed", Reason: "canonical bundle lies within Claude plugin manager content"}
 	}
 	for _, rid := range source.References {
 		ref := snapshot.references[rid]
 		root := roots[ref.Root]
-		fact := ReferenceAvailability{Reference: rid, Participation: ParticipationInspection, Evidence: e, Permission: PermissionExplanation{State: PermissionUnknown, Evidence: e}, Provenance: Provenance{Kind: "custom", Evidence: e}}
-		if root.Origin != "" {
-			name, _ := source.Manifest.Metadata["name"].(string)
-			if name == "" {
-				name = filepath.Base(ref.DiscoveredPath)
-			}
-			if nativeName == "" {
-				nativeName = name
-			}
-			fact.Participation = ParticipationEligible
-			fact.Evidence = claudeEvidence(EvidenceInferred, "startup-skill-root", root.Path, "", "Claude 2.1.282 reads direct child bundles, not recursive group containers")
-			fact.Provenance = Provenance{Kind: string(root.Context), Evidence: claudeEvidence(EvidenceInferred, "native-root-provenance", root.Path, "", root.Origin+" is discovery scope, not proof of user ownership")}
-			isPlugin := root.Origin == "claude-plugin-cache" || root.Origin == "claude-plugin-local"
-			if isPlugin {
-				fact.Participation = plugins[root.Path].participation
-				fact.Evidence = plugins[root.Path].activation
-				nativeName = plugins[root.Path].name + ":" + name
-			}
-			fact.NativeName = name
-			if isPlugin {
-				fact.NativeName = plugins[root.Path].name + ":" + name
-			}
-			fact.Permission = inputs.permission(fact.NativeName)
-			if fact.Participation != ParticipationExcluded && (!claudeSkillName.MatchString(name) || (!isPlugin && strings.HasPrefix(filepath.Base(ref.DiscoveredPath), "."))) {
-				fact.Participation = ParticipationUnknown
-				fact.Evidence = claudeEvidence(EvidenceUnknown, "unverified-native-manifest-form", source.Manifest.Path, "name", "native loading of noncanonical command names or hidden ordinary bundles was not validated")
-			}
-			if fact.Participation != ParticipationExcluded && source.Manifest.Status != ManifestParsed {
-				fact.Participation = ParticipationUnknown
-				fact.Evidence = claudeEvidence(EvidenceUnknown, "manifest-eligibility", source.Manifest.Path, "", "native loading of unreadable or malformed frontmatter is not established")
-			}
-			folder := strings.ToLower(filepath.Base(ref.DiscoveredPath))
-			if !isPlugin && (folder == "synced" || folder == "anthropic-skills" || strings.HasPrefix(folder, "anthropic-skills:") || strings.ToLower(name) == "anthropic-skills" || strings.HasPrefix(strings.ToLower(name), "anthropic-skills:")) {
-				fact.Participation = ParticipationExcluded
-				fact.Evidence = claudeEvidence(EvidenceInferred, "reserved-skill-name", ref.DiscoveredPath, "", "reserved account namespace is not an ordinary authored skill")
-			}
-			if root.Context == ContextSystem {
-				source.Ownership = EvidenceState{State: "managed", Reason: "administrator managed enterprise skill"}
-			}
-			if inputs.safe || (inputs.strict && !isPlugin) {
-				fact.Participation = ParticipationExcluded
-				fact.Evidence = claudeEvidence(EvidenceInferred, "customization-policy", ref.DiscoveredPath, "strictPluginOnlyCustomization / CLAUDE_CODE_SAFE_MODE", "local customization is excluded by the observed policy")
-			}
+		routes := plugins[ref.Root]
+		isPlugin := len(routes) > 0
+		if !isPlugin {
+			routes = managers
 		}
-		if managed {
-			fact.Provenance = pluginFact.provenance
-			if fact.Participation != ParticipationExcluded && root.Origin != "claude-plugin-cache" && root.Origin != "claude-plugin-local" && root.Origin != "" {
-				fact.Participation = ParticipationUnknown
-				fact.Evidence = claudeEvidence(EvidenceUnknown, "managed-alias-unverified", ref.DiscoveredPath, "", "an ordinary alias into managed plugin content does not establish independently validated activation")
+		if len(routes) == 0 {
+			routes = []claudePluginFact{{}}
+		}
+		for _, pluginFact := range routes {
+			fact := ReferenceAvailability{Reference: rid, Participation: ParticipationInspection, Evidence: e, Permission: PermissionExplanation{State: PermissionUnknown, Evidence: e}, Provenance: Provenance{Kind: "custom", Evidence: e}}
+			if root.Origin != "" {
+				name, _ := source.Manifest.Metadata["name"].(string)
+				if name == "" {
+					name = filepath.Base(ref.DiscoveredPath)
+				}
+				if nativeName == "" {
+					nativeName = name
+				}
+				fact.Participation = ParticipationEligible
+				fact.Evidence = claudeEvidence(EvidenceInferred, "startup-skill-root", root.Path, "", "Claude 2.1.282 reads direct child bundles, not recursive group containers")
+				fact.Provenance = Provenance{Kind: string(root.Context), Evidence: claudeEvidence(EvidenceInferred, "native-root-provenance", root.Path, "", root.Origin+" is discovery scope, not proof of user ownership")}
+				if isPlugin {
+					fact.Participation = pluginFact.participation
+					fact.Evidence = pluginFact.activation
+					nativeName = pluginFact.name + ":" + name
+					if multipleRegistrations && fact.Participation == ParticipationEligible {
+						fact.Participation = ParticipationUnknown
+						fact.Evidence = registrationLimitation
+					}
+				}
+				fact.NativeName = name
+				if isPlugin {
+					fact.NativeName = pluginFact.name + ":" + name
+				}
+				fact.Permission = inputs.permission(fact.NativeName)
+				if fact.Participation != ParticipationExcluded && (!claudeSkillName.MatchString(name) || (!isPlugin && strings.HasPrefix(filepath.Base(ref.DiscoveredPath), "."))) {
+					fact.Participation = ParticipationUnknown
+					fact.Evidence = claudeEvidence(EvidenceUnknown, "unverified-native-manifest-form", source.Manifest.Path, "name", "native loading of noncanonical command names or hidden ordinary bundles was not validated")
+				}
+				if fact.Participation != ParticipationExcluded && source.Manifest.Status != ManifestParsed {
+					fact.Participation = ParticipationUnknown
+					fact.Evidence = claudeEvidence(EvidenceUnknown, "manifest-eligibility", source.Manifest.Path, "", "native loading of unreadable or malformed frontmatter is not established")
+				}
+				folder := strings.ToLower(filepath.Base(ref.DiscoveredPath))
+				if !isPlugin && (folder == "synced" || folder == "anthropic-skills" || strings.HasPrefix(folder, "anthropic-skills:") || strings.ToLower(name) == "anthropic-skills" || strings.HasPrefix(strings.ToLower(name), "anthropic-skills:")) {
+					fact.Participation = ParticipationExcluded
+					fact.Evidence = claudeEvidence(EvidenceInferred, "reserved-skill-name", ref.DiscoveredPath, "", "reserved account namespace is not an ordinary authored skill")
+				}
+				if root.Context == ContextSystem {
+					source.Ownership = EvidenceState{State: "managed", Reason: "administrator managed enterprise skill"}
+				}
+				if inputs.safe || (inputs.strict && !isPlugin) {
+					fact.Participation = ParticipationExcluded
+					fact.Evidence = claudeEvidence(EvidenceInferred, "customization-policy", ref.DiscoveredPath, "strictPluginOnlyCustomization / CLAUDE_CODE_SAFE_MODE", "local customization is excluded by the observed policy")
+				}
 			}
+			if managed {
+				fact.Provenance = pluginFact.provenance
+				if multipleRegistrations && pluginFact.participation == ParticipationEligible {
+					fact.Provenance.Activation = &registrationLimitation
+				}
+				if fact.Participation != ParticipationExcluded && !isPlugin && root.Origin != "" {
+					fact.Participation = ParticipationUnknown
+					fact.Evidence = claudeEvidence(EvidenceUnknown, "managed-alias-unverified", ref.DiscoveredPath, "", "an ordinary alias into managed plugin content does not establish independently validated activation")
+				}
+			}
+			if fact.Participation == ParticipationEligible && fact.NativeName != "" {
+				nativeNames[fact.NativeName] = true
+			}
+			if fact.Evidence.Rule == "plugin-manifest-unverified" || fact.Evidence.Rule == "local-marketplace-unverified" {
+				diagnostic := fact.Evidence
+				activationDiagnostic = &diagnostic
+			}
+			if fact.Participation == ParticipationUnknown {
+				diagnostic := fact.Evidence
+				unresolvedDiagnostic = &diagnostic
+			}
+			eligible = eligible || fact.Participation == ParticipationEligible
+			excluded = excluded || fact.Participation == ParticipationExcluded
+			result.References = append(result.References, fact)
 		}
-		if fact.Participation == ParticipationEligible && fact.NativeName != "" {
-			nativeNames[fact.NativeName] = true
-		}
-		if fact.Evidence.Rule == "plugin-manifest-unverified" || fact.Evidence.Rule == "local-marketplace-unverified" {
-			diagnostic := fact.Evidence
-			activationDiagnostic = &diagnostic
-		}
-		if fact.Participation == ParticipationUnknown {
-			diagnostic := fact.Evidence
-			unresolvedDiagnostic = &diagnostic
-		}
-		eligible = eligible || fact.Participation == ParticipationEligible
-		excluded = excluded || fact.Participation == ParticipationExcluded
-		result.References = append(result.References, fact)
 	}
 	for _, fact := range result.References {
 		if fact.Participation == ParticipationEligible && fact.NativeName != "" {

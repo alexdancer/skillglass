@@ -1,6 +1,9 @@
 package collection
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 type EvidenceKind string
 
@@ -87,11 +90,26 @@ type PermissionExplanation struct {
 	Evidence Evidence          `json:"evidence"`
 	Layers   []PermissionLayer `json:"layers,omitempty"`
 }
+type PluginRecord struct {
+	Kind              string          `json:"kind"`
+	InputPath         string          `json:"input_path"`
+	Path              string          `json:"path"`
+	Scope             string          `json:"scope,omitempty"`
+	ProjectPath       json.RawMessage `json:"project_path,omitempty"`
+	Version           json.RawMessage `json:"version,omitempty"`
+	Applicability     string          `json:"applicability,omitempty"`
+	RegistrationInput string          `json:"registration_input,omitempty"`
+	LastUpdated       json.RawMessage `json:"last_updated,omitempty"`
+	DeclaredSource    string          `json:"declared_source,omitempty"`
+}
 type Provenance struct {
-	Kind     string   `json:"kind"`
-	PluginID string   `json:"plugin_id,omitempty"`
-	Version  string   `json:"version,omitempty"`
-	Evidence Evidence `json:"evidence"`
+	Kind       string         `json:"kind"`
+	PluginID   string         `json:"plugin_id,omitempty"`
+	Version    string         `json:"version,omitempty"`
+	Evidence   Evidence       `json:"evidence"`
+	Records    []PluginRecord `json:"records,omitempty"`
+	Setting    *Evidence      `json:"setting,omitempty"`
+	Activation *Evidence      `json:"activation,omitempty"`
 }
 type ReferenceAvailability struct {
 	NativeName    string                `json:"native_name,omitempty"`
@@ -158,6 +176,21 @@ func cloneAvailability(value AvailabilityExplanation) AvailabilityExplanation {
 	value.References = append([]ReferenceAvailability(nil), value.References...)
 	for i := range value.References {
 		value.References[i].Permission.Layers = cloneLayers(value.References[i].Permission.Layers)
+		provenance := &value.References[i].Provenance
+		provenance.Records = append([]PluginRecord(nil), provenance.Records...)
+		for j := range provenance.Records {
+			provenance.Records[j].ProjectPath = append(json.RawMessage(nil), provenance.Records[j].ProjectPath...)
+			provenance.Records[j].Version = append(json.RawMessage(nil), provenance.Records[j].Version...)
+			provenance.Records[j].LastUpdated = append(json.RawMessage(nil), provenance.Records[j].LastUpdated...)
+		}
+		if provenance.Setting != nil {
+			copy := *provenance.Setting
+			provenance.Setting = &copy
+		}
+		if provenance.Activation != nil {
+			copy := *provenance.Activation
+			provenance.Activation = &copy
+		}
 	}
 	if value.Precedence != nil {
 		copy := *value.Precedence

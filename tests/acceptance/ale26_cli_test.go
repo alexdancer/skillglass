@@ -16,6 +16,7 @@ type codexEvidence struct {
 	Kind, Rule, Reason string
 	InputPath          string `json:"input_path"`
 	AgentVersion       string `json:"agent_version"`
+	Setting            string `json:"setting"`
 }
 type codexAvailability struct {
 	NativeNameEvidence codexEvidence `json:"native_name_evidence"`
@@ -34,9 +35,19 @@ type codexAvailability struct {
 			Layers   []struct{ Path, State string }
 		}
 		Provenance struct {
-			Kind     string
-			PluginID string `json:"plugin_id"`
-			Version  string
+			Kind                          string
+			PluginID                      string `json:"plugin_id"`
+			Version                       string
+			Evidence, Setting, Activation codexEvidence
+			Records                       []struct {
+				Kind, Path, Scope, Applicability string
+				InputPath                        string          `json:"input_path"`
+				ProjectPath                      json.RawMessage `json:"project_path"`
+				Version                          json.RawMessage
+				RegistrationInput                string          `json:"registration_input"`
+				LastUpdated                      json.RawMessage `json:"last_updated"`
+				DeclaredSource                   string          `json:"declared_source"`
+			}
 		}
 	}
 	Precedence struct {

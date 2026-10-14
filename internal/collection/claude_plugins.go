@@ -12,12 +12,17 @@ import (
 type claudePluginFact struct {
 	directory     string
 	name          string
+	applicable    bool
 	participation ParticipationState
 	activation    Evidence
 	provenance    Provenance
 }
 type claudeLocalPluginSource struct {
 	path, limitation string
+	input            string
+	registry         string
+	updated          json.RawMessage
+	declaredSource   string
 }
 type claudeInstallation struct {
 	Scope       string          `json:"scope"`
@@ -26,7 +31,7 @@ type claudeInstallation struct {
 	Version     json.RawMessage `json:"version"`
 }
 
-func discoverClaudePlugins(request *Request, inputs *claudeInputs) map[string]claudePluginFact {
+func discoverClaudePlugins(request *Request, inputs *claudeInputs) map[RootID][]claudePluginFact {
 	registry := filepath.Join(request.claudeHome, "plugins", "installed_plugins.json")
 	var installed struct {
 		Version int                             `json:"version"`
@@ -38,9 +43,19 @@ func discoverClaudePlugins(request *Request, inputs *claudeInputs) map[string]cl
 		installed.Plugins = nil
 	}
 	localSources := claudeLocalPluginSources(request, inputs)
-	directories := map[string]string{}
-	for id, source := range localSources {
-		directories[source.path] = id
+	directories := map[string]map[string]bool{}
+	observations := map[string][]PluginRecord{}
+	observe := func(path, id string, record PluginRecord) {
+		if directories[path] == nil {
+			directories[path] = map[string]bool{}
+		}
+		directories[path][id] = true
+		observations[id] = append(observations[id], record)
+	}
+	for id, sources := range localSources {
+		for _, source := range sources {
+			observe(source.path, id, PluginRecord{Kind: "marketplace", InputPath: source.input, Path: source.path, RegistrationInput: source.registry, LastUpdated: source.updated, DeclaredSource: source.declaredSource})
+		}
 	}
 	for id, entries := range installed.Plugins {
 		for _, entry := range entries {
@@ -56,11 +71,21 @@ func discoverClaudePlugins(request *Request, inputs *claudeInputs) map[string]cl
 					inputs.problem(registry, "plugin version must be a non-null string: "+id)
 				}
 			}
+			applicability := "nonapplicable"
+			if entry.Scope == "user" || ((entry.Scope == "project" || entry.Scope == "local") && request.Project.Selected && sameClaudePath(projectPath, request.Project.Path)) {
+				applicability = "applicable"
+			}
+			if (entry.Scope != "user" && entry.Scope != "project" && entry.Scope != "local") || ((len(entry.ProjectPath) > 0 || entry.Scope == "project" || entry.Scope == "local") && (!projectOK || !filepath.IsAbs(projectPath))) {
+				applicability = "unknown"
+			}
+			record := PluginRecord{Kind: "installation", InputPath: registry, Path: entry.InstallPath, Scope: entry.Scope, ProjectPath: entry.ProjectPath, Version: entry.Version, Applicability: applicability}
 			if !filepath.IsAbs(entry.InstallPath) {
 				inputs.problem(registry, "plugin installPath must be absolute: "+id)
+				record.Applicability = "unknown"
+				observations[id] = append(observations[id], record)
 				continue
 			}
-			directories[filepath.Clean(entry.InstallPath)] = id
+			observe(filepath.Clean(entry.InstallPath), id, record)
 		}
 	}
 	cache := filepath.Join(request.claudeHome, "plugins", "cache")
@@ -91,7 +116,8 @@ func discoverClaudePlugins(request *Request, inputs *claudeInputs) map[string]cl
 			}
 			for _, version := range versions {
 				if version.IsDir() {
-					directories[filepath.Join(nameDir, version.Name())] = name.Name() + "@" + market.Name()
+					path := filepath.Join(nameDir, version.Name())
+					observe(path, name.Name()+"@"+market.Name(), PluginRecord{Kind: "cache", InputPath: cache, Path: path})
 				}
 			}
 		}
@@ -101,39 +127,55 @@ func discoverClaudePlugins(request *Request, inputs *claudeInputs) map[string]cl
 		paths = append(paths, path)
 	}
 	sort.Strings(paths)
-	facts := map[string]claudePluginFact{}
+	byPath := map[string][]claudePluginFact{}
+	localRoots := map[string]bool{}
 	for _, directory := range paths {
-		id := directories[directory]
-		name := strings.SplitN(id, "@", 2)[0]
-		fact := claudePluginFact{name: name, participation: ParticipationUnknown, activation: claudeEvidence(EvidenceUnknown, "plugin-activation-unverified", registry, "enabledPlugins."+id, "cache, installation registry and enabled setting do not prove native activation; this activation form was not established in native validation")}
-		var manifest struct {
-			Name    string          `json:"name"`
-			Version string          `json:"version"`
-			Skills  json.RawMessage `json:"skills"`
+		ids := make([]string, 0, len(directories[directory]))
+		for id := range directories[directory] {
+			ids = append(ids, id)
 		}
-		manifestPath := filepath.Join(directory, ".claude-plugin", "plugin.json")
-		manifestRaw, manifestErr := nativeBytes(manifestPath)
-		topologyMatches := manifestErr == nil && json.Unmarshal(manifestRaw, &manifest) == nil && manifest.Name == name
-		manifestLimitation := ""
-		if topologyMatches {
-			manifestLimitation = claudePluginManifestLimitation(manifestRaw)
-			if manifestLimitation == "" && (name == "" || strings.ContainsAny(name, " :")) {
-				manifestLimitation = "plugin name identifier is empty or contains ASCII space or colon; native activation for this identifier is unverified"
+		sort.Strings(ids)
+		for _, id := range ids {
+			name := strings.SplitN(id, "@", 2)[0]
+			fact := claudePluginFact{name: name, participation: ParticipationUnknown, activation: claudeEvidence(EvidenceUnknown, "plugin-activation-unverified", registry, "enabledPlugins."+id, "cache, installation registry and enabled setting do not prove native activation; this activation form was not established in native validation")}
+			var manifest struct {
+				Name    string          `json:"name"`
+				Version string          `json:"version"`
+				Skills  json.RawMessage `json:"skills"`
 			}
-		}
-		fact.directory, _ = filepath.EvalSymlinks(directory)
-		fact.provenance = Provenance{Kind: "plugin", PluginID: id, Version: manifest.Version, Evidence: claudeEvidence(EvidenceObserved, "managed-plugin-content", manifestPath, "", "plugin manifest and manager cache/registry locate managed content; ownership is separate from activation")}
-		if !topologyMatches {
-			fact.provenance.Evidence.Kind = EvidenceUnknown
-			fact.provenance.Evidence.Reason = "cache or registry indicates managed provenance; matching plugin manifest is not established"
-		}
-		localSource := localSources[id]
-		if setting, ok := inputs.plugins[id]; ok && setting.value == "false" {
-			fact.participation = ParticipationExcluded
-			fact.activation = claudeEvidence(EvidenceInferred, "plugin-disabled", setting.path, "enabledPlugins."+id+"=false", "configured plugin is inactive; cached content remains")
-		} else if localSource.limitation != "" {
-			fact.activation = claudeEvidence(EvidenceUnknown, "local-marketplace-unverified", filepath.Join(request.claudeHome, "plugins", "known_marketplaces.json"), "lastUpdated", localSource.limitation)
-		} else {
+			manifestPath := filepath.Join(directory, ".claude-plugin", "plugin.json")
+			manifestRaw, manifestErr := nativeBytes(manifestPath)
+			topologyMatches := manifestErr == nil && json.Unmarshal(manifestRaw, &manifest) == nil && manifest.Name == name
+			manifestLimitation := ""
+			if topologyMatches {
+				manifestLimitation = claudePluginManifestLimitation(manifestRaw)
+				if manifestLimitation == "" && (name == "" || strings.ContainsAny(name, " :")) {
+					manifestLimitation = "plugin name identifier is empty or contains ASCII space or colon; native activation for this identifier is unverified"
+				}
+			}
+			fact.directory, _ = filepath.EvalSymlinks(directory)
+			fact.provenance = Provenance{Kind: "plugin", PluginID: id, Version: manifest.Version, Records: observations[id], Evidence: claudeEvidence(EvidenceObserved, "managed-plugin-content", manifestPath, "", "plugin manifest and manager cache/registry locate managed content; ownership is separate from activation")}
+			if !topologyMatches {
+				fact.provenance.Evidence.Kind = EvidenceUnknown
+				fact.provenance.Evidence.Reason = "cache or registry indicates managed provenance; matching plugin manifest is not established"
+			}
+			localSource := claudeLocalPluginSource{}
+			localIdentities := map[string]bool{}
+			localLimitation := ""
+			for _, source := range localSources[id] {
+				identity := source.path
+				if token, err := directoryObjectToken(source.path); err == nil {
+					identity = token.String()
+				}
+				localIdentities[identity] = true
+				if localSource.path == "" || sameClaudePath(source.path, directory) {
+					localSource = source
+				}
+				if source.limitation != "" {
+					localLimitation = source.limitation
+				}
+			}
+			localSource.limitation = localLimitation
 			active, applicable, registered := false, false, false
 			for _, entry := range installed.Plugins[id] {
 				registered = true
@@ -146,68 +188,96 @@ func discoverClaudePlugins(request *Request, inputs *claudeInputs) map[string]cl
 					}
 				}
 			}
-			if localSource.path != "" && sameClaudePath(localSource.path, directory) && topologyMatches && manifestLimitation == "" && applicable && !inputs.uncertain {
-				setting, enabled := inputs.plugins[id]
-				if enabled && setting.value == "true" {
-					fact.participation = ParticipationEligible
-					fact.activation = claudeEvidence(EvidenceInferred, "local-marketplace-plugin", setting.path, "enabledPlugins."+id+"=true", "Claude 2.1.282 native initialization loads the registered local marketplace source, not its independent installed cache copy; known marketplace, source manifest, applicable installation and enabled setting agree")
-				}
-			} else if localSource.path != "" && !sameClaudePath(localSource.path, directory) && registered && applicable && !inputs.uncertain {
+			fact.applicable = registered && applicable && (active || sameClaudePath(localSource.path, directory))
+			if setting, ok := inputs.plugins[id]; ok {
+				e := claudeEvidence(EvidenceObserved, "plugin-enabled-setting", setting.path, "enabledPlugins."+id+"="+setting.value, "registration-specific configured plugin setting")
+				fact.provenance.Setting = &e
+			}
+			if setting, ok := inputs.plugins[id]; ok && setting.value == "false" {
 				fact.participation = ParticipationExcluded
-				fact.activation = claudeEvidence(EvidenceInferred, "local-plugin-cache-copy", registry, "installPath", "local marketplace source is the native plugin source; this independent cache copy does not supply another command")
-			} else if registered && !inputs.uncertain && (!applicable || (localSource.path == "" && !active)) {
-				fact.participation = ParticipationExcluded
-				fact.activation = claudeEvidence(EvidenceInferred, "inactive-plugin-installation", registry, "installPath / projectPath", "this cached version or project-scoped installation is not the applicable registered installation")
-			}
-		}
-		if fact.participation == ParticipationUnknown && manifestLimitation != "" {
-			fact.activation = claudeEvidence(EvidenceUnknown, "plugin-manifest-unverified", manifestPath, "", manifestLimitation)
-		}
-		skillsDirectory := filepath.Join(directory, "skills")
-		roots := []string{skillsDirectory}
-		if topologyMatches && len(manifest.Skills) == 0 {
-			if _, err := os.Stat(skillsDirectory); os.IsNotExist(err) {
-				if info, err := os.Stat(filepath.Join(directory, "SKILL.md")); err == nil && info.Mode().IsRegular() {
-					roots = append(roots, directory)
+				fact.activation = claudeEvidence(EvidenceInferred, "plugin-disabled", setting.path, "enabledPlugins."+id+"=false", "configured plugin is inactive; cached content remains")
+			} else if localSource.limitation != "" {
+				fact.activation = claudeEvidence(EvidenceUnknown, "local-marketplace-unverified", filepath.Join(request.claudeHome, "plugins", "known_marketplaces.json"), "lastUpdated", localSource.limitation)
+			} else if len(localIdentities) > 1 && applicable {
+				fact.activation = claudeEvidence(EvidenceUnknown, "multiple-local-plugin-sources", registry, id, "multiple independent marketplace source declarations share this registration; native source selection is unverified")
+			} else {
+				if localSource.path != "" && sameClaudePath(localSource.path, directory) && topologyMatches && manifestLimitation == "" && applicable && !inputs.uncertain {
+					setting, enabled := inputs.plugins[id]
+					if enabled && setting.value == "true" {
+						fact.participation = ParticipationEligible
+						fact.activation = claudeEvidence(EvidenceInferred, "local-marketplace-plugin", setting.path, "enabledPlugins."+id+"=true", "Claude 2.1.282 native initialization loads the registered local marketplace source, not its independent installed cache copy; known marketplace, source manifest, applicable installation and enabled setting agree")
+					}
+				} else if localSource.path != "" && !sameClaudePath(localSource.path, directory) && registered && applicable && !inputs.uncertain {
+					fact.participation = ParticipationExcluded
+					fact.activation = claudeEvidence(EvidenceInferred, "local-plugin-cache-copy", registry, "installPath", "local marketplace source is the native plugin source; this independent cache copy does not supply another command")
+				} else if registered && !inputs.uncertain && (!applicable || (localSource.path == "" && !active)) {
+					fact.participation = ParticipationExcluded
+					fact.activation = claudeEvidence(EvidenceInferred, "inactive-plugin-installation", registry, "installPath / projectPath", "this cached version or project-scoped installation is not the applicable registered installation")
 				}
 			}
-		}
-		if topologyMatches && len(manifest.Skills) > 0 {
-			var one string
-			var extras []string
-			if json.Unmarshal(manifest.Skills, &one) == nil {
-				extras = []string{one}
-			} else if json.Unmarshal(manifest.Skills, &extras) != nil {
-				inputs.problem(manifestPath, "plugin skills paths must be string or array")
-				if fact.participation != ParticipationExcluded {
-					fact.participation = ParticipationUnknown
+			if fact.participation == ParticipationUnknown && manifestLimitation != "" {
+				fact.activation = claudeEvidence(EvidenceUnknown, "plugin-manifest-unverified", manifestPath, "", manifestLimitation)
+			}
+			skillsDirectory := filepath.Join(directory, "skills")
+			roots := []string{skillsDirectory}
+			if topologyMatches && len(manifest.Skills) == 0 {
+				if _, err := os.Stat(skillsDirectory); os.IsNotExist(err) {
+					if info, err := os.Stat(filepath.Join(directory, "SKILL.md")); err == nil && info.Mode().IsRegular() {
+						roots = append(roots, directory)
+					}
 				}
 			}
-			for _, extra := range extras {
-				candidate := filepath.Clean(filepath.Join(directory, extra))
-				if !claudeWithin(directory, candidate) || filepath.IsAbs(extra) {
-					inputs.problem(manifestPath, "configured plugin skill path escapes plugin")
-					continue
+			if topologyMatches && len(manifest.Skills) > 0 {
+				var one string
+				var extras []string
+				if json.Unmarshal(manifest.Skills, &one) == nil {
+					extras = []string{one}
+				} else if json.Unmarshal(manifest.Skills, &extras) != nil {
+					inputs.problem(manifestPath, "plugin skills paths must be string or array")
+					if fact.participation != ParticipationExcluded {
+						fact.participation = ParticipationUnknown
+					}
 				}
-				resolved, err := filepath.EvalSymlinks(candidate)
-				if err == nil && fact.directory != "" && !claudeWithin(fact.directory, resolved) {
-					inputs.problem(candidate, "configured plugin skill path resolves outside plugin")
-					continue
+				for _, extra := range extras {
+					candidate := filepath.Clean(filepath.Join(directory, extra))
+					if !claudeWithin(directory, candidate) || filepath.IsAbs(extra) {
+						inputs.problem(manifestPath, "configured plugin skill path escapes plugin")
+						continue
+					}
+					resolved, err := filepath.EvalSymlinks(candidate)
+					if err == nil && fact.directory != "" && !claudeWithin(fact.directory, resolved) {
+						inputs.problem(candidate, "configured plugin skill path resolves outside plugin")
+						continue
+					}
+					roots = append(roots, candidate)
 				}
-				roots = append(roots, candidate)
+			}
+			fact.provenance.Activation = &fact.activation
+			for _, root := range roots {
+				duplicate := false
+				for _, existing := range byPath[root] {
+					duplicate = duplicate || (existing.provenance.PluginID == id && existing.provenance.Evidence.InputPath == manifestPath)
+				}
+				if !duplicate {
+					byPath[root] = append(byPath[root], fact)
+				}
+				localRoots[root] = localRoots[root] || sameClaudePath(localSource.path, directory)
 			}
 		}
-		for _, root := range roots {
-			if _, exists := facts[root]; exists {
-				continue
-			}
-			facts[root] = fact
-			origin := "claude-plugin-cache"
-			if sameClaudePath(localSources[id].path, directory) {
-				origin = "claude-plugin-local"
-			}
-			appendClaudeRoot(request, root, ContextManaged, origin)
+	}
+	facts := map[RootID][]claudePluginFact{}
+	paths = paths[:0]
+	for path := range byPath {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	for _, path := range paths {
+		origin := "claude-plugin-cache"
+		if localRoots[path] {
+			origin = "claude-plugin-local"
 		}
+		appendClaudeRoot(request, path, ContextManaged, origin)
+		facts[request.Roots[len(request.Roots)-1].ID] = byPath[path]
 	}
 	return facts
 }
@@ -226,23 +296,30 @@ func claudeWithin(parent, path string) bool {
 	relative, err := filepath.Rel(parent, path)
 	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
-func managedClaudeSource(directory string, plugins map[string]claudePluginFact) (claudePluginFact, bool) {
-	paths := make([]string, 0, len(plugins))
-	for path := range plugins {
-		paths = append(paths, path)
-	}
-	sort.Strings(paths)
-	for _, path := range paths {
-		fact := plugins[path]
-		if fact.directory != "" && claudeWithin(fact.directory, directory) {
-			return fact, true
+func managedClaudeSource(directory string, plugins map[RootID][]claudePluginFact) []claudePluginFact {
+	var result []claudePluginFact
+	seen := map[string]bool{}
+	for _, facts := range plugins {
+		for _, fact := range facts {
+			key := fact.provenance.PluginID + "\x00" + fact.provenance.Evidence.InputPath
+			if !seen[key] && fact.directory != "" && claudeWithin(fact.directory, directory) {
+				seen[key] = true
+				result = append(result, fact)
+			}
 		}
 	}
-	return claudePluginFact{}, false
+	sort.Slice(result, func(i, j int) bool {
+		left, right := result[i].provenance, result[j].provenance
+		if left.PluginID != right.PluginID {
+			return left.PluginID < right.PluginID
+		}
+		return left.Evidence.InputPath < right.Evidence.InputPath
+	})
+	return result
 }
 
-func claudeLocalPluginSources(request *Request, inputs *claudeInputs) map[string]claudeLocalPluginSource {
-	result := map[string]claudeLocalPluginSource{}
+func claudeLocalPluginSources(request *Request, inputs *claudeInputs) map[string][]claudeLocalPluginSource {
+	result := map[string][]claudeLocalPluginSource{}
 	path := filepath.Join(request.claudeHome, "plugins", "known_marketplaces.json")
 	raw, err := nativeBytes(path)
 	if nativeAbsent(path, err) {
@@ -257,7 +334,13 @@ func claudeLocalPluginSources(request *Request, inputs *claudeInputs) map[string
 		inputs.problem(path, "known plugin marketplaces could not be interpreted")
 		return result
 	}
-	for name, market := range markets {
+	names := make([]string, 0, len(markets))
+	for name := range markets {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		market := markets[name]
 		if market.Source.Source != "directory" {
 			continue
 		}
@@ -298,7 +381,8 @@ func claudeLocalPluginSources(request *Request, inputs *claudeInputs) map[string
 				inputs.scope.Gaps = append(inputs.scope.Gaps, "local plugin source escapes marketplace: "+plugin.Name+"@"+name)
 				continue
 			}
-			result[plugin.Name+"@"+name] = claudeLocalPluginSource{source, limitation}
+			id := plugin.Name + "@" + name
+			result[id] = append(result[id], claudeLocalPluginSource{source, limitation, manifestPath, path, market.LastUpdated, relative})
 		}
 	}
 	return result

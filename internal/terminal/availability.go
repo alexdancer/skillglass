@@ -34,9 +34,27 @@ func availabilityLines(value collection.AvailabilityExplanation) []string {
 		if fact.Permission.Evidence.Setting != "" {
 			lines = append(lines, "Permission setting: "+fact.Permission.Evidence.Setting)
 		}
+		if fact.Evidence.Setting != "" {
+			lines = append(lines, "Discovery setting: "+fact.Evidence.Setting)
+		}
 		lines = append(lines, "Provenance: "+fact.Provenance.Kind+" | "+fact.Provenance.Evidence.Reason)
 		if fact.Provenance.PluginID != "" {
-			lines = append(lines, "Plugin: "+fact.Provenance.PluginID+" | version "+fact.Provenance.Version)
+			lines = append(lines, "Plugin: "+fact.Provenance.PluginID+" | version "+fact.Provenance.Version, "Plugin manifest: "+fact.Provenance.Evidence.InputPath)
+		}
+		if setting := fact.Provenance.Setting; setting != nil {
+			lines = append(lines, "Plugin setting: "+setting.InputPath+" | "+setting.Setting)
+		}
+		if activation := fact.Provenance.Activation; activation != nil {
+			lines = append(lines, "Registration activation: "+string(activation.Kind)+" | "+activation.Rule+" | "+activation.Reason)
+		}
+		for _, record := range fact.Provenance.Records {
+			lines = append(lines, "Plugin observation: "+record.Kind+" | "+record.InputPath+" | "+record.Path)
+			if record.RegistrationInput != "" {
+				lines = append(lines, "Marketplace registration: "+record.RegistrationInput+" | source "+record.DeclaredSource+" | lastUpdated "+string(record.LastUpdated))
+			}
+			if record.Scope != "" {
+				lines = append(lines, "Installation: "+record.Scope+" | "+record.Applicability+" | project "+string(record.ProjectPath)+" | version "+string(record.Version))
+			}
 		}
 	}
 	// Layers are the same context-wide calculation on each eligible reference.
