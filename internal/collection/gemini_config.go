@@ -18,11 +18,14 @@ type geminiInputs struct {
 	enabled, folderTrust bool
 	disabled             map[string]string
 	enabledPath          string
+	folderTrustPath      string
 	uncertain            bool
 	trust                ParticipationState
 	trustEvidence        Evidence
 	problems             []Problem
 	extensionPolicy      bool
+	allowedPolicy        bool
+	blockGitPolicy       bool
 }
 
 func geminiEvidence(kind EvidenceKind, rule, path, setting, reason string) Evidence {
@@ -157,8 +160,10 @@ func (in *geminiInputs) loadSettings(path, scope string, apply bool) {
 		*field.target = boolean
 		if field.keys[0] == "skills" {
 			in.enabledPath = path
-			layer.Choices = append(layer.Choices, PermissionChoice{Path: "skills.enabled", Enabled: boolean})
+		} else {
+			in.folderTrustPath = path
 		}
+		layer.Choices = append(layer.Choices, PermissionChoice{Path: strings.Join(field.keys, "."), Enabled: boolean})
 	}
 	value, present, valid := geminiObject(data, "skills", "disabled")
 	if present {
@@ -179,13 +184,17 @@ func (in *geminiInputs) loadSettings(path, scope string, apply bool) {
 			}
 		}
 	}
-	for _, keys := range [][]string{{"security", "allowedExtensions"}, {"security", "blockGitExtensions"}} {
-		value, present, _ := geminiObject(data, keys...)
-		if present && value != false {
-			if array, ok := value.([]any); !ok || len(array) > 0 {
-				in.extensionPolicy = true
-				in.scope.Gaps = append(in.scope.Gaps, "extension security policy requires unverified install-metadata matching")
+	for _, field := range []struct {
+		keys   []string
+		target *bool
+	}{{[]string{"security", "allowedExtensions"}, &in.allowedPolicy}, {[]string{"security", "blockGitExtensions"}, &in.blockGitPolicy}} {
+		value, present, _ := geminiObject(data, field.keys...)
+		if present {
+			active := value != false
+			if array, ok := value.([]any); ok {
+				active = len(array) > 0
 			}
+			*field.target = active
 		}
 	}
 	in.scope.ConfigLayers = append(in.scope.ConfigLayers, layer)
@@ -222,19 +231,32 @@ func readGeminiInputs(request Request) geminiInputs {
 	}
 	// Reapply the final override without duplicating its report.
 	in.loadSettings(system, "system", true)
+	in.extensionPolicy = in.allowedPolicy || in.blockGitPolicy
+	if in.extensionPolicy {
+		in.scope.Gaps = append(in.scope.Gaps, "extension security policy requires unverified install-metadata matching")
+	}
 	return in
 }
 func (in *geminiInputs) readTrust() {
 	path := geminiEnvPath("GEMINI_CLI_TRUSTED_FOLDERS_PATH", filepath.Join(in.home, ".gemini", "trustedFolders.json"))
 	reason := "no folder-trust choice exists; native CLI omits workspace skills until trusted"
 	in.trustEvidence = geminiEvidence(EvidenceInferred, "workspace-trust", path, "trustedFolders", reason)
-	if os.Getenv("GEMINI_RESTRICTED_MODE") == "true" || os.Getenv("GEMINI_CLI_TRUST_WORKSPACE") == "false" {
-		in.trustEvidence = geminiEvidence(EvidenceObserved, "workspace-trust-env", "", "GEMINI_CLI_TRUST_WORKSPACE/GEMINI_RESTRICTED_MODE", "environment excludes workspace skills")
+	if os.Getenv("GEMINI_RESTRICTED_MODE") == "true" {
+		in.trustEvidence = geminiEvidence(EvidenceObserved, "workspace-trust-env", "", "GEMINI_RESTRICTED_MODE=true", "environment excludes workspace skills")
 		return
 	}
-	if os.Getenv("GEMINI_CLI_TRUST_WORKSPACE") == "true" || !in.folderTrust {
+	if os.Getenv("GEMINI_CLI_TRUST_WORKSPACE") == "false" {
+		in.trustEvidence = geminiEvidence(EvidenceObserved, "workspace-trust-env", "", "GEMINI_CLI_TRUST_WORKSPACE=false", "environment excludes workspace skills")
+		return
+	}
+	if os.Getenv("GEMINI_CLI_TRUST_WORKSPACE") == "true" {
 		in.trust = ParticipationEligible
-		in.trustEvidence = geminiEvidence(EvidenceInferred, "workspace-trust-env-or-setting", "", "security.folderTrust.enabled", "local environment or disabled trust feature permits workspace skills")
+		in.trustEvidence = geminiEvidence(EvidenceObserved, "workspace-trust-env", "", "GEMINI_CLI_TRUST_WORKSPACE=true", "environment permits workspace skills")
+		return
+	}
+	if !in.folderTrust {
+		in.trust = ParticipationEligible
+		in.trustEvidence = geminiEvidence(EvidenceInferred, "workspace-trust-setting", in.folderTrustPath, "security.folderTrust.enabled=false", "disabled trust feature permits workspace skills")
 		return
 	}
 	raw, err := nativeBytes(path)
@@ -261,7 +283,12 @@ func (in *geminiInputs) readTrust() {
 		if resolved, err := filepath.EvalSymlinks(target); err == nil {
 			target = resolved
 		}
-		rel, err := filepath.Rel(target, in.project)
+		project := in.project
+		if runtime.GOOS == "darwin" {
+			target = strings.ToLower(target)
+			project = strings.ToLower(project)
+		}
+		rel, err := filepath.Rel(target, project)
 		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			continue
 		}

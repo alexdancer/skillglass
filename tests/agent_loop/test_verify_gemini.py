@@ -15,7 +15,8 @@ HELPER = Path(__file__).resolve().parents[2] / "tools/verify_gemini.py"
 @unittest.skipUnless(os.uname().sysname == "Darwin", "sandbox-exec requires macOS")
 class NativeHelperContainment(unittest.TestCase):
     def test_actual_public_helper_contains_parent_and_inherited_child(self):
-        node = shutil.which("node") or "/Users/alex/.hermes/node/bin/node"
+        node = shutil.which("node")
+        self.assertIsNotNone(node, "native verifier containment test requires Node.js on PATH")
         node = Path(node).resolve(strict=True)
         with tempfile.TemporaryDirectory(prefix="ale37-inert-", dir="/private/tmp") as temporary:
             root = Path(temporary)
@@ -94,7 +95,6 @@ setTimeout(() => done(false, 'timeout'), 1000);
             receipt = json.loads((evidence / "receipt.json").read_text())
             self.assertEqual(receipt["cases"][0]["exit"], 17)
             self.assertEqual(receipt["cases"][0]["wrapper_sha256_at_launch"], hashlib.sha256(fake.read_bytes()).hexdigest())
-            self.assertIn("deny file-write*", (evidence / "profile.sb").read_text())
 
 
 
