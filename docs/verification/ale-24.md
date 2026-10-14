@@ -37,9 +37,11 @@ Historical ALE-23 hostile inventory and purported detail captures were byte-iden
 
 ## Reproduce the acceptance evidence
 
-Use macOS, the [README's Go toolchain and dependency setup](../../README.md#build-and-use), and `tmux` on PATH. Containment checks require macOS `sandbox-exec`; scheduler checks require Python 3.10 or later; shell lint requires `shellcheck` on PATH. Dependency downloads must already be present because the run disables Go network access. Supply a fresh absolute evidence directory so terminal captures and command receipts cannot mix with an earlier run:
+Use macOS, the [README's Go toolchain and dependency setup](../../README.md#build-and-use), and `tmux` on PATH. Containment checks require macOS `sandbox-exec`; scheduler checks require Python 3.10 or later; inert recorder and syntax checks require Node on PATH; shell lint requires `shellcheck` on PATH. Dependency downloads must already be present because the run disables Go network access. Keep `TMPDIR` and `GOTMPDIR` in a dedicated directory outside every Git checkout: temporary homes/projects inside a checkout inherit its real ancestor boundary and invalidate discovery fixtures. Evidence may remain repository-local. Supply a fresh absolute evidence directory so terminal captures and command receipts cannot mix with an earlier run:
 
 ```sh
+worker_tmp=$(mktemp -d /private/tmp/ale-24-checks.XXXXXX)
+export TMPDIR="$worker_tmp" GOTMPDIR="$worker_tmp"
 evidence="$(pwd)/.agent-loop/ale-24-evidence-$(date +%Y%m%d-%H%M%S)"
 test ! -e "$evidence" && ./tests/acceptance/run.sh "$evidence"
 ```
@@ -49,16 +51,20 @@ Inspect `cases.json`, raw PTY bytes, driven keys, pane dimensions, and current t
 Run repository checks after the last source or documentation change:
 
 ```sh
-/opt/homebrew/bin/gofmt -l cmd internal tests/acceptance
+/opt/homebrew/bin/gofmt -l cmd internal tests/acceptance tests/launchrecord
 env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go vet ./...
 env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go test -count=1 -mod=readonly ./...
 python3 -m unittest discover -s tests/agent_loop -v
+python3 -m unittest discover -s tests/native_verification -v
+python3 -m py_compile tests/native/invocation.py tests/native/pi-read-contained.py tests/native_verification/test_invocation.py
+node --check tests/native/invocation.mjs
+node --check tests/native/pi-read.mjs
 shellcheck tests/acceptance/run.sh
 sh -n tests/acceptance/run.sh
 git diff --check
 ```
 
-The formatting check must print no files; use `gofmt -w` on any reported files and rerun. These are local checks, not a claim of green CI. Earlier verification does not cover later changes.
+The formatting check must print no files; use `gofmt -w` on any reported files and rerun. These are local checks, not a claim of green CI. The Python native-verification suite uses inert Python/Node recorder payloads; syntax checks do not launch Pi or import its application modules. Native runtime probes require separate authorization under the active run's constraints. Earlier verification does not cover later changes.
 
 ## Evidence limits
 
