@@ -41,30 +41,10 @@ func TestALE39CodeAFBrowserExplanationAndPluginRefresh(t *testing.T) {
 			assertPaneCells(t, frame, width, 30)
 			writeEvidence(t, fmt.Sprintf("tmux/ale39/%d/02-detail.txt", width), []byte(frame))
 			// Read the actual paged terminal artifact, including all control reasons.
-			rows := map[int]string{}
-			for page := 0; page < 40; page++ {
-				first, last, total, body := sourceDetailBody(t, frame)
-				for i, row := range body {
-					rows[first+i] = row
-				}
-				writeEvidence(t, fmt.Sprintf("tmux/ale39/%d/detail-%02d.txt", width, page), []byte(frame))
-				assertPaneCells(t, frame, width, 30)
-				if last == total {
-					break
-				}
-				frame = actOnPane(t, tmux, fx, socket, "browser:0.0", func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "PageDown") }, func(next paneSnapshot) bool {
-					nextFirst, _, _ := sourceDetailRange(next.cells)
-					return nextFirst > first
-				}).cells
-			}
-			var body strings.Builder
-			for i := 1; i <= len(rows); i++ {
-				body.WriteString(rows[i])
-				body.WriteByte('\n')
-			}
+			frame, body := captureCodeAFDetailPages(t, tmux, fx, socket, frame, width, fmt.Sprintf("tmux/ale39/%d/detail", width))
 			for _, needle := range []string{"example@local", "persistent CodeAF-only per-skill control is unsupported", "conversation detachment", "another agent's setting", "Capability: disable", "source v0.7.1"} {
-				if !paneContains(body.String(), needle) {
-					t.Fatalf("missing %q in terminal detail:\n%s", needle, body.String())
+				if !paneContains(body, needle) {
+					t.Fatalf("missing %q in terminal detail:\n%s", needle, body)
 				}
 			}
 			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
@@ -185,34 +165,14 @@ func TestALE39Review001BrowserUncertainPrecedenceRefresh(t *testing.T) {
 				before = treeManifest(t, fx.base)
 				frame = send("r", "Refresh: selected directory object retained", "Read lines 1-", "Availability: unknown", "Configured permission: allowed")
 				writeEvidence(t, prefix+"/02-unknown.txt", []byte(frame))
-				rows := map[int]string{}
-				for page := 0; page < 40; page++ {
-					first, last, total, body := sourceDetailBody(t, frame)
-					for i, row := range body {
-						rows[first+i] = row
-					}
-					assertPaneCells(t, frame, width, 30)
-					writeEvidence(t, fmt.Sprintf("%s/unknown-%02d.txt", prefix, page), []byte(frame))
-					if last == total {
-						break
-					}
-					frame = actOnPane(t, tmux, fx, socket, "browser:0.0", func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "PageDown") }, func(next paneSnapshot) bool {
-						nextFirst, _, _ := sourceDetailRange(next.cells)
-						return nextFirst > first
-					}).cells
-				}
-				var body strings.Builder
-				for i := 1; i <= len(rows); i++ {
-					body.WriteString(rows[i])
-					body.WriteByte('\n')
-				}
+				frame, body := captureCodeAFDetailPages(t, tmux, fx, socket, frame, width, prefix+"/unknown")
 				for _, needle := range []string{"Precedence: unknown", "Related independent source: " + pluginID, "uncertain enablement", "Capability: disable", "persistent CodeAF-only per-skill control is unsupported"} {
-					if !paneContains(body.String(), needle) {
-						t.Fatalf("missing %q in uncertain detail:\n%s", needle, body.String())
+					if !paneContains(body, needle) {
+						t.Fatalf("missing %q in uncertain detail:\n%s", needle, body)
 					}
 				}
-				if paneContains(body.String(), "Winning source:") || paneContains(body.String(), ": eligible (") {
-					t.Fatalf("uncertain detail asserts a winner:\n%s", body.String())
+				if paneContains(body, "Winning source:") || paneContains(body, ": eligible (") {
+					t.Fatalf("uncertain detail asserts a winner:\n%s", body)
 				}
 				assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 				send("Escape", "0 matches", "hidden by filters")
@@ -230,4 +190,30 @@ func TestALE39Review001BrowserUncertainPrecedenceRefresh(t *testing.T) {
 			})
 		}
 	}
+}
+
+func captureCodeAFDetailPages(t *testing.T, tmux string, fx fixture, socket, frame string, width int, evidencePrefix string) (string, string) {
+	t.Helper()
+	rows := map[int]string{}
+	for page := 0; page < 40; page++ {
+		first, last, total, body := sourceDetailBody(t, frame)
+		for i, row := range body {
+			rows[first+i] = row
+		}
+		writeEvidence(t, fmt.Sprintf("%s-%02d.txt", evidencePrefix, page), []byte(frame))
+		assertPaneCells(t, frame, width, 30)
+		if last == total {
+			break
+		}
+		frame = actOnPane(t, tmux, fx, socket, "browser:0.0", func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "PageDown") }, func(next paneSnapshot) bool {
+			nextFirst, _, _ := sourceDetailRange(next.cells)
+			return nextFirst > first
+		}).cells
+	}
+	var body strings.Builder
+	for i := 1; i <= len(rows); i++ {
+		body.WriteString(rows[i])
+		body.WriteByte('\n')
+	}
+	return frame, body.String()
 }
