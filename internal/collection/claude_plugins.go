@@ -117,6 +117,9 @@ func discoverClaudePlugins(request *Request, inputs *claudeInputs) map[string]cl
 		manifestLimitation := ""
 		if topologyMatches {
 			manifestLimitation = claudePluginManifestLimitation(manifestRaw)
+			if manifestLimitation == "" && (name == "" || strings.ContainsAny(name, " :")) {
+				manifestLimitation = "plugin name identifier is empty or contains ASCII space or colon; native activation for this identifier is unverified"
+			}
 		}
 		fact.directory, _ = filepath.EvalSymlinks(directory)
 		fact.provenance = Provenance{Kind: "plugin", PluginID: id, Version: manifest.Version, Evidence: claudeEvidence(EvidenceObserved, "managed-plugin-content", manifestPath, "", "plugin manifest and manager cache/registry locate managed content; ownership is separate from activation")}
