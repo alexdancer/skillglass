@@ -173,7 +173,8 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 		if builder.discoverCandidate(ctx, root, root.Path, ".") {
 			report.SourceCount++
 		}
-	} else {
+	}
+	if !rootIsBundle || strings.HasPrefix(root.Origin, "gemini-") {
 		entries, readErr := os.ReadDir(resolvedRoot)
 		if readErr != nil {
 			problem := makeProblem(
@@ -197,11 +198,14 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 		sort.Slice(entries, func(left, right int) bool {
 			return entries[left].Name() < entries[right].Name()
 		})
-		if root.Origin != "" && !strings.HasPrefix(root.Origin, "claude-") {
+		if strings.HasPrefix(root.Origin, "codex-") {
 			builder.discoverNativeChildren(ctx, root, root.Path, make(map[string]bool), new(int))
 			entries = nil
 		}
 		for _, entry := range entries {
+			if strings.HasPrefix(root.Origin, "gemini-") && (strings.HasPrefix(entry.Name(), ".") || entry.Name() == "node_modules") {
+				continue
+			}
 			if err := ctx.Err(); err != nil {
 				problem := makeProblem(
 					ProblemRootUnreadable,

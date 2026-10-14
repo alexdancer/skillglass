@@ -11,6 +11,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.3.1
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/sys v0.47.0
+	golang.org/x/text v0.43.0
 )
 
 require (
@@ -26,6 +27,5 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/xo/terminfo v1.0.0 // indirect
 	golang.org/x/net v0.49.0 // indirect
-	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/text v0.33.0 // indirect
+	golang.org/x/sync v0.24.0 // indirect
 )

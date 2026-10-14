@@ -851,6 +851,8 @@ func (fx fixture) environment() []string {
 		"GIT_CONFIG_SYSTEM=" + filepath.Join(fx.home, "missing-system.gitconfig"),
 		"GIT_TEMPLATE_DIR=" + filepath.Join(fx.base, "allowed", "git-templates"),
 		"HOME=" + fx.home,
+		"GEMINI_CLI_SYSTEM_SETTINGS_PATH=" + filepath.Join(fx.home, ".gemini", "fixture-system-settings.json"),
+		"GEMINI_CLI_SYSTEM_DEFAULTS_PATH=" + filepath.Join(fx.home, ".gemini", "fixture-system-defaults.json"),
 		"XDG_CONFIG_HOME=" + fx.xdgConfig,
 		"XDG_DATA_HOME=" + fx.xdgData,
 		"XDG_CACHE_HOME=" + fx.xdgCache,
