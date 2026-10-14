@@ -18,12 +18,10 @@ type hermesInputs struct {
 	scope                  AgentScope
 	configData             map[string]any
 	configYAML             hermesYAMLObservation
-	pluginConfig           map[string]any
+	pluginPolicy           map[string]hermesPolicyLeaf
 	pluginManaged          map[string]any
 	managedConfigPath      string
-	pluginConfigPath       string
-	pluginUncertain        bool
-	pluginScalarKnown      bool
+	pluginFailure          *Evidence
 	managedYAML            hermesYAMLObservation
 	policyEnv              map[string]string
 	policyDeclared         map[string]bool
@@ -495,10 +493,14 @@ func hermesPermission(name string, inputs *hermesInputs) PermissionExplanation {
 	global, ok := hermesRawSkillStrings(skills["disabled"])
 	platforms := hermesMap(skills, "platform_disabled")
 	selected, selectedOK := hermesRawSkillStrings(platforms[inputs.platform])
-	if !ok || !selectedOK || inputs.uncertain || !inputs.configYAML.known("skills.disabled", "skills.platform_disabled."+inputs.platform) {
+	globalKnown := ok && inputs.configYAML.known("skills.disabled")
+	selectedKnown := inputs.platform == "" || (selectedOK && inputs.configYAML.known("skills.platform_disabled."+inputs.platform))
+	if inputs.uncertain {
 		state, reason = PermissionUnknown, "profile config native string semantics cannot be reliably interpreted"
-	} else if hermesHas(global, name) || (inputs.platform != "" && hermesHas(selected, name)) {
+	} else if (globalKnown && hermesHas(global, name)) || (inputs.platform != "" && selectedKnown && hermesHas(selected, name)) {
 		state, reason = PermissionDenied, "name disabled by skills.disabled union skills.platform_disabled for "+inputs.platform
+	} else if !globalKnown || !selectedKnown {
+		state, reason = PermissionUnknown, "profile config native string semantics cannot be reliably interpreted"
 	}
 	kind := EvidenceInferred
 	if state == PermissionUnknown {

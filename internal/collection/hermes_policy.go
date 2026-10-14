@@ -26,8 +26,16 @@ func (inputs *hermesInputs) envEnabled(key string) bool {
 func (inputs *hermesInputs) policyLayer(path, scope, state, reason string) {
 	inputs.scope.ConfigLayers = append(inputs.scope.ConfigLayers, PermissionLayer{Path: path, Scope: scope, State: state, Reason: reason, Evidence: hermesEvidence(EvidenceObserved, scope, path, "Hermes behavioral policy", reason)})
 }
+
+type hermesPolicyLeaf struct {
+	names []string
+	known bool
+	path  string
+}
+
 func (inputs *hermesInputs) pluginProblem(path, reason string) {
-	inputs.pluginUncertain = true
+	failure := hermesEvidence(EvidenceUnknown, "plugin-policy-input", path, "", reason)
+	inputs.pluginFailure = &failure
 	inputs.problems = append(inputs.problems, makeProblem(ProblemNativeInput, path, reason, nil, true))
 }
 func (inputs *hermesInputs) readPolicy(request Request) {
@@ -82,31 +90,20 @@ func (inputs *hermesInputs) readPolicy(request Request) {
 	}
 	inputs.policyLayer(filepath.Join(inputs.home, ".env"), "session-platform", "read", "profile environment overrides shell policy; managed environment wins last; HERMES_PLATFORM precedes HERMES_SESSION_PLATFORM")
 	user := hermesMap(inputs.configData, "plugins")
-	inherited := make(map[string]any)
+	inputs.pluginPolicy = make(map[string]hermesPolicyLeaf)
 	for _, key := range []string{"enabled", "disabled"} {
-		if _, replaced := inputs.pluginManaged[key]; !replaced {
-			if value, present := user[key]; present {
-				inherited[key] = value
-			}
+		value, path, observation := user[key], inputs.config, inputs.configYAML
+		if managed, present := inputs.pluginManaged[key]; present {
+			value, path, observation = managed, inputs.managedConfigPath, inputs.managedYAML
 		}
-	}
-	inputs.pluginConfig = inputs.expandPluginPolicy(inherited, inputs.config)
-	inputs.pluginConfigPath = inputs.config
-	if inputsManaged := inputs.pluginManaged; inputsManaged != nil {
-		for key, value := range inputs.expandPluginPolicy(inputsManaged, inputs.managedConfigPath) {
-			inputs.pluginConfig[key] = value
+		leaf := inputs.expandPluginPolicy(value, path, key)
+		leaf.known = leaf.known && observation.known("plugins."+key)
+		inputs.pluginPolicy[key] = leaf
+		state := "read"
+		if !leaf.known {
+			state = "unknown"
 		}
-		inputs.pluginConfigPath = inputs.managedConfigPath
-	}
-	inputs.pluginScalarKnown = true
-	for _, key := range []string{"enabled", "disabled"} {
-		observation := inputs.configYAML
-		if _, present := inputs.pluginManaged[key]; present {
-			observation = inputs.managedYAML
-		}
-		if !observation.known("plugins." + key) {
-			inputs.pluginScalarKnown = false
-		}
+		inputs.policyLayer(path, "plugins."+key, state, "effective plugin leaf; managed policy replaces only present leaves")
 	}
 }
 func (inputs *hermesInputs) readPolicyEnv(path string, managed bool) {
@@ -286,45 +283,38 @@ func (inputs *hermesInputs) readManagedPlugins(path string) {
 
 var hermesConfigReference = regexp.MustCompile(`\$\{([^}]+)\}`)
 
-func (inputs *hermesInputs) expandPluginPolicy(data map[string]any, path string) map[string]any {
-	result := make(map[string]any)
-	for _, key := range []string{"enabled", "disabled"} {
-		value, present := data[key]
-		if !present {
-			continue
-		}
-		items, ok := value.([]any)
-		if value == nil {
-			result[key] = nil
-			continue
-		}
-		if !ok {
-			result[key] = value
-			inputs.pluginProblem(path, "plugin policy list cannot be interpreted")
-			continue
-		}
-		expanded := make([]any, 0, len(items))
-		for _, item := range items {
-			text, ok := item.(string)
-			if !ok {
-				inputs.pluginProblem(path, "plugin policy list requires strings")
-				expanded = append(expanded, item)
-				continue
-			}
-			text = hermesConfigReference.ReplaceAllStringFunc(text, func(ref string) string {
-				name := strings.TrimSpace(ref[2 : len(ref)-1])
-				name = strings.TrimSpace(strings.TrimPrefix(name, "env:"))
-				if hermesPolicyKeys[name] {
-					if value, present := inputs.policyEnv[name]; present {
-						return value
-					}
-				}
-				inputs.pluginProblem(path, "plugin policy references unsupported or unresolved environment policy; credentials and providers are not evaluated")
-				return ref
-			})
-			expanded = append(expanded, text)
-		}
-		result[key] = expanded
+func (inputs *hermesInputs) expandPluginPolicy(value any, path, key string) hermesPolicyLeaf {
+	leaf := hermesPolicyLeaf{path: path, known: true}
+	problem := func(reason string) {
+		leaf.known = false
+		inputs.problems = append(inputs.problems, makeProblem(ProblemNativeInput, path, "plugins."+key+": "+reason, nil, true))
 	}
-	return result
+	if value == nil {
+		return leaf
+	}
+	items, ok := value.([]any)
+	if !ok {
+		problem("plugin policy list cannot be interpreted")
+		return leaf
+	}
+	for _, item := range items {
+		text, ok := item.(string)
+		if !ok {
+			problem("plugin policy list requires strings")
+			continue
+		}
+		text = hermesConfigReference.ReplaceAllStringFunc(text, func(ref string) string {
+			name := strings.TrimSpace(ref[2 : len(ref)-1])
+			name = strings.TrimSpace(strings.TrimPrefix(name, "env:"))
+			if hermesPolicyKeys[name] {
+				if value, present := inputs.policyEnv[name]; present {
+					return value
+				}
+			}
+			problem("plugin policy references unsupported or unresolved environment policy; credentials and providers are not evaluated")
+			return ref
+		})
+		leaf.names = append(leaf.names, text)
+	}
+	return leaf
 }

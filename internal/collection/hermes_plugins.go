@@ -3,11 +3,13 @@ package collection
 import (
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 )
 
 type hermesPlugin struct {
@@ -16,6 +18,7 @@ type hermesPlugin struct {
 	nameKnown, keyKnown, versionKnown   bool
 	state                               ParticipationState
 	reason                              string
+	policyEvidence                      Evidence
 }
 
 func hermesPortableNamespace(key string) string {
@@ -34,23 +37,8 @@ func hermesPortableNamespace(key string) string {
 	sum := sha256.Sum256([]byte(key))
 	return fmt.Sprintf("agent-plugin-%s-%x", text, sum[:4])
 }
-func hermesPluginStrings(value any) ([]string, bool) {
-	if value == nil {
-		return nil, true
-	}
-	list, ok := value.([]any)
-	if !ok {
-		return nil, false
-	}
-	result := make([]string, 0, len(list))
-	for _, value := range list {
-		text, ok := value.(string)
-		if !ok {
-			return nil, false
-		}
-		result = append(result, text)
-	}
-	return result, true
+func hermesManifestAbsent(err error) bool {
+	return errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ENOTDIR) || errors.Is(err, syscall.EBADF) || errors.Is(err, syscall.ELOOP)
 }
 
 func discoverHermesPlugins(request *Request, inputs *hermesInputs) {
@@ -74,12 +62,12 @@ func discoverHermesPlugins(request *Request, inputs *hermesInputs) {
 				}
 				manifest := filepath.Join(child, "plugin.yaml")
 				_, yamlErr := os.Stat(manifest)
-				if os.IsNotExist(yamlErr) {
+				if hermesManifestAbsent(yamlErr) {
 					manifest = filepath.Join(child, "plugin.yml")
 					_, yamlErr = os.Stat(manifest)
 				}
 				portable := false
-				if os.IsNotExist(yamlErr) {
+				if hermesManifestAbsent(yamlErr) {
 					manifest = filepath.Join(child, "plugin.json")
 					if _, err = os.Lstat(manifest); os.IsNotExist(err) {
 						if depth == 0 {
@@ -141,26 +129,50 @@ func discoverHermesPlugins(request *Request, inputs *hermesInputs) {
 					}
 				}
 				plugin.admitted = plugin.admitted && !inputs.envEnabled("HERMES_SAFE_MODE") && (!project || inputs.envEnabled("HERMES_ENABLE_PROJECT_PLUGINS"))
-				config := inputs.pluginConfig
-				enabled, enabledOK := hermesPluginStrings(config["enabled"])
-				disabled, disabledOK := hermesPluginStrings(config["disabled"])
+				enabled, disabled := inputs.pluginPolicy["enabled"], inputs.pluginPolicy["disabled"]
+				policyPath, policySetting := plugin.path, ""
 				switch {
 				case inputs.envEnabled("HERMES_SAFE_MODE"):
 					plugin.state = ParticipationExcluded
 					plugin.reason = "HERMES_SAFE_MODE skips plugin discovery"
+					policyPath, policySetting = "", "HERMES_SAFE_MODE"
 				case project && !inputs.envEnabled("HERMES_ENABLE_PROJECT_PLUGINS"):
 					plugin.state = ParticipationExcluded
 					plugin.reason = "project plugins require HERMES_ENABLE_PROJECT_PLUGINS opt-in; selected project has no ancestor inheritance"
-				case !enabledOK || !disabledOK || inputs.uncertain || inputs.pluginUncertain || !inputs.pluginScalarKnown || !plugin.keyKnown:
+					policyPath, policySetting = "", "HERMES_ENABLE_PROJECT_PLUGINS"
+				case inputs.uncertain:
 					plugin.state = ParticipationUnknown
-					plugin.reason = "plugin configuration or native registry string identity could not be reliably interpreted"
-				case hermesHas(disabled, plugin.key) || (plugin.nameKnown && hermesHas(disabled, name)):
+					plugin.reason = "native configuration, environment or discovery inputs could not be reliably interpreted"
+					policyPath = ""
+				case inputs.pluginFailure != nil:
+					plugin.state = ParticipationUnknown
+					plugin.reason = inputs.pluginFailure.Reason
+					policyPath = inputs.pluginFailure.InputPath
+				case disabled.known && ((plugin.keyKnown && hermesHas(disabled.names, plugin.key)) || (plugin.nameKnown && hermesHas(disabled.names, name))):
 					plugin.state = ParticipationExcluded
 					plugin.reason = "plugins.disabled overrides plugins.enabled"
-				case !hermesHas(enabled, plugin.key) && (!plugin.nameKnown || !hermesHas(enabled, name)):
+					policyPath, policySetting = disabled.path, "plugins.disabled"
+				case !disabled.known:
+					plugin.state = ParticipationUnknown
+					plugin.reason = "effective plugins.disabled cannot be reliably interpreted"
+					policyPath, policySetting = disabled.path, "plugins.disabled"
+				case !enabled.known:
+					plugin.state = ParticipationUnknown
+					plugin.reason = "effective plugins.enabled cannot be reliably interpreted"
+					policyPath, policySetting = enabled.path, "plugins.enabled"
+				case !plugin.keyKnown:
+					plugin.state = ParticipationUnknown
+					plugin.reason = "native registry string identity could not be reliably interpreted"
+				case !hermesHas(enabled.names, plugin.key) && (!plugin.nameKnown || !hermesHas(enabled.names, name)):
 					plugin.state = ParticipationExcluded
 					plugin.reason = "plugins are opt-in; registry key/name is absent from plugins.enabled"
+					policyPath, policySetting = enabled.path, "plugins.enabled"
+				default:
+					if plugin.state == ParticipationEligible {
+						policyPath, policySetting = enabled.path, "plugins.enabled"
+					}
 				}
+				plugin.policyEvidence = hermesEvidence(EvidenceInferred, "plugin-registration", policyPath, policySetting, plugin.reason)
 				plugins = append(plugins, plugin)
 			}
 		}
@@ -184,11 +196,13 @@ func discoverHermesPlugins(request *Request, inputs *hermesInputs) {
 		if winner, ok := winners[plugin.key]; plugin.admitted && plugin.keyKnown && ok && winner != index {
 			plugin.state = ParticipationExcluded
 			plugin.reason = "later project plugin manifest with the same registry key overrides this user plugin"
+			plugin.policyEvidence.InputPath, plugin.policyEvidence.Setting = plugins[winner].path, ""
 		}
 		skillsRoot := filepath.Join(plugin.path, "skills")
 		if !hermesPluginContained(skillsRoot, plugin.path) {
 			plugin.state = ParticipationExcluded
 			plugin.reason = "plugin skills escape plugin ownership boundary"
+			plugin.policyEvidence.InputPath, plugin.policyEvidence.Setting = skillsRoot, ""
 		}
 		entries, err := os.ReadDir(skillsRoot)
 		if err != nil {
@@ -210,6 +224,7 @@ func discoverHermesPlugins(request *Request, inputs *hermesInputs) {
 			if !hermesPluginContained(filepath.Join(bundle, "SKILL.md"), plugin.path) {
 				current.state = ParticipationExcluded
 				current.reason = "plugin skill manifest escapes the plugin ownership boundary"
+				current.policyEvidence.InputPath, current.policyEvidence.Setting = filepath.Join(bundle, "SKILL.md"), ""
 			}
 			id := RootID(stableID("root_hermes_plugin", plugin.key, bundle))
 			request.Roots = append(request.Roots, DiscoveryRoot{ID: id, Path: bundle, Context: ContextManaged, Origin: "hermes-plugin", Optional: true})
@@ -277,7 +292,8 @@ func hermesPluginFact(fact *ReferenceAvailability, explanation *AvailabilityExpl
 	if plugin.state == ParticipationUnknown {
 		kind = EvidenceUnknown
 	}
-	fact.Evidence = hermesEvidence(kind, "plugin-registration", inputs.pluginConfigPath, "plugins.enabled, plugins.disabled", plugin.reason)
+	fact.Evidence = plugin.policyEvidence
+	fact.Evidence.Kind, fact.Evidence.Reason = kind, plugin.reason
 	fact.Provenance = Provenance{Kind: "plugin", PluginID: plugin.key, Version: plugin.version, Evidence: hermesEvidence(EvidenceObserved, "plugin-manifest", plugin.path, "", plugin.reason)}
 	if !plugin.versionKnown {
 		fact.Provenance.Evidence.Kind = EvidenceUnknown
@@ -298,7 +314,7 @@ func hermesPluginFact(fact *ReferenceAvailability, explanation *AvailabilityExpl
 				fact.Evidence = hermesEvidence(EvidenceUnknown, "portable-yaml-interpretation", source.Manifest.Path, "", "portable YAML string semantics are outside supported native interpretation")
 			} else if !valid {
 				fact.Participation = ParticipationExcluded
-				fact.Evidence.Reason = "portable skill frontmatter does not satisfy native directory/name/description constraints"
+				fact.Evidence = hermesEvidence(EvidenceInferred, "portable-skill-frontmatter", source.Manifest.Path, "name, description", "portable skill frontmatter does not satisfy native directory/name/description constraints")
 			}
 		}
 	}
