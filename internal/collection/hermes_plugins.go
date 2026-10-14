@@ -12,7 +12,7 @@ import (
 
 type hermesPlugin struct {
 	path, key, name, namespace, version string
-	portable                            bool
+	portable, admitted                  bool
 	state                               ParticipationState
 	reason                              string
 }
@@ -97,7 +97,9 @@ func discoverHermesPlugins(request *Request, inputs *hermesInputs) {
 						data = nil
 					}
 				} else {
-					data, _ = inputs.yaml(manifest)
+					var state string
+					data, state = inputs.yaml(manifest)
+					plugin.admitted = state == "read"
 				}
 				name, _ := data["name"].(string)
 				if name == "" && !portable {
@@ -115,10 +117,12 @@ func discoverHermesPlugins(request *Request, inputs *hermesInputs) {
 					if !hermesPortableManifestValid(data) || !hermesPluginContained(manifest, child) {
 						plugin.reason = "portable manifest schema, identity or containment could not be established"
 					} else {
+						plugin.admitted = true
 						plugin.state = ParticipationEligible
 						plugin.reason = "declarative portable plugin registration; native namespace derived from registry key"
 					}
 				}
+				plugin.admitted = plugin.admitted && !inputs.envEnabled("HERMES_SAFE_MODE") && (!project || inputs.envEnabled("HERMES_ENABLE_PROJECT_PLUGINS"))
 				config := inputs.pluginConfig
 				enabled, enabledOK := hermesPluginStrings(config["enabled"])
 				disabled, disabledOK := hermesPluginStrings(config["disabled"])
@@ -154,12 +158,12 @@ func discoverHermesPlugins(request *Request, inputs *hermesInputs) {
 	}
 	winners := make(map[string]int)
 	for index, plugin := range plugins {
-		if !strings.Contains(plugin.reason, "project plugins require") && !strings.Contains(plugin.reason, "SAFE_MODE") {
+		if plugin.admitted {
 			winners[plugin.key] = index
 		}
 	}
 	for index, plugin := range plugins {
-		if winner, ok := winners[plugin.key]; ok && winner != index {
+		if winner, ok := winners[plugin.key]; plugin.admitted && ok && winner != index {
 			plugin.state = ParticipationExcluded
 			plugin.reason = "later project plugin manifest with the same registry key overrides this user plugin"
 		}

@@ -245,10 +245,12 @@ func buildHermes(ctx context.Context, request Request) (*Snapshot, error) {
 			root.Evidence = &value
 		}
 	}
+	indexMetadata := make(map[SourceID]hermesIndexObservation)
 	for _, id := range snapshot.order {
-		snapshot.sources[id] = explainHermesSource(snapshot, id, roots, &inputs)
+		indexMetadata[id] = observeHermesIndex(snapshot.sources[id].Manifest)
+		snapshot.sources[id] = explainHermesSource(snapshot, id, roots, &inputs, indexMetadata[id])
 	}
-	applyHermesPrecedence(snapshot, request.Roots)
+	applyHermesPrecedence(snapshot, request.Roots, indexMetadata)
 	// Missing/unreadable discovery can hide a same-name candidate or a higher-priority definition.
 	uncertain := inputs.uncertain || !snapshot.Complete()
 	if uncertain {
@@ -267,7 +269,31 @@ func buildHermes(ctx context.Context, request Request) (*Snapshot, error) {
 	applyNativeInputProblems(snapshot, inputs.problems, roots)
 	return snapshot, nil
 }
-func explainHermesSource(snapshot *Snapshot, id SourceID, roots map[RootID]DiscoveryRoot, inputs *hermesInputs) Source {
+
+type hermesIndexObservation struct {
+	metadata map[string]any
+	known    bool
+}
+
+var hermesClosingFence = regexp.MustCompile(`\n---[\s\p{Z}\x{0085}\x{001c}-\x{001f}]*\n`)
+
+func observeHermesIndex(manifest Manifest) hermesIndexObservation {
+	if manifest.Status != ManifestParsed {
+		return hermesIndexObservation{}
+	}
+	text := strings.ReplaceAll(manifest.RawText, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	chars := []rune(text)
+	text = string(chars[:min(len(chars), 4000)])
+	closing := hermesClosingFence.FindStringIndex(text[3:])
+	if closing == nil {
+		return hermesIndexObservation{metadata: map[string]any{}, known: true}
+	}
+	metadata, _, err := decodeMetadata([]byte(text[3 : closing[0]+3]))
+	return hermesIndexObservation{metadata: metadata, known: err == nil}
+}
+
+func explainHermesSource(snapshot *Snapshot, id SourceID, roots map[RootID]DiscoveryRoot, inputs *hermesInputs, index hermesIndexObservation) Source {
 	source := snapshot.sources[id]
 	name := source.Manifest.Name
 	if name == "" {
@@ -276,7 +302,7 @@ func explainHermesSource(snapshot *Snapshot, id SourceID, roots map[RootID]Disco
 	name = string([]rune(name)[:min(len([]rune(name)), 64)])
 	value := hermesEvidence(EvidenceInferred, "hermes-skill-index", source.Manifest.Path, "", "active profile precedes configured external directories; this is inferred index visibility, not observed session use")
 	explanation := AvailabilityExplanation{State: AvailabilityUnavailable, NativeName: name, Evidence: &value, Reason: "source has no native discovery reference"}
-	nameValue := hermesEvidence(EvidenceObserved, "frontmatter-name-or-directory", source.Manifest.Path, "name", "native index uses name truncated to 64 characters, falling back to directory name")
+	nameValue := hermesEvidence(EvidenceInferred, "frontmatter-name-or-directory", source.Manifest.Path, "name", "native index uses metadata from the first 4000 decoded characters, truncating name to 64 characters and falling back to directory name")
 	explanation.NativeNameEvidence = &nameValue
 	explanation.Session = &SessionExplanation{State: "unknown", Evidence: hermesEvidence(EvidenceUnknown, "running-session", inputs.config, "", "running session was not inspected")}
 	explanation.Reload = &SessionExplanation{State: "unknown", Evidence: hermesEvidence(EvidenceUnknown, "reload", inputs.config, "", "new snapshot re-reads configuration; running-agent reload was not observed")}
@@ -295,7 +321,12 @@ func explainHermesSource(snapshot *Snapshot, id SourceID, roots map[RootID]Disco
 		if root.Origin != "" && root.Origin != "hermes-plugin-inventory" {
 			fact.Participation = ParticipationEligible
 			fact.Evidence = hermesEvidence(EvidenceInferred, root.Origin, ref.DiscoveredPath, "", "native skill index searches this profile/configured root")
-			referenceName := hermesReferenceName(source, ref)
+			metadata := source.Manifest.Metadata
+			known := source.Manifest.Status == ManifestParsed
+			if root.Origin == "hermes-profile" || root.Origin == "hermes-external" {
+				metadata, known = index.metadata, index.known
+			}
+			referenceName := hermesReferenceName(metadata, ref.DiscoveredPath)
 			fact.Evidence.Setting = "native_name=" + referenceName
 			fact.Permission = hermesPermission(referenceName, inputs)
 			if root.Origin == "hermes-external" {
@@ -308,7 +339,7 @@ func explainHermesSource(snapshot *Snapshot, id SourceID, roots map[RootID]Disco
 			if plugin, ok := inputs.plugins[root.ID]; ok {
 				hermesPluginFact(&fact, &explanation, source, ref, plugin, inputs)
 			}
-			if !hermesPlatformMatches(source.Manifest.Metadata["platforms"]) {
+			if !hermesPlatformMatches(metadata["platforms"]) {
 				fact.Participation = ParticipationExcluded
 				fact.Evidence = hermesEvidence(EvidenceInferred, "os-platform", source.Manifest.Path, "platforms", "frontmatter excludes inspected operating system "+runtime.GOOS)
 			}
@@ -317,9 +348,17 @@ func explainHermesSource(snapshot *Snapshot, id SourceID, roots map[RootID]Disco
 			} else {
 				nativeNames[referenceName] = true
 			}
-			if source.Manifest.Status != ManifestParsed {
+			if !known {
 				fact.Participation = ParticipationUnknown
-				fact.Evidence = hermesEvidence(EvidenceUnknown, "manifest-coverage", source.Manifest.Path, "", "strict viewer parse cannot establish native fallback metadata")
+				fact.Evidence = hermesEvidence(EvidenceUnknown, "manifest-coverage", source.Manifest.Path, "", "strict viewer parse cannot establish native index metadata")
+				explanation.NativeNameEvidence.Kind = EvidenceUnknown
+				if root.Origin == "hermes-profile" || root.Origin == "hermes-external" {
+					fact.Permission.State = PermissionUnknown
+					fact.Permission.Evidence = fact.Evidence
+					explanation.NativeNameEvidence.Reason = fact.Evidence.Reason
+				}
+			} else if (root.Origin == "hermes-profile" || root.Origin == "hermes-external") && hermesPlatformMatches(metadata["platforms"]) && !hermesPlatformMatches(source.Manifest.Metadata["platforms"]) {
+				explanation.Invocation.Evidence.Reason = "native index OS eligibility differs from full-content prompt filtering; running-session offers remain unknown"
 			}
 		}
 		explanation.References = append(explanation.References, fact)
@@ -363,6 +402,7 @@ func explainHermesSource(snapshot *Snapshot, id SourceID, roots map[RootID]Disco
 		explanation.NativeNameEvidence.Reason = "shared source has several reference-specific native names; permission facts are separate and aggregate effective precedence is unknown"
 		explanation.State = AvailabilityUnknown
 		explanation.Reason = explanation.NativeNameEvidence.Reason
+		explanation.Precedence = &PrecedenceExplanation{State: PrecedenceUnknown, Evidence: hermesEvidence(EvidenceUnknown, "multiple-native-names", source.Manifest.Path, "", explanation.Reason)}
 	}
 	if explanation.State == AvailabilityUnavailable {
 		explanation.Reason = "native source excluded, inactive, or inspection-only; see reference rules"
@@ -389,10 +429,10 @@ func explainHermesSource(snapshot *Snapshot, id SourceID, roots map[RootID]Disco
 	}
 	return source
 }
-func hermesReferenceName(source Source, ref Reference) string {
-	name := source.Manifest.Name
+func hermesReferenceName(metadata map[string]any, directory string) string {
+	name, _ := metadata["name"].(string)
 	if name == "" {
-		name = filepath.Base(ref.DiscoveredPath)
+		name = filepath.Base(directory)
 	}
 	chars := []rune(name)
 	return string(chars[:min(len(chars), 64)])
@@ -474,7 +514,7 @@ func hermesExcluded(ref Reference, root DiscoveryRoot) string {
 	}
 	return ""
 }
-func applyHermesPrecedence(snapshot *Snapshot, roots []DiscoveryRoot) {
+func applyHermesPrecedence(snapshot *Snapshot, roots []DiscoveryRoot, indexMetadata map[SourceID]hermesIndexObservation) {
 	type candidate struct {
 		source    SourceID
 		reference Reference
@@ -498,7 +538,7 @@ func applyHermesPrecedence(snapshot *Snapshot, roots []DiscoveryRoot) {
 				}
 			}
 			if eligible {
-				nativeName := hermesReferenceName(source, ref)
+				nativeName := hermesReferenceName(indexMetadata[source.ID].metadata, ref.DiscoveredPath)
 				groups[nativeName] = append(groups[nativeName], candidate{source.ID, ref, rank})
 			}
 		}
@@ -508,7 +548,7 @@ func applyHermesPrecedence(snapshot *Snapshot, roots []DiscoveryRoot) {
 			if candidates[i].rank != candidates[j].rank {
 				return candidates[i].rank < candidates[j].rank
 			}
-			return candidates[i].reference.DiscoveredPath < candidates[j].reference.DiscoveredPath
+			return filepath.Join(candidates[i].reference.DiscoveredPath, "SKILL.md") < filepath.Join(candidates[j].reference.DiscoveredPath, "SKILL.md")
 		})
 		unique := make([]candidate, 0, len(candidates))
 		seen := make(map[SourceID]bool)
@@ -526,6 +566,9 @@ func applyHermesPrecedence(snapshot *Snapshot, roots []DiscoveryRoot) {
 		}
 		for _, id := range ids {
 			source := snapshot.sources[id]
+			if source.Availability.NativeNameEvidence.Rule == "multiple-native-names" {
+				continue
+			}
 			state := PrecedenceUnique
 			reason := "native index uses active profile first, then external_dirs in configuration order; lexically sorted paths break ties"
 			if len(ids) > 1 {
