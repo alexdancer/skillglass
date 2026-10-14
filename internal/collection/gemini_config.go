@@ -5,12 +5,15 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"syscall"
 )
 
 const geminiValidatedVersion = "Gemini CLI 0.63.0"
+
+var geminiSettingsPlaceholder = regexp.MustCompile(`\$(?:\w+|\{[^}]+\})`)
 
 type geminiInputs struct {
 	scope                AgentScope
@@ -174,7 +177,7 @@ func (in *geminiInputs) loadSettings(path, scope string, apply bool) {
 		} else {
 			for _, item := range names {
 				name, ok := item.(string)
-				if !ok || strings.Contains(name, "${") {
+				if !ok || geminiSettingsPlaceholder.MatchString(name) {
 					in.problem(path, "skills.disabled contains an invalid or unverified environment-expanded name")
 					layer.State = "unknown"
 					continue
@@ -188,14 +191,27 @@ func (in *geminiInputs) loadSettings(path, scope string, apply bool) {
 		keys   []string
 		target *bool
 	}{{[]string{"security", "allowedExtensions"}, &in.allowedPolicy}, {[]string{"security", "blockGitExtensions"}, &in.blockGitPolicy}} {
-		value, present, _ := geminiObject(data, field.keys...)
-		if present {
-			active := value != false
-			if array, ok := value.([]any); ok {
-				active = len(array) > 0
-			}
-			*field.target = active
+		value, present, valid := geminiObject(data, field.keys...)
+		if !present {
+			continue
 		}
+		active, ok := value.(bool)
+		if field.keys[1] == "allowedExtensions" {
+			var array []any
+			array, ok = value.([]any)
+			active = len(array) > 0
+			for _, item := range array {
+				if _, stringOK := item.(string); !stringOK {
+					ok = false
+				}
+			}
+		}
+		if !valid || !ok {
+			in.problem(path, strings.Join(field.keys, ".")+" has an invalid type")
+			layer.State = "unknown"
+			continue
+		}
+		*field.target = active
 	}
 	in.scope.ConfigLayers = append(in.scope.ConfigLayers, layer)
 }

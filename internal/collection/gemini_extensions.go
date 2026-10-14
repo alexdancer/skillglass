@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 var geminiExtensionName = regexp.MustCompile(`^[a-zA-Z0-9-]+$`)
@@ -27,7 +28,7 @@ func discoverGeminiExtensions(in *geminiInputs, add func(string, ReferenceContex
 	}
 	enablementPath := filepath.Join(directory, "extension-enablement.json")
 	var enablement map[string]struct {
-		Overrides *[]string `json:"overrides"`
+		Overrides []any `json:"overrides"`
 	}
 	raw, readErr := nativeBytes(enablementPath)
 	unknown := false
@@ -40,12 +41,19 @@ func discoverGeminiExtensions(in *geminiInputs, add func(string, ReferenceContex
 			in.problem(enablementPath, "extension overrides must be an array of strings")
 			unknown = true
 		}
+		for _, rule := range entry.Overrides {
+			if _, ok := rule.(string); !ok {
+				in.problem(enablementPath, "extension overrides must contain only strings")
+				unknown = true
+			}
+		}
 	}
 	type registration struct {
-		path     string
-		manifest geminiExtension
-		valid    bool
-		linked   bool
+		path        string
+		manifest    geminiExtension
+		valid       bool
+		uninspected bool
+		linked      bool
 	}
 	var registrations []registration
 	counts := make(map[string]int)
@@ -78,17 +86,24 @@ func discoverGeminiExtensions(in *geminiInputs, add func(string, ReferenceContex
 		manifestPath := filepath.Join(path, "gemini-extension.json")
 		raw, err = nativeBytes(manifestPath)
 		var manifest geminiExtension
-		valid := err == nil && json.Unmarshal(raw, &manifest) == nil && manifest.Name != "" && manifest.Version != "" && geminiExtensionName.MatchString(manifest.Name)
+		uninspected := !nativeAbsent(manifestPath, err) && (err != nil || !utf8.Valid(raw))
+		if uninspected {
+			in.problem(manifestPath, "extension manifest could not be fully inspected as bounded UTF-8")
+		}
+		valid := !uninspected && err == nil && json.Unmarshal(raw, &manifest) == nil && manifest.Name != "" && manifest.Version != "" && geminiExtensionName.MatchString(manifest.Name)
 		if valid {
 			counts[manifest.Name]++
 		}
-		registrations = append(registrations, registration{path, manifest, valid, linked})
+		registrations = append(registrations, registration{path, manifest, valid, uninspected, linked})
 	}
 	for _, registration := range registrations {
 		path := filepath.Join(registration.path, "skills")
 		state := ParticipationEligible
 		reason := "valid extension manifest registered under native user extension directory; enabled by default"
-		if !registration.valid {
+		if registration.uninspected {
+			state = ParticipationUnknown
+			reason = "extension registration manifest could not be fully inspected"
+		} else if !registration.valid {
 			state = ParticipationExcluded
 			reason = "folder alone is not proof of extension registration; native manifest is missing or invalid"
 		} else if unknown || in.extensionPolicy || counts[registration.manifest.Name] > 1 || registration.linked {
@@ -96,11 +111,9 @@ func discoverGeminiExtensions(in *geminiInputs, add func(string, ReferenceContex
 			reason = "duplicate registration, security policy, linked extension, or unreadable enablement requires unverified activation evidence"
 		} else {
 			current := in.project
-			var overrides []string
-			if entry, ok := enablement[registration.manifest.Name]; ok && entry.Overrides != nil {
-				overrides = *entry.Overrides
-			}
-			for _, rule := range overrides {
+			overrides := enablement[registration.manifest.Name].Overrides
+			for _, value := range overrides {
+				rule := value.(string)
 				if current == "" && rule != "/*" && rule != "!/*" {
 					state = ParticipationUnknown
 					reason = "project-specific extension override requires a selected workspace"
@@ -125,7 +138,7 @@ func discoverGeminiExtensions(in *geminiInputs, add func(string, ReferenceContex
 		if !registration.valid {
 			provenance.Kind = "managed-candidate"
 			provenance.Evidence.Kind = EvidenceUnknown
-			provenance.Evidence.Reason = "unregistered extension candidate; folder does not establish ownership"
+			provenance.Evidence.Reason = reason + "; folder does not establish ownership"
 		}
 		add(path, ContextManaged, "gemini-extension", 10, state, e, provenance)
 	}
@@ -134,8 +147,8 @@ func geminiExtensionRule(rule, current string) bool {
 	pattern := strings.TrimPrefix(rule, "!")
 	var expression strings.Builder
 	expression.WriteString("^")
-	for i := 0; i < len(pattern); i++ {
-		if pattern[i] == '*' {
+	for i, character := range pattern {
+		if character == '*' {
 			if i > 0 && pattern[i-1] == '/' { // native glob makes the preceding slash optional along with suffix
 				value := expression.String()
 				expression.Reset()
@@ -145,7 +158,7 @@ func geminiExtensionRule(rule, current string) bool {
 				expression.WriteString("(.*)?")
 			}
 		} else {
-			expression.WriteString(regexp.QuoteMeta(string(pattern[i])))
+			expression.WriteString(regexp.QuoteMeta(string(character)))
 		}
 	}
 	expression.WriteString("$")

@@ -181,6 +181,9 @@ var geminiNameCharacters = regexp.MustCompile(`[:\\/<>*?"|]`)
 
 func geminiNativeName(source Source) (string, Evidence, bool) {
 	path := source.Manifest.Path
+	if source.Manifest.Status == ManifestUnreadable || source.Manifest.RawBytesBase64 != "" {
+		return "", geminiEvidence(EvidenceUnknown, "native-manifest-inspection", path, "", "native manifest could not be fully inspected as bounded UTF-8"), false
+	}
 	match := geminiFrontmatter.FindStringSubmatch(source.Manifest.RawText)
 	if match == nil {
 		return "", geminiEvidence(EvidenceInferred, "native-manifest-rejection", path, "", "frontmatter must begin on first line with name and description"), false
