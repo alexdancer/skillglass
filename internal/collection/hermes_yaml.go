@@ -3,6 +3,7 @@ package collection
 import (
 	"regexp"
 	"strings"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -73,7 +74,12 @@ func hermesYAMLConstructorValid(node *yaml.Node, seen map[*yaml.Node]bool) bool 
 		scalar := hermesYAMLScalarNode(node)
 		return scalar != nil && hermesYAMLScalarValid(hermesYAMLNativeTag(node), scalar.Value)
 	case "!!timestamp":
-		return node.Kind == yaml.ScalarNode
+		var value time.Time
+		if node.Kind != yaml.ScalarNode || node.Decode(&value) != nil {
+			return false
+		}
+		_, offset := value.Zone()
+		return value.Year() >= 1 && value.Year() <= 9999 && offset > -24*60*60 && offset < 24*60*60
 	case "!!map", "!!set":
 		return hermesYAMLMappingValid(node, seen, make(map[*yaml.Node]bool))
 	case "!!seq":

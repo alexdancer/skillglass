@@ -55,7 +55,7 @@ func (inputs *hermesInputs) yaml(path string) (map[string]any, string, hermesYAM
 	}
 	value, _, err := decodeMetadata(raw)
 	if err != nil {
-		inputs.problem(path, "Hermes input is invalid YAML: "+err.Error())
+		inputs.problem(path, "Hermes input is invalid YAML")
 		return nil, "unknown", hermesYAMLObservation{}
 	}
 	return value, "read", observeHermesYAML(raw)
