@@ -90,6 +90,16 @@ func (inputs *hermesInputs) readPolicy(request Request) {
 		}
 		inputs.pluginConfigPath = inputs.managedConfigPath
 	}
+	inputs.pluginScalarKnown = true
+	for _, key := range []string{"enabled", "disabled"} {
+		observation := inputs.configYAML
+		if _, present := inputs.pluginManaged[key]; present {
+			observation = inputs.managedYAML
+		}
+		if !observation.known("plugins." + key) {
+			inputs.pluginScalarKnown = false
+		}
+	}
 }
 func (inputs *hermesInputs) readPolicyEnv(path string, managed bool) {
 	scope := "profile-environment"
@@ -260,6 +270,7 @@ func (inputs *hermesInputs) readManagedPlugins(path string) {
 	if present && value != nil && hermesMap(data, "plugins") == nil {
 		inputs.pluginProblem(path, "managed plugins must be a mapping")
 	}
+	inputs.managedYAML = observeHermesYAML(raw)
 	inputs.pluginManaged = hermesMap(data, "plugins")
 	inputs.managedConfigPath = path
 	inputs.policyLayer(path, "managed-plugin-config", "read", "managed values replace user values per leaf; raw skills.disabled remains profile-only")

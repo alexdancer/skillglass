@@ -13,6 +13,7 @@ import (
 type hermesPlugin struct {
 	path, key, name, namespace, version string
 	portable, admitted                  bool
+	nameKnown, keyKnown, versionKnown   bool
 	state                               ParticipationState
 	reason                              string
 }
@@ -88,7 +89,7 @@ func discoverHermesPlugins(request *Request, inputs *hermesInputs) {
 					}
 					portable = true
 				}
-				plugin := hermesPlugin{path: child, portable: portable, state: ParticipationUnknown, reason: "native plugin code controls registration; it is never executed by the viewer"}
+				plugin := hermesPlugin{path: child, portable: portable, nameKnown: true, keyKnown: true, versionKnown: true, state: ParticipationUnknown, reason: "native plugin code controls registration; it is never executed by the viewer"}
 				var data map[string]any
 				if portable {
 					raw, err := nativeBytes(manifest)
@@ -98,20 +99,37 @@ func discoverHermesPlugins(request *Request, inputs *hermesInputs) {
 					}
 				} else {
 					var state string
-					data, state = inputs.yaml(manifest)
+					var observation hermesYAMLObservation
+					data, state, observation = inputs.yaml(manifest)
 					plugin.admitted = state == "read"
+					plugin.nameKnown = observation.known("name")
+					plugin.versionKnown = observation.known("version")
+					if value, present := data["name"]; present {
+						_, text := value.(string)
+						plugin.nameKnown = plugin.nameKnown && text
+					}
+					if value, present := data["version"]; present {
+						_, text := value.(string)
+						plugin.versionKnown = plugin.versionKnown && text
+					}
 				}
 				name, _ := data["name"].(string)
-				if name == "" && !portable {
+				if _, present := data["name"]; !present && !portable {
 					name = entry.Name()
 				}
+				if !plugin.nameKnown {
+					name = ""
+				}
 				plugin.name = name
-				plugin.key = name
+				plugin.key, plugin.keyKnown = name, plugin.nameKnown
 				if prefix != "" {
 					plugin.key = prefix + "/" + entry.Name()
+					plugin.keyKnown = true
 				}
 				plugin.namespace = name
-				plugin.version, _ = data["version"].(string)
+				if plugin.versionKnown {
+					plugin.version, _ = data["version"].(string)
+				}
 				if portable {
 					plugin.namespace = hermesPortableNamespace(plugin.key)
 					if !hermesPortableManifestValid(data) || !hermesPluginContained(manifest, child) {
@@ -127,19 +145,19 @@ func discoverHermesPlugins(request *Request, inputs *hermesInputs) {
 				enabled, enabledOK := hermesPluginStrings(config["enabled"])
 				disabled, disabledOK := hermesPluginStrings(config["disabled"])
 				switch {
-				case !enabledOK || !disabledOK || inputs.uncertain || inputs.pluginUncertain:
-					plugin.state = ParticipationUnknown
-					plugin.reason = "plugin configuration could not be reliably interpreted"
 				case inputs.envEnabled("HERMES_SAFE_MODE"):
 					plugin.state = ParticipationExcluded
 					plugin.reason = "HERMES_SAFE_MODE skips plugin discovery"
 				case project && !inputs.envEnabled("HERMES_ENABLE_PROJECT_PLUGINS"):
 					plugin.state = ParticipationExcluded
 					plugin.reason = "project plugins require HERMES_ENABLE_PROJECT_PLUGINS opt-in; selected project has no ancestor inheritance"
-				case hermesHas(disabled, plugin.key) || hermesHas(disabled, name):
+				case !enabledOK || !disabledOK || inputs.uncertain || inputs.pluginUncertain || !inputs.pluginScalarKnown || !plugin.keyKnown:
+					plugin.state = ParticipationUnknown
+					plugin.reason = "plugin configuration or native registry string identity could not be reliably interpreted"
+				case hermesHas(disabled, plugin.key) || (plugin.nameKnown && hermesHas(disabled, name)):
 					plugin.state = ParticipationExcluded
 					plugin.reason = "plugins.disabled overrides plugins.enabled"
-				case !hermesHas(enabled, plugin.key) && !hermesHas(enabled, name):
+				case !hermesHas(enabled, plugin.key) && (!plugin.nameKnown || !hermesHas(enabled, name)):
 					plugin.state = ParticipationExcluded
 					plugin.reason = "plugins are opt-in; registry key/name is absent from plugins.enabled"
 				}
@@ -158,12 +176,12 @@ func discoverHermesPlugins(request *Request, inputs *hermesInputs) {
 	}
 	winners := make(map[string]int)
 	for index, plugin := range plugins {
-		if plugin.admitted {
+		if plugin.admitted && plugin.keyKnown {
 			winners[plugin.key] = index
 		}
 	}
 	for index, plugin := range plugins {
-		if winner, ok := winners[plugin.key]; plugin.admitted && ok && winner != index {
+		if winner, ok := winners[plugin.key]; plugin.admitted && plugin.keyKnown && ok && winner != index {
 			plugin.state = ParticipationExcluded
 			plugin.reason = "later project plugin manifest with the same registry key overrides this user plugin"
 		}
@@ -255,8 +273,16 @@ func hermesPluginContained(path, root string) bool {
 }
 func hermesPluginFact(fact *ReferenceAvailability, explanation *AvailabilityExplanation, source Source, ref Reference, plugin hermesPlugin, inputs *hermesInputs) {
 	fact.Participation = plugin.state
-	fact.Evidence = hermesEvidence(EvidenceInferred, "plugin-registration", inputs.pluginConfigPath, "plugins.enabled, plugins.disabled", plugin.reason)
+	kind := EvidenceInferred
+	if plugin.state == ParticipationUnknown {
+		kind = EvidenceUnknown
+	}
+	fact.Evidence = hermesEvidence(kind, "plugin-registration", inputs.pluginConfigPath, "plugins.enabled, plugins.disabled", plugin.reason)
 	fact.Provenance = Provenance{Kind: "plugin", PluginID: plugin.key, Version: plugin.version, Evidence: hermesEvidence(EvidenceObserved, "plugin-manifest", plugin.path, "", plugin.reason)}
+	if !plugin.versionKnown {
+		fact.Provenance.Evidence.Kind = EvidenceUnknown
+		fact.Provenance.Evidence.Reason = "native YAML version stringification is outside supported scalar semantics"
+	}
 	bare := source.Manifest.Name
 	if plugin.portable {
 		bare = filepath.Base(ref.DiscoveredPath)
@@ -264,42 +290,60 @@ func hermesPluginFact(fact *ReferenceAvailability, explanation *AvailabilityExpl
 	qualified := plugin.namespace + ":" + bare
 	explanation.NativeName = qualified
 	fact.Permission = hermesPermission(qualified, inputs)
-	if plugin.portable && !hermesPortableSkillValid(source, bare) {
-		fact.Participation = ParticipationExcluded
-		fact.Evidence.Reason = "portable skill frontmatter does not satisfy native directory/name/description constraints"
+	if plugin.portable {
+		valid, known := hermesPortableSkillValid(source, bare)
+		if fact.Participation != ParticipationExcluded {
+			if !known {
+				fact.Participation = ParticipationUnknown
+				fact.Evidence = hermesEvidence(EvidenceUnknown, "portable-yaml-interpretation", source.Manifest.Path, "", "portable YAML string semantics are outside supported native interpretation")
+			} else if !valid {
+				fact.Participation = ParticipationExcluded
+				fact.Evidence.Reason = "portable skill frontmatter does not satisfy native directory/name/description constraints"
+			}
+		}
 	}
 
 	explanation.NativeNameEvidence = &Evidence{Kind: EvidenceInferred, Rule: "plugin-qualified-name", InputPath: plugin.path, AgentVersion: hermesValidatedVersion, Reason: "portable namespace derives from registry key; native dynamic registration names remain unverified"}
+	if !plugin.nameKnown || source.Manifest.Status != ManifestParsed || !observeHermesYAML([]byte(source.Manifest.RawFrontmatter)).known("name") {
+		explanation.NativeName = ""
+		explanation.NativeNameEvidence.Kind = EvidenceUnknown
+		explanation.NativeNameEvidence.Reason = "native plugin or skill name string interpretation cannot be established"
+		fact.Permission.State = PermissionUnknown
+		fact.Permission.Evidence = *explanation.NativeNameEvidence
+	}
 }
 
-func hermesPortableSkillValid(source Source, bare string) bool {
-	if source.Manifest.Status != ManifestParsed || source.Manifest.Name != bare || source.Manifest.Description == "" || !regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`).MatchString(bare) || len(bare) > 64 || len([]rune(source.Manifest.Description)) > 1024 {
-		return false
+func hermesPortableSkillValid(source Source, bare string) (bool, bool) {
+	if source.Manifest.Status != ManifestParsed || !observeHermesYAML([]byte(source.Manifest.RawFrontmatter)).known("name", "description", "license", "compatibility", "metadata", "allowed-tools") {
+		return false, false
+	}
+	if source.Manifest.Name != bare || source.Manifest.Description == "" || !regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`).MatchString(bare) || len(bare) > 64 || len([]rune(source.Manifest.Description)) > 1024 {
+		return false, true
 	}
 	data := source.Manifest.Metadata
 	for _, key := range []string{"license", "allowed-tools"} {
 		if value, present := data[key]; present {
 			if _, ok := value.(string); !ok {
-				return false
+				return false, true
 			}
 		}
 	}
 	if value, present := data["compatibility"]; present {
 		text, ok := value.(string)
 		if !ok || len([]rune(text)) == 0 || len([]rune(text)) > 500 {
-			return false
+			return false, true
 		}
 	}
 	if value, present := data["metadata"]; present {
 		fields, ok := value.(map[string]any)
 		if !ok {
-			return false
+			return false, true
 		}
 		for _, value := range fields {
 			if _, ok := value.(string); !ok {
-				return false
+				return false, true
 			}
 		}
 	}
-	return true
+	return true, true
 }

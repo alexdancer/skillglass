@@ -3,6 +3,7 @@ package acceptance_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -42,6 +43,11 @@ func (fx fixture) prepareLaunchProfiles(t *testing.T) {
 			policy += fmt.Sprintf("(allow file-read-data (literal %s))\n", sandboxString(path))
 		}
 		writeFile(t, fx.launchProfile(executable), []byte(policy), 0600)
+		raw, err := os.ReadFile(fx.launchProfile(executable))
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeEvidence(t, fmt.Sprintf("launch-profiles/%x.sb", sha256.Sum256(raw)), raw)
 	}
 }
 func (fx fixture) fixtureCommand(ctx context.Context, executable string, args ...string) *exec.Cmd {
