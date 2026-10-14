@@ -351,8 +351,14 @@ func applyPiPrecedence(snapshot *Snapshot, ranks map[SourceID]int) {
 	groups := make(map[string][]SourceID)
 	for _, id := range snapshot.order {
 		s := snapshot.sources[id]
-		if s.Availability.NativeName != "" && (s.Availability.State == AvailabilityAvailable || s.Availability.State == AvailabilityExplicitOnly) {
-			groups[s.Availability.NativeName] = append(groups[s.Availability.NativeName], id)
+		if s.Availability.NativeName == "" {
+			continue
+		}
+		for _, ref := range s.Availability.References {
+			if ref.Reference == s.Availability.ReferenceID && (ref.Participation == ParticipationEligible || ref.Participation == ParticipationUnknown) && ref.Permission.State != PermissionDenied {
+				groups[s.Availability.NativeName] = append(groups[s.Availability.NativeName], id)
+				break
+			}
 		}
 	}
 	for _, ids := range groups {
@@ -366,19 +372,34 @@ func applyPiPrecedence(snapshot *Snapshot, ranks map[SourceID]int) {
 			continue
 		}
 		winner := ids[0]
+		first := snapshot.sources[winner]
+		winnerKnown := first.Availability.State == AvailabilityAvailable || first.Availability.State == AvailabilityExplicitOnly
 		for _, id := range ids {
 			s := snapshot.sources[id]
-			s.Availability.Precedence.Winner = winner
 			for _, related := range ids {
 				if related != id {
 					s.Availability.Precedence.RelatedSources = append(s.Availability.Precedence.RelatedSources, related)
 				}
 			}
-			if id != winner {
-				s.Availability.State = AvailabilityShadowed
-				s.Availability.Reason = "higher-priority enabled Pi resource wins the native name"
-				e := piEvidence(EvidenceInferred, "native-first-name-wins", s.Manifest.Path, "", s.Availability.Reason)
-				s.Availability.Evidence = &e
+			enabled := s.Availability.State == AvailabilityAvailable || s.Availability.State == AvailabilityExplicitOnly
+			if !winnerKnown {
+				reason := "earlier potentially eligible Pi resource has uncertain eligibility for the same native name"
+				e := piEvidence(EvidenceUnknown, "native-first-name-uncertain", first.Manifest.Path, first.Availability.NativeName, reason)
+				s.Availability.Precedence.State = PrecedenceUnknown
+				s.Availability.Precedence.Evidence = e
+				if enabled {
+					s.Availability.State = AvailabilityUnknown
+					s.Availability.Reason = reason
+					s.Availability.Evidence = &e
+				}
+			} else {
+				s.Availability.Precedence.Winner = winner
+				if id != winner && enabled {
+					s.Availability.State = AvailabilityShadowed
+					s.Availability.Reason = "higher-priority enabled Pi resource wins the native name"
+					e := piEvidence(EvidenceInferred, "native-first-name-wins", s.Manifest.Path, "", s.Availability.Reason)
+					s.Availability.Evidence = &e
+				}
 			}
 			snapshot.sources[id] = s
 		}
