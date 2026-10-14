@@ -101,16 +101,24 @@ func TestALE35InvalidAvailabilityConfigTerminalEvidence(t *testing.T) {
 	ale35InvalidConfigTerminalEvidence(t, `{"agent":{"build":{"disable":"false"}}}`, "ale35-invalid-availability")
 }
 
+func TestALE35LegacyConfigTerminalEvidence(t *testing.T) {
+	ale35UnknownConfigTerminalEvidence(t, "[permission]\nskill = \"deny\"\n", "ale35-legacy", "config")
+}
+
 func ale35InvalidConfigTerminalEvidence(t *testing.T, configText, evidenceName string) {
+	ale35UnknownConfigTerminalEvidence(t, configText, evidenceName, "opencode.json")
+}
+
+func ale35UnknownConfigTerminalEvidence(t *testing.T, configText, evidenceName, inputName string) {
 	tmux, err := exec.LookPath("tmux")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, size := range []struct{ width, height int }{{48, 24}, {80, 30}} {
 		t.Run(fmt.Sprintf("%dx%d", size.width, size.height), func(t *testing.T) {
-			fx, _ := codexFixture(t)
+			fx := newFixture(t)
 			codexSkill(t, filepath.Join(fx.xdgConfig, "opencode", "skills"), strings.Repeat("long-folder-", 8), "invalid-input-source")
-			config := filepath.Join(fx.xdgConfig, "opencode", "opencode.json")
+			config := filepath.Join(fx.xdgConfig, "opencode", inputName)
 			opencodeConfig(t, config, configText)
 			before := treeManifest(t, fx.base)
 			socket := fmt.Sprintf("ale35-invalid-%d-%d", os.Getpid(), size.width)
@@ -143,7 +151,7 @@ func ale35InvalidConfigTerminalEvidence(t *testing.T, configText, evidenceName s
 				previous := first
 				detail = actOnPane(t, tmux, fx, socket, "browser:0.0", func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "PageDown") }, func(next paneSnapshot) bool { first, _, _ := sourceDetailRange(next.cells); return first > previous }).cells
 			}
-			for _, needle := range []string{"Permission: unknown", "opencode.json", "Session: unknown"} {
+			for _, needle := range []string{"Permission: unknown", "opencode/" + inputName, "Session: unknown"} {
 				if !paneContains(explained.String(), needle) {
 					t.Fatalf("unknown explanation omitted %s", needle)
 				}

@@ -272,6 +272,23 @@ func (in *opencodeInputs) load(path, scope string, raw []byte, required bool) {
 	}
 	in.scope.ConfigLayers = append(in.scope.ConfigLayers, layer)
 }
+
+// The pinned global loader recognizes this legacy path. Presence is observed;
+// its native import/merge/migration behavior is source inference only.
+func (in *opencodeInputs) detectGlobalLegacy(path string) {
+	_, err := os.Stat(path)
+	layer := PermissionLayer{Path: path, Scope: "global", State: "absent", Reason: "optional global legacy config does not exist", Evidence: opencodeEvidence(EvidenceObserved, "config-layer", path, "", "read-only metadata inspection; legacy content is never read")}
+	if !nativeAbsent(path, err) {
+		layer.State = "unknown"
+		layer.Reason = "global legacy config is present; pinned loader may import it, but native legacy loading and migration are unverified"
+		if err != nil {
+			layer.Evidence.Kind = EvidenceUnknown
+			layer.Reason = "global legacy config cannot be inspected safely; pinned loader recognizes this path, but native legacy loading and migration are unverified"
+		}
+		in.problem(path, layer.Reason)
+	}
+	in.scope.ConfigLayers = append(in.scope.ConfigLayers, layer)
+}
 func (in *opencodeInputs) loadPair(dir, scope string) {
 	for _, name := range []string{"opencode.json", "opencode.jsonc"} {
 		in.load(filepath.Join(dir, name), scope, nil, false)
@@ -297,6 +314,7 @@ func readOpencodeInputs(request Request, ancestors []string) *opencodeInputs {
 	for _, name := range []string{"config.json", "opencode.json", "opencode.jsonc"} {
 		in.load(filepath.Join(global, name), "global", nil, false)
 	}
+	in.detectGlobalLegacy(filepath.Join(global, "config"))
 	if raw := os.Getenv("OPENCODE_CONFIG"); raw != "" {
 		in.load(opencodePath(raw, project, home), "custom-config", nil, true)
 	}

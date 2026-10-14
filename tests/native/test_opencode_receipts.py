@@ -4,6 +4,8 @@ import json
 import os
 from pathlib import Path
 import shutil
+import signal
+import time
 import subprocess
 import sys
 import tempfile
@@ -121,6 +123,126 @@ class ReceiptControls(unittest.TestCase):
                 native_receipts.recorded_run(self.out, 'fail-closed', [str(self.binary)],
                                             cwd=self.base, env=self.env)
             launch.assert_not_called()
+
+    def test_launch_record_failure_retains_cleanup_and_persistence_errors(self):
+        class Child:
+            pid = 987654321
+            returncode = 0
+            def communicate(self, timeout=None):
+                return b'inert output', b''
+        for cleanup_fails, failure_record_fails in [(False, False), (True, False), (False, True)]:
+            real_write = native_receipts.durable_json
+            def fail_record(path, value):
+                if Path(path).name == 'launched.json':
+                    raise OSError('original launch-record failure')
+                if Path(path).name == 'failed.json' and failure_record_fails:
+                    raise OSError('failure-record persistence denied')
+                return real_write(path, value)
+            kill_error = PermissionError('owned group denied') if cleanup_fails else ProcessLookupError()
+            with patch.object(native_receipts, 'durable_json', side_effect=fail_record), \
+                    patch.object(native_receipts.os, 'killpg', side_effect=kill_error), \
+                    patch.object(native_receipts.subprocess, 'Popen', return_value=Child()):
+                with self.assertRaisesRegex(OSError, 'original launch-record failure') as raised:
+                    native_receipts.recorded_run(self.out, 'secondary-failure-control',
+                        [str(self.binary)], cwd=self.base, env=self.env)
+            current = max((self.out/'invocations').glob('*/prepared.json'), key=lambda p: p.stat().st_mtime_ns).parent
+            if failure_record_fails:
+                self.assertFalse((current/'failed.json').exists())
+                self.assertIn('failure-record persistence denied', str(raised.exception.__notes__))
+            else:
+                failed = json.loads((current/'failed.json').read_text())
+                self.assertEqual(failed['error'], 'original launch-record failure')
+                self.assertEqual(failed['pid'], Child.pid)
+                self.assertEqual(bool(failed['cleanup_errors']), cleanup_fails)
+                self.assertEqual(failed['group_cleanup'],
+                    ('owned process group cleanup failed' if cleanup_fails else 'owned process group already absent') + '; child reaped')
+            self.assertEqual((current/'stdout').read_bytes(), b'inert output')
+
+    def test_record_failure_after_leader_exit_stops_owned_descendant(self):
+        base = Path(tempfile.mkdtemp(prefix='ale35-cleanup-inert-', dir='/private/tmp'))
+        self.addCleanup(lambda: __import__('shutil').rmtree(base, ignore_errors=True))
+        for name in ['home', 'tmp', 'config', 'data', 'cache', 'state']:
+            (base/name).mkdir()
+        self.out.mkdir(exist_ok=True)
+        script = base/'inert.py'
+        program = '''import os, sys, time
+from pathlib import Path
+base=Path(sys.argv[1])
+child=os.fork()
+if child:
+    while not (base/'ready').exists(): time.sleep(.005)
+    os._exit(0)
+os.close(1); os.close(2)
+(base/'ready').write_text(str(os.getpid()))
+deadline=time.monotonic()+3
+while time.monotonic()<deadline:
+    if (base/'returned').exists():
+        (base/'continued-after-return').write_text('OWNED_DESCENDANT_CONTINUED')
+        break
+    time.sleep(.01)
+time.sleep(.5)
+os._exit(0)
+'''
+        script.write_text(program)
+        (self.out/'inert.py').write_text(program)
+        env={'PATH':'/usr/bin:/bin','HOME':str(base/'home'),'TMPDIR':str(base/'tmp'),
+             'XDG_CONFIG_HOME':str(base/'config'),'XDG_DATA_HOME':str(base/'data'),
+             'XDG_CACHE_HOME':str(base/'cache'),'XDG_STATE_HOME':str(base/'state'),
+             'PYTHONDONTWRITEBYTECODE':'1'}
+        real_write=native_receipts.durable_json
+        real_popen=native_receipts.subprocess.Popen
+        owned=[]
+        observed={}
+        def launch(*args, **kwargs):
+            child=real_popen(*args, **kwargs)
+            owned.append(child)
+            return child
+        def fail_launched(path, value):
+            if Path(path).name=='launched.json':
+                child=owned[0]
+                deadline=time.monotonic()+2
+                while child.poll() is None and time.monotonic()<deadline: time.sleep(.005)
+                self.assertEqual(child.poll(), 0, 'inert leader must already have exited')
+                self.assertTrue((base/'ready').exists(), 'owned descendant ready positive control')
+                observed.update(leader_exit=child.returncode, group=child.pid,
+                    descendant=int((base/'ready').read_text()), original_error='injected launched-record persistence error')
+                raise OSError(observed['original_error'])
+            return real_write(path,value)
+        argv=[sys.executable,str(script),str(base)]
+        try:
+            with patch.object(native_receipts.subprocess,'Popen',side_effect=launch), \
+                 patch.object(native_receipts,'durable_json',side_effect=fail_launched):
+                with self.assertRaisesRegex(OSError,'injected launched-record persistence error'):
+                    native_receipts.recorded_run(self.out, 'leader-exited-write-failure',argv,cwd=base,env=env,timeout=1)
+            (base/'returned').write_text('helper already returned')
+            deadline=time.monotonic()+.5
+            marker=base/'continued-after-return'
+            while not marker.exists() and time.monotonic()<deadline: time.sleep(.01)
+            observed.update(descendant_continued_work=marker.exists(),
+                            continued_marker=marker.read_text() if marker.exists() else None)
+            record=next(p for p in (self.out/'invocations').glob('*/failed.json')
+                        if json.loads(p.read_text()).get('pid')==owned[0].pid)
+            observed['failure_record']=json.loads(record.read_text())
+            (self.out/'observation.json').write_text(json.dumps(observed,indent=2)+'\n')
+            self.assertFalse(marker.exists(),'owned descendant must stop before recorded_run returns on persistence failure')
+            self.assertEqual(observed['failure_record']['group_cleanup'], 'SIGKILL sent to owned process group; child reaped')
+            self.assertEqual(owned[0].returncode, 0)
+        finally:
+            for child in owned:
+                try: os.killpg(child.pid,signal.SIGKILL)
+                except ProcessLookupError: pass
+                child.wait(timeout=1)
+                deadline=time.monotonic()+.5
+                absent=False
+                while time.monotonic()<deadline:
+                    try: os.killpg(child.pid,0)
+                    except ProcessLookupError: absent=True; break
+                    except PermissionError as error:
+                        observed['cleanup_presence_probe_error']=str(error); break
+                    time.sleep(.01)
+                observed['investigator_cleanup_sigkill_sent']=True
+                observed['investigator_cleanup_group_absent']=absent
+            (self.out/'observation.json').write_text(json.dumps(observed,indent=2)+'\n')
 
 
 if __name__ == '__main__':

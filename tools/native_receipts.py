@@ -105,23 +105,42 @@ def recorded_run(out, label, argv, *, cwd, env, binary=None, profile=None,
                       group_cleanup=cleanup, timed_out=timed_out, exit=child.returncode)
         durable_json(invocation/'completed.json', record)
     except BaseException as error:
-        if child is not None and child.poll() is None:
+        cleanup_errors = []
+        persistence_errors = []
+        if child is not None:
             try:
                 os.killpg(child.pid, signal.SIGKILL)
+                cleanup = 'SIGKILL sent to owned process group'
             except ProcessLookupError:
-                pass
-            stdout, stderr = child.communicate()
-            cleanup = 'owned process group stopped and child reaped after failure'
+                cleanup = 'owned process group already absent'
+            except BaseException as cleanup_error:
+                cleanup = 'owned process group cleanup failed'
+                cleanup_errors.append(f'{type(cleanup_error).__name__}: {cleanup_error}')
+            try:
+                stdout, stderr = child.communicate(timeout=timeout)
+                cleanup += '; child reaped'
+            except BaseException as cleanup_error:
+                cleanup += '; child drain/reap failed'
+                cleanup_errors.append(f'{type(cleanup_error).__name__}: {cleanup_error}')
         for name, data in [('stdout', stdout), ('stderr', stderr)]:
             if not (invocation/name).exists():
-                durable_file(invocation/name, data)
+                try:
+                    durable_file(invocation/name, data)
+                except BaseException as persistence_error:
+                    persistence_errors.append(f'{name}: {type(persistence_error).__name__}: {persistence_error}')
         failure = {**record, 'state': 'failed', 'finished_at': utc_now(),
                    'error_type': type(error).__name__, 'error': str(error),
                    'group_cleanup': cleanup, 'timed_out': timed_out,
                    'exit': child.returncode if child else None}
         if child:
             failure.update(pid=child.pid, owned_process_group=child.pid)
-        durable_json(invocation/'failed.json', failure)
+        failure.update(cleanup_errors=cleanup_errors, persistence_errors=persistence_errors)
+        try:
+            durable_json(invocation/'failed.json', failure)
+        except BaseException as persistence_error:
+            persistence_errors.append(f'failed.json: {type(persistence_error).__name__}: {persistence_error}')
+        for secondary_error in cleanup_errors + persistence_errors:
+            error.add_note(secondary_error)
         raise
     result = subprocess.CompletedProcess(argv, child.returncode, stdout, stderr)
     return result, record
