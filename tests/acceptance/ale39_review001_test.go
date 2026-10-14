@@ -13,7 +13,7 @@ func TestALE39Review001UnknownPluginPrecedence(t *testing.T) {
 		for _, mode := range []string{"enabled", "disabled", "unknown"} {
 			t.Run(topology+"/"+mode, func(t *testing.T) {
 				fx := codeafFixture(t)
-				plugin := filepath.Join(fx.base, "plugin")
+				plugin := filepath.Join(fx.base, "allowed", "plugin")
 				pluginSkill := filepath.Dir(codexSkill(t, filepath.Join(plugin, "skills"), "bundle", "collision"))
 				lower := ""
 				scope := "project"
@@ -24,7 +24,7 @@ func TestALE39Review001UnknownPluginPrecedence(t *testing.T) {
 				case "lower-shared-aliases", "same-source-alias-control":
 					lower = pluginSkill
 					if topology == "lower-shared-aliases" {
-						lower = filepath.Dir(codexSkill(t, filepath.Join(fx.base, "shared"), "bundle", "collision"))
+						lower = filepath.Dir(codexSkill(t, filepath.Join(fx.base, "allowed", "shared"), "bundle", "collision"))
 					}
 					for _, root := range []string{".codeaf/skills", ".agents/skills"} {
 						alias := filepath.Join(fx.home, root, "alias")
@@ -123,8 +123,8 @@ func TestALE39Review001UnknownPluginPrecedence(t *testing.T) {
 
 func TestALE39Review001InterposedPluginAlias(t *testing.T) {
 	fx := codeafFixture(t)
-	first := filepath.Join(fx.base, "first-plugin")
-	second := filepath.Join(fx.base, "second-plugin")
+	first := filepath.Join(fx.base, "allowed", "first-plugin")
+	second := filepath.Join(fx.base, "allowed", "second-plugin")
 	firstSkill := filepath.Dir(codexSkill(t, filepath.Join(first, "skills"), "bundle", "collision"))
 	secondSkill := filepath.Dir(codexSkill(t, filepath.Join(second, "skills"), "bundle", "collision"))
 	alias := filepath.Join(fx.home, ".codeaf/skills/alias")

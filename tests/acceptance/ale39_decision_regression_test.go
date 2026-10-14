@@ -14,7 +14,7 @@ func TestALE39DecisionPluginManifestFallback(t *testing.T) {
 			manifest, _ := codeafPluginFixture(t, fx)
 			container := filepath.Dir(filepath.Dir(manifest))
 			rootManifest := filepath.Join(container, "SKILL.md")
-			writeFile(t, filepath.Join(fx.base, "plugin/.claude-plugin/plugin.json"), []byte(`{"skills":"skills"}`), 0600)
+			writeFile(t, filepath.Join(fx.base, "allowed", "plugin/.claude-plugin/plugin.json"), []byte(`{"skills":"skills"}`), 0600)
 			switch mode {
 			case "intact":
 				writeFile(t, rootManifest, []byte("---\nname: root-skill\ndescription: Container is itself a skill.\n---\nInert.\n"), 0600)
@@ -80,7 +80,7 @@ func TestALE39DecisionGenericExplicitRootControls(t *testing.T) {
 	for _, mode := range []string{"absent", "intact", "broken"} {
 		t.Run(mode, func(t *testing.T) {
 			fx := codeafFixture(t)
-			container := filepath.Join(fx.base, "custom")
+			container := filepath.Join(fx.base, "allowed", "custom")
 			codexSkill(t, container, "child", "custom-child")
 			manifest := filepath.Join(container, "SKILL.md")
 			switch mode {
@@ -123,10 +123,10 @@ func TestALE39PluginStatSuccessControls(t *testing.T) {
 			manifest, _ := codeafPluginFixture(t, fx)
 			container := filepath.Dir(filepath.Dir(manifest))
 			rootManifest := filepath.Join(container, "SKILL.md")
-			writeFile(t, filepath.Join(fx.base, "plugin/.claude-plugin/plugin.json"), []byte(`{"skills":"skills"}`), 0600)
+			writeFile(t, filepath.Join(fx.base, "allowed", "plugin/.claude-plugin/plugin.json"), []byte(`{"skills":"skills"}`), 0600)
 			switch mode {
 			case "linked":
-				target := filepath.Join(fx.base, "root-target.md")
+				target := filepath.Join(fx.base, "allowed", "root-target.md")
 				writeFile(t, target, []byte("---\nname: root-skill\ndescription: Linked root.\n---\nInert.\n"), 0600)
 				if err := os.Symlink(target, rootManifest); err != nil {
 					t.Fatal(err)

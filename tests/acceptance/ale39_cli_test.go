@@ -3,7 +3,6 @@ package acceptance_test
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -41,7 +40,7 @@ func codeafPath(t *testing.T, list codexList, path string) codexSource {
 }
 func codeafPluginFixture(t *testing.T, fx fixture) (string, string) {
 	t.Helper()
-	plugin := filepath.Join(fx.base, "plugin")
+	plugin := filepath.Join(fx.base, "allowed", "plugin")
 	manifest := codexSkill(t, filepath.Join(plugin, "skills"), "plugin-skill", "plugin-skill")
 	registry := map[string]any{"plugins": map[string]any{"example@local": []any{map[string]any{"scope": "user", "installPath": plugin, "version": "1.2"}}}}
 	raw, err := json.Marshal(registry)
@@ -61,7 +60,7 @@ func TestALE39CodeAFPrecedenceSharedRootsAndReadOnly(t *testing.T) {
 	// Ancestors and deeply nested containers are not CodeAF project discovery.
 	codexSkill(t, filepath.Join(filepath.Dir(fx.project), ".codeaf/skills"), "ancestor", "not-an-ancestor")
 	codexSkill(t, filepath.Join(fx.project, ".agents/skills"), "deep/container", "not-recursive")
-	shared := filepath.Dir(codexSkill(t, filepath.Join(fx.base, "shared"), "real", "shared-skill"))
+	shared := filepath.Dir(codexSkill(t, filepath.Join(fx.base, "allowed", "shared"), "real", "shared-skill"))
 	for _, root := range []string{filepath.Join(fx.home, ".agents/skills"), filepath.Join(fx.home, ".claude/skills")} {
 		if err := os.MkdirAll(root, 0755); err != nil {
 			t.Fatal(err)
@@ -164,16 +163,18 @@ func TestALE39CodeAFPluginStateAndAttachmentDistinction(t *testing.T) {
 }
 func TestALE39CodeAFProfileAndLoginEnvironment(t *testing.T) {
 	fx := codeafFixture(t)
-	override := filepath.Join(fx.base, "alternate-login")
-	profile := filepath.Join(fx.base, "profile")
+	override := filepath.Join(fx.base, "allowed", "alternate-login")
+	profile := filepath.Join(fx.base, "allowed", "profile")
 	codexSkill(t, filepath.Join(override, ".agents/skills"), "alternate", "alternate-home")
 	codexSkill(t, filepath.Join(profile, ".agents/skills"), "profile", "profile-not-discovery")
 	before := treeManifest(t, fx.base)
 	run := func(extra []string) codexList {
-		command := exec.Command(skillglassBinary, "list", "--agent", "codeaf", "--json")
+		command := fx.productCommand(t, "list", "--agent", "codeaf", "--json")
 		command.Dir = fx.project
 		command.Env = append(fx.environment(), extra...)
+		launch := recordLaunch(t, command)
 		raw, err := command.Output()
+		recordEvidenceCommand(t, "codeaf-configured-home", commandResult{stdout: raw, code: launchExitCode(err), launch: launch})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -181,7 +182,12 @@ func TestALE39CodeAFProfileAndLoginEnvironment(t *testing.T) {
 		decodeJSON(t, raw, &list)
 		return list
 	}
-	for _, extra := range [][]string{{"CODEAF_HOME=" + override, "CODEAF_PROFILE_DIR=" + profile}, {"AFORGE_HOME=" + override, "AFORGE_PROFILE_DIR=" + profile}} {
+	for _, extra := range [][]string{
+		{"CODEAF_HOME=" + override, "CODEAF_PROFILE_DIR=" + profile},
+		{"AFORGE_HOME=" + override, "AFORGE_PROFILE_DIR=" + profile},
+		{"HOME=", "CODEAF_HOME=" + override, "CODEAF_PROFILE_DIR=" + profile},
+		{"HOME=", "AFORGE_HOME=" + override, "AFORGE_PROFILE_DIR=" + profile},
+	} {
 		list := run(extra)
 		if len(list.Sources) != 1 || list.Sources[0].Name != "alternate-home" {
 			t.Fatalf("environment scope %+v", list.Sources)
@@ -193,7 +199,7 @@ func TestALE39CodeAFOfflineContainment(t *testing.T) {
 	fx := codeafFixture(t)
 	codexSkill(t, filepath.Join(fx.home, ".agents/skills"), "contained", "contained-native")
 	before := treeManifest(t, fx.base)
-	profile := filepath.Join(fx.base, "deny-network.sb")
+	profile := filepath.Join(fx.base, "allowed", "deny-network.sb")
 	writeFile(t, profile, []byte(runtimeProfile(rawSkillglassBinary, fx.base)), 0600)
 	before = treeManifest(t, fx.base)
 	result := runSandboxCommand(t, fx, profile, rawSkillglassBinary, "list", "--agent", "codeaf", "--project", fx.project, "--json")
@@ -209,9 +215,9 @@ func TestALE39CodeAFOfflineContainment(t *testing.T) {
 
 func TestALE39CodeAFPluginDeclarationsScopesAndVersions(t *testing.T) {
 	fx := codeafFixture(t)
-	first := filepath.Join(fx.base, "plugins/first")
-	second := filepath.Join(fx.base, "plugins/second")
-	projectPlugin := filepath.Join(fx.base, "plugins/project")
+	first := filepath.Join(fx.base, "allowed", "plugins/first")
+	second := filepath.Join(fx.base, "allowed", "plugins/second")
+	projectPlugin := filepath.Join(fx.base, "allowed", "plugins/project")
 	firstManifest := codexSkill(t, first, "declared/one", "plugin-conflict")
 	secondManifest := codexSkill(t, second, "declared/two", "plugin-conflict")
 	localManifest := codexSkill(t, projectPlugin, "skills/local", "project-plugin")
@@ -245,7 +251,7 @@ func TestALE39CodeAFPluginDeclarationsScopesAndVersions(t *testing.T) {
 			t.Fatalf("unregistered folder loaded %+v", source)
 		}
 	}
-	other := filepath.Join(fx.base, "different-project")
+	other := filepath.Join(fx.base, "allowed", "different-project")
 	if err := os.Mkdir(other, 0755); err != nil {
 		t.Fatal(err)
 	}

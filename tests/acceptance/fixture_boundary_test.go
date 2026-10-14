@@ -60,10 +60,6 @@ func fixtureRuntimeProfile(executable, fixtureRoot string) string {
 `, sandboxString(executable), sandboxString(executable), ancestors.String(), sandboxString(fixtureRoot), sandboxString(filepath.Join(fixtureRoot, "excluded")))
 }
 
-func fixtureLauncherScript(executable string) string {
-	return "#!/bin/sh\nset -eu\n: \"${SKILLGLASS_FIXTURE_PROFILE:?fixture profile required}\"\nexec /usr/bin/sandbox-exec -f \"$SKILLGLASS_FIXTURE_PROFILE\" " + shellQuote(executable) + " \"$@\"\n"
-}
-
 func TestFixtureBrowserLaunchBoundaries(t *testing.T) {
 	fx := newFixture(t)
 	excluded := filepath.Join(fx.base, "excluded", "system-model")
@@ -72,9 +68,8 @@ func TestFixtureBrowserLaunchBoundaries(t *testing.T) {
 	args := []string{"browse", "--root", fx.cleanRoot, "--root", excluded, "--project", fx.project}
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, skillglassBinary, args...)
-	command.Dir = fx.project
-	command.Env = fx.environment()
+	command := fx.command(t, ctx, args...)
+	launch := recordLaunch(t, command)
 	terminal, err := pty.StartWithSize(command, &pty.Winsize{Rows: 30, Cols: 80})
 	if err != nil {
 		t.Fatal(err)
@@ -91,18 +86,14 @@ func TestFixtureBrowserLaunchBoundaries(t *testing.T) {
 		t.Fatalf("direct PTY boundary: %v, %s", err, raw.Bytes())
 	}
 	writeEvidence(t, "fixture-boundary/direct.ansi", raw.Bytes())
-	recordEvidenceCommand(t, "fixture-boundary-direct-pty", skillglassBinary, args, fx.project, commandResult{code: 1, stdout: raw.Bytes()})
+	recordEvidenceCommand(t, "fixture-boundary-direct-pty", commandResult{code: 1, stdout: raw.Bytes(), launch: launch})
 	tmux, err := exec.LookPath("tmux")
 	if err != nil {
 		t.Fatal(err)
 	}
 	socket := fmt.Sprintf("fixture-boundary-%d", os.Getpid())
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-	words := []string{"exec", shellQuote(skillglassBinary)}
-	for _, arg := range args {
-		words = append(words, shellQuote(arg))
-	}
-	runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", "80", "-y", "30", "-s", "browser", strings.Join(words, " "))
+	runTmuxProduct(t, tmux, fx, socket, fx.productCommand(t, args...), "new-session", "-d", "-x", "80", "-y", "30", "-s", "browser")
 	runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 	frame := waitForPane(t, tmux, fx, socket, false, "normal-skill", "Coverage: incomplete", "Enter read")
 	if strings.Contains(frame, "EXCLUDED_SYSTEM_SENTINEL") {
@@ -134,18 +125,12 @@ func TestFixturePolicyInertControls(t *testing.T) {
 	executable := canonicalPath(t, isolationProbeBinary)
 	profile := filepath.Join(fx.temporary, "probe.sb")
 	writeFile(t, profile, []byte(fixtureRuntimeProfile(executable, canonicalPath(t, fx.base))), 0600)
-	wrapper := filepath.Join(builtBinaryDir, "fixture-probe-"+filepath.Base(fx.base))
-	writeFile(t, wrapper, []byte(fixtureLauncherScript(executable)), 0700)
 	before := treeManifest(t, fx.base)
 	args := []string{allowed, excluded, blockedWrite, listener.Addr().String(), filepath.Dir(excluded)}
-	command := exec.Command(wrapper, args...)
+	command := exec.Command("/usr/bin/sandbox-exec", append([]string{"-f", profile, executable}, args...)...)
 	command.Dir = fx.project
 	command.Env = fx.environment()
-	for index, item := range command.Env {
-		if strings.HasPrefix(item, "SKILLGLASS_FIXTURE_PROFILE=") {
-			command.Env[index] = "SKILLGLASS_FIXTURE_PROFILE=" + profile
-		}
-	}
+	launch := recordLaunch(t, command)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("fixture inert controls: %v, %s", err, output)
@@ -161,5 +146,5 @@ func TestFixturePolicyInertControls(t *testing.T) {
 	assertNoSandboxedConnection(t, listener)
 	assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 	writeEvidence(t, "fixture-boundary/inert-controls.json", output)
-	recordEvidenceCommand(t, "fixture-boundary-inert-probe", wrapper, args, fx.project, commandResult{stdout: output})
+	recordEvidenceCommand(t, "fixture-boundary-inert-probe", commandResult{stdout: output, launch: launch})
 }

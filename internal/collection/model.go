@@ -83,6 +83,7 @@ type Request struct {
 	home          string
 	codexHome     string
 	codeafProfile string
+	claudeHome    string
 }
 
 func NewRequest(rawRoots, rawProjectRoots []string, rawProject *string) (Request, error) {
@@ -90,8 +91,8 @@ func NewRequest(rawRoots, rawProjectRoots []string, rawProject *string) (Request
 }
 
 func NewRequestWithAgent(rawRoots, rawProjectRoots []string, rawProject *string, agent string) (Request, error) {
-	if agent != "" && agent != "codex" && agent != "codeaf" {
-		return Request{}, fmt.Errorf("unknown agent %q; use codex or codeaf", agent)
+	if agent != "" && agent != "codex" && agent != "codeaf" && agent != "claude-code" {
+		return Request{}, fmt.Errorf("unknown agent %q; use codex, claude-code or codeaf", agent)
 	}
 	request := Request{Roots: make([]DiscoveryRoot, 0, len(rawRoots)+len(rawProjectRoots))}
 	if rawProject != nil {
@@ -134,13 +135,14 @@ func NewRequestWithAgent(rawRoots, rawProjectRoots []string, rawProject *string,
 		return Request{}, err
 	}
 	request.Agent = agent
-	if agent == "codex" {
+	if agent == "codex" || agent == "claude-code" {
 		var err error
 		request.home, err = nativeHome()
 		if err != nil {
 			return Request{}, err
 		}
 		request.codexHome = codexHome(request.home)
+		request.claudeHome = claudeHome(request.home)
 	}
 	if agent == "codeaf" {
 		var err error
@@ -364,10 +366,10 @@ type Snapshot struct {
 }
 
 func Build(ctx context.Context, request Request) (*Snapshot, error) {
-	if request.Agent != "" && request.Agent != "codex" && request.Agent != "codeaf" {
+	if request.Agent != "" && request.Agent != "codex" && request.Agent != "codeaf" && request.Agent != "claude-code" {
 		return nil, fmt.Errorf("unknown agent %q", request.Agent)
 	}
-	if request.Agent == "codex" && (request.home == "" || request.codexHome == "") {
+	if request.Agent != "" && request.home == "" {
 		return nil, errors.New("native scope requires NewRequestWithAgent")
 	}
 	if len(request.Roots) == 0 && request.Agent == "" {
@@ -385,10 +387,10 @@ func Build(ctx context.Context, request Request) (*Snapshot, error) {
 		return buildCodex(ctx, request)
 	}
 	if request.Agent == "codeaf" {
-		if request.home == "" {
-			return nil, errors.New("native scope requires NewRequestWithAgent")
-		}
 		return buildCodeAF(ctx, request)
+	}
+	if request.Agent == "claude-code" {
+		return buildClaude(ctx, request)
 	}
 	return discover(ctx, request)
 }

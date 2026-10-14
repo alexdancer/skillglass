@@ -348,7 +348,7 @@ func applyNativeProblems(snapshot *Snapshot, problems []Problem, roots map[RootI
 		for _, rid := range snapshot.referenceOrder {
 			reference := snapshot.references[rid]
 			if sourceLocal {
-				if !codexContainsSource(problem.SourceIDs, reference.Source) {
+				if !nativeContainsSource(problem.SourceIDs, reference.Source) {
 					continue
 				}
 			} else if roots[reference.Root].Origin == "" {
@@ -384,7 +384,7 @@ func applyNativeProblems(snapshot *Snapshot, problems []Problem, roots map[RootI
 	recountRootReports(snapshot.scope.Roots, snapshot.references, snapshot.problems)
 }
 
-func codexContainsSource(values []SourceID, id SourceID) bool {
+func nativeContainsSource(values []SourceID, id SourceID) bool {
 	for _, value := range values {
 		if value == id {
 			return true

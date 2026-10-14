@@ -13,33 +13,47 @@ import (
 )
 
 type codexEvidence struct {
-	Kind, Rule   string
-	InputPath    string `json:"input_path"`
-	AgentVersion string `json:"agent_version"`
+	Kind, Rule, Reason string
+	InputPath          string `json:"input_path"`
+	AgentVersion       string `json:"agent_version"`
+	Setting            string `json:"setting"`
 }
 type codexAvailability struct {
 	NativeNameEvidence codexEvidence `json:"native_name_evidence"`
 	NativeName         string        `json:"native_name"`
 
-	State      string
-	Evidence   codexEvidence
-	References []struct {
+	State, Reason string
+	Evidence      codexEvidence
+	References    []struct {
 		ReferenceID   string `json:"reference_id"`
+		NativeName    string `json:"native_name"`
 		Participation string
+		Evidence      codexEvidence
 		Permission    struct {
 			State    string
 			Evidence codexEvidence
 			Layers   []struct{ Path, State string }
 		}
 		Provenance struct {
-			Kind     string
-			PluginID string `json:"plugin_id"`
-			Version  string
+			Kind                          string
+			PluginID                      string `json:"plugin_id"`
+			Version                       string
+			Evidence, Setting, Activation codexEvidence
+			Records                       []struct {
+				Kind, Path, Scope, Applicability string
+				InputPath                        string          `json:"input_path"`
+				ProjectPath                      json.RawMessage `json:"project_path"`
+				Version                          json.RawMessage
+				RegistrationInput                string          `json:"registration_input"`
+				LastUpdated                      json.RawMessage `json:"last_updated"`
+				DeclaredSource                   string          `json:"declared_source"`
+			}
 		}
 	}
 	Precedence struct {
 		State, Winner  string
 		RelatedSources []string `json:"related_sources"`
+		Evidence       codexEvidence
 	}
 	Invocation, Session, Reload struct {
 		State    string

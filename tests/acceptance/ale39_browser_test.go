@@ -23,8 +23,8 @@ func TestALE39CodeAFBrowserExplanationAndPluginRefresh(t *testing.T) {
 			before := treeManifest(t, fx.base)
 			socket := fmt.Sprintf("ale39-%d-%d", os.Getpid(), width)
 			defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-			command := "exec " + shellQuote(skillglassBinary) + " browse --agent codeaf --project " + shellQuote(fx.project) + " --availability available"
-			runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", strconv.Itoa(width), "-y", "30", "-s", "browser", command)
+			command := fx.productCommand(t, "browse", "--agent", "codeaf", "--project", fx.project, "--availability", "available")
+			runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", strconv.Itoa(width), "-y", "30", "-s", "browser")
 			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(width), "-y", "30")
 			frame := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "Agent: codeaf", "plugin-skill")
@@ -74,15 +74,15 @@ func TestALE39BrokenPluginBrowser(t *testing.T) {
 			fx := codeafFixture(t)
 			manifest, _ := codeafPluginFixture(t, fx)
 			container := filepath.Dir(filepath.Dir(manifest))
-			writeFile(t, filepath.Join(fx.base, "plugin/.claude-plugin/plugin.json"), []byte(`{"skills":"skills"}`), 0600)
+			writeFile(t, filepath.Join(fx.base, "allowed", "plugin/.claude-plugin/plugin.json"), []byte(`{"skills":"skills"}`), 0600)
 			if err := os.Symlink("missing-target.md", filepath.Join(container, "SKILL.md")); err != nil {
 				t.Fatal(err)
 			}
 			before := treeManifest(t, fx.base)
 			socket := fmt.Sprintf("ale39-broken-%d-%d", os.Getpid(), width)
 			defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-			command := "exec " + shellQuote(skillglassBinary) + " browse --agent codeaf --project " + shellQuote(fx.project)
-			runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", strconv.Itoa(width), "-y", "30", "-s", "browser", command)
+			command := fx.productCommand(t, "browse", "--agent", "codeaf", "--project", fx.project)
+			runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", strconv.Itoa(width), "-y", "30", "-s", "browser")
 			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(width), "-y", "30")
 			frame := waitForPane(t, tmux, fx, socket, false, "plugin-skill", "Coverage: incomplete")
@@ -117,7 +117,7 @@ func TestALE39Review001BrowserUncertainPrecedenceRefresh(t *testing.T) {
 					scope = "user"
 					root = filepath.Join(fx.home, ".codex/skills/.system")
 				} else if topology == "lower-shared-aliases" {
-					root = filepath.Join(fx.base, "shared")
+					root = filepath.Join(fx.base, "allowed", "shared")
 				}
 				lower := filepath.Dir(codexSkill(t, root, "lower-bundle", "plugin-skill"))
 				if topology == "lower-shared-aliases" {
@@ -131,7 +131,7 @@ func TestALE39Review001BrowserUncertainPrecedenceRefresh(t *testing.T) {
 						}
 					}
 				}
-				plugin := filepath.Join(fx.base, "plugin")
+				plugin := filepath.Join(fx.base, "allowed", "plugin")
 				registration := map[string]any{"plugins": map[string]any{"example@local": []any{map[string]any{"scope": scope, "projectPath": fx.project, "installPath": plugin, "version": "1.2"}}}}
 				raw, err := json.Marshal(registration)
 				if err != nil {
@@ -143,8 +143,8 @@ func TestALE39Review001BrowserUncertainPrecedenceRefresh(t *testing.T) {
 				before := treeManifest(t, fx.base)
 				socket := fmt.Sprintf("ale39-review001-%s-%d-%d", topology, os.Getpid(), width)
 				defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-				command := "exec " + shellQuote(skillglassBinary) + " browse --agent codeaf --project " + shellQuote(fx.project) + " --availability shadowed"
-				runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", strconv.Itoa(width), "-y", "30", "-s", "browser", command)
+				command := fx.productCommand(t, "browse", "--agent", "codeaf", "--project", fx.project, "--availability", "shadowed")
+				runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", strconv.Itoa(width), "-y", "30", "-s", "browser")
 				runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 				runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(width), "-y", "30")
 				frame := waitForPane(t, tmux, fx, socket, false, "Focus: 1/1", "plugin-skill")

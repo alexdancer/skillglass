@@ -22,6 +22,7 @@ import (
 )
 
 var (
+	tmuxSocketDirectory  string
 	skillglassBinary     string
 	rawSkillglassBinary  string
 	isolationProbeBinary string
@@ -41,6 +42,8 @@ type evidenceCase struct {
 	DurationMS       int64    `json:"duration_ms"`
 	Stdout           string   `json:"stdout"`
 	Stderr           string   `json:"stderr"`
+	LaunchReceipt    string   `json:"launch_receipt,omitempty"`
+	PayloadLaunch    string   `json:"payload_launch,omitempty"`
 }
 
 func TestMain(testMain *testing.M) {
@@ -48,6 +51,11 @@ func TestMain(testMain *testing.M) {
 	repositoryRoot = filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", ".."))
 	var err error
 	builtBinaryDir, err = os.MkdirTemp("", "skillglass-acceptance-binary-")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	tmuxSocketDirectory, err = os.MkdirTemp("/private/tmp", "sgtmux-")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -90,19 +98,8 @@ func TestMain(testMain *testing.M) {
 		}
 	}
 	rawSkillglassBinary = skillglassBinary
-	if runtime.GOOS == "darwin" {
-		if _, err := os.Stat("/usr/bin/sandbox-exec"); err != nil {
-			fmt.Fprintln(os.Stderr, "fixture containment unavailable:", err)
-			os.Exit(1)
-		}
-		skillglassBinary = filepath.Join(builtBinaryDir, "fixture-skillglass")
-		wrapper := fixtureLauncherScript(rawSkillglassBinary)
-		if err := os.WriteFile(skillglassBinary, []byte(wrapper), 0o700); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-	}
 	code := testMain.Run()
+	os.RemoveAll(tmuxSocketDirectory)
 	if err := writeEvidenceCaseIndex(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		code = 1
@@ -112,6 +109,8 @@ func TestMain(testMain *testing.M) {
 }
 
 type fixture struct {
+	claudeSafeMode bool
+	policy         string
 	base           string
 	home           string
 	xdgConfig      string
@@ -134,6 +133,8 @@ type commandResult struct {
 	stdout   []byte
 	stderr   []byte
 	duration time.Duration
+	launch   *launchReceipt
+	payload  *launchReceipt
 }
 
 type publicList struct {
@@ -692,6 +693,7 @@ func newFixture(t *testing.T) fixture {
 	base := t.TempDir()
 	fx := fixture{
 		base:           base,
+		policy:         filepath.Join(base, "allowed", "fixture-policy.sb"),
 		home:           filepath.Join(base, "allowed", "home"),
 		xdgConfig:      filepath.Join(base, "allowed", "xdg-config"),
 		xdgData:        filepath.Join(base, "allowed", "xdg-data"),
@@ -805,11 +807,7 @@ func newFixture(t *testing.T) fixture {
 	writeFile(t, filepath.Join(malformed, "SKILL.md"), []byte(
 		"---\nname: [unterminated\nMALFORMED_RAW_SENTINEL\n",
 	), 0o644)
-	if runtime.GOOS == "darwin" {
-		profile := fixtureRuntimeProfile(canonicalPath(t, rawSkillglassBinary), canonicalPath(t, fx.base))
-		writeFile(t, filepath.Join(fx.temporary, "runtime.sb"), []byte(profile), 0600)
-		writeEvidence(t, "fixture-boundary/runtime.sb", []byte(profile))
-	}
+	fx.seal(t)
 	return fx
 }
 
@@ -817,7 +815,7 @@ func (fx fixture) run(t *testing.T, args ...string) commandResult {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, skillglassBinary, args...)
+	command := fx.command(t, ctx, args...)
 	command.Dir = fx.project
 	command.Env = fx.environment()
 	command.Stdin = bytes.NewReader(nil)
@@ -826,28 +824,26 @@ func (fx fixture) run(t *testing.T, args ...string) commandResult {
 	command.Stdout = &stdout
 	command.Stderr = &stderr
 	started := time.Now()
+	launch := recordLaunch(t, command)
 	err := command.Run()
 	duration := time.Since(started)
+	result := commandResult{code: launchExitCode(err), stdout: stdout.Bytes(), stderr: stderr.Bytes(), duration: duration, launch: launch}
+	recordEvidenceCommand(t, "public-cli-contained", result)
 	if ctx.Err() != nil {
 		t.Fatalf("command timed out: %s %s", skillglassBinary, strings.Join(args, " "))
 	}
-	code := 0
 	if err != nil {
 		var exitError *exec.ExitError
 		if !errors.As(err, &exitError) {
 			t.Fatalf("run command: %v", err)
 		}
-		code = exitError.ExitCode()
 	}
-	result := commandResult{code: code, stdout: stdout.Bytes(), stderr: stderr.Bytes(), duration: duration}
-	recordEvidenceCommand(t, "public-cli", skillglassBinary, args, fx.project, result)
 	return result
 }
 
 func (fx fixture) environment() []string {
-	return []string{
+	environment := []string{
 		"HOME=" + fx.home,
-		"SKILLGLASS_FIXTURE_PROFILE=" + filepath.Join(fx.temporary, "runtime.sb"),
 		"XDG_CONFIG_HOME=" + fx.xdgConfig,
 		"XDG_DATA_HOME=" + fx.xdgData,
 		"XDG_CACHE_HOME=" + fx.xdgCache,
@@ -859,6 +855,10 @@ func (fx fixture) environment() []string {
 		"COLUMNS=80",
 		"LINES=24",
 	}
+	if fx.claudeSafeMode {
+		environment = append(environment, "CLAUDE_CODE_SAFE_MODE=1")
+	}
+	return environment
 }
 
 func sourceNamed(t *testing.T, sources []publicSource, name string) publicSource {
@@ -1003,9 +1003,6 @@ func treeManifest(t *testing.T, root string) []byte {
 func recordEvidenceCommand(
 	t *testing.T,
 	kind string,
-	executable string,
-	args []string,
-	workingDirectory string,
 	result commandResult,
 ) {
 	t.Helper()
@@ -1015,44 +1012,44 @@ func recordEvidenceCommand(
 	}
 	evidenceMu.Lock()
 	defer evidenceMu.Unlock()
-	id := fmt.Sprintf("%03d", len(evidenceCases)+1)
+	id := result.launch.ID
 	directory := filepath.Join(root, "commands", id)
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	stdoutRelative := filepath.ToSlash(filepath.Join("commands", id, "stdout"))
 	stderrRelative := filepath.ToSlash(filepath.Join("commands", id, "stderr"))
-	if err := os.WriteFile(filepath.Join(directory, "stdout"), result.stdout, 0o644); err != nil {
-		t.Fatal(err)
+	writeExclusiveEvidence(t, stdoutRelative, result.stdout)
+	writeExclusiveEvidence(t, stderrRelative, result.stderr)
+	argv := append([]string(nil), result.launch.Argv...)
+	keys := make([]string, 0, len(result.launch.Environment))
+	for _, entry := range result.launch.Environment {
+		key, _, _ := strings.Cut(entry, "=")
+		keys = append(keys, key)
 	}
-	if err := os.WriteFile(filepath.Join(directory, "stderr"), result.stderr, 0o644); err != nil {
-		t.Fatal(err)
+	payloadPath := ""
+	if result.payload != nil {
+		payloadPath = result.payload.Path
 	}
-	argv := append([]string{executable}, args...)
-	evidenceCases = append(evidenceCases, evidenceCase{
+	record := evidenceCase{
 		ID:               id,
 		Kind:             kind,
 		Argv:             argv,
-		WorkingDirectory: workingDirectory,
-		EnvironmentKeys: []string{
-			"SKILLGLASS_FIXTURE_PROFILE",
-			"COLUMNS",
-			"HOME",
-			"LC_ALL",
-			"LINES",
-			"PATH",
-			"TERM",
-			"TMPDIR",
-			"XDG_CACHE_HOME",
-			"XDG_CONFIG_HOME",
-			"XDG_DATA_HOME",
-			"XDG_STATE_HOME",
-		},
-		ExitCode:   result.code,
-		DurationMS: result.duration.Milliseconds(),
-		Stdout:     stdoutRelative,
-		Stderr:     stderrRelative,
-	})
+		WorkingDirectory: result.launch.Cwd,
+		EnvironmentKeys:  keys,
+		LaunchReceipt:    result.launch.Path,
+		PayloadLaunch:    payloadPath,
+		ExitCode:         result.code,
+		DurationMS:       result.duration.Milliseconds(),
+		Stdout:           stdoutRelative,
+		Stderr:           stderrRelative,
+	}
+	encoded, err := json.MarshalIndent(record, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeExclusiveEvidence(t, filepath.ToSlash(filepath.Join("commands", id, "case.json")), append(encoded, '\n'))
+	evidenceCases = append(evidenceCases, record)
 }
 
 func writeEvidenceCaseIndex() error {
