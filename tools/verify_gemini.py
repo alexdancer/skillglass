@@ -181,9 +181,9 @@ def main():
         write(home / '.gemini/extensions/extension-enablement.json', json.dumps({'sample': {'overrides': ['!/*', str(project) + '/']}}))
         run('last-matching-extension-override', expected=('extension-skill [Enabled]',))
         env.pop('GEMINI_CLI_TRUST_WORKSPACE')
-        write(home / '.gemini/trustedFolders.json', json.dumps({str(project): 'TRUST_FOLDER'}))
+        write(Path(env['GEMINI_CLI_TRUSTED_FOLDERS_PATH']), json.dumps({str(project): 'TRUST_FOLDER'}))
         run('persisted-workspace-trust', expected=(str(workspace_alias / 'SKILL.md'),))
-        write(home / '.gemini/trustedFolders.json', json.dumps({str(project): 'DO_NOT_TRUST'}))
+        write(Path(env['GEMINI_CLI_TRUSTED_FOLDERS_PATH']), json.dumps({str(project): 'DO_NOT_TRUST'}))
         run('persisted-workspace-distrust', expected=(str(alias / 'SKILL.md'),), absent=(str(workspace_alias / 'SKILL.md'),))
         env['GEMINI_CLI_HOME'] = str(base / 'override-home')
         env['GEMINI_CLI_TRUST_WORKSPACE'] = 'false'
