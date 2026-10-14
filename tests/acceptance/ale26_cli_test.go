@@ -25,6 +25,7 @@ type codexAvailability struct {
 	Evidence      codexEvidence
 	References    []struct {
 		ReferenceID   string `json:"reference_id"`
+		NativeName    string `json:"native_name"`
 		Participation string
 		Evidence      codexEvidence
 		Permission    struct {

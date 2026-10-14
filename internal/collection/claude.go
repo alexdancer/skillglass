@@ -284,45 +284,63 @@ func explainClaudeSource(snapshot *Snapshot, id SourceID, roots map[RootID]Disco
 }
 func applyClaudePrecedence(snapshot *Snapshot, roots map[RootID]DiscoveryRoot, ancestors []string) {
 	type contender struct {
-		id   SourceID
-		rank int
+		id                   SourceID
+		definite, possible   int
+		unknownParticipation bool
 	}
 	groups := map[string][]contender{}
+	bySource := map[SourceID]map[string]contender{}
 	for _, id := range snapshot.order {
-		nameRanks := map[string]int{}
-		for _, fact := range snapshot.sources[id].Availability.References {
-			if fact.Participation != ParticipationEligible || fact.NativeName == "" {
+		availability := snapshot.sources[id].Availability
+		nameUnknown := availability.NativeNameEvidence != nil && availability.NativeNameEvidence.Kind == EvidenceUnknown
+		nameRanks := map[string]contender{}
+		for _, fact := range availability.References {
+			if (fact.Participation != ParticipationEligible && fact.Participation != ParticipationUnknown) || fact.NativeName == "" {
 				continue
 			}
 			root := roots[snapshot.references[fact.Reference].Root]
-			current := 1
+			rank := 1
 			switch root.Origin {
 			case "claude-enterprise":
-				current = 100000
+				rank = 100000
 			case "claude-personal":
-				current = 90000
+				rank = 90000
 			case "claude-project":
 				for i, ancestor := range ancestors {
 					if root.Path == filepath.Join(ancestor, ".claude", "skills") {
-						current = 80000 - i
+						rank = 80000 - i
 					}
 				}
 			}
-			if current > nameRanks[fact.NativeName] {
-				nameRanks[fact.NativeName] = current
+			entry := nameRanks[fact.NativeName]
+			entry.id = id
+			if fact.Participation == ParticipationUnknown || nameUnknown {
+				entry.possible = max(entry.possible, rank)
+				entry.unknownParticipation = entry.unknownParticipation || fact.Participation == ParticipationUnknown
+			} else {
+				entry.definite = max(entry.definite, rank)
 			}
+			nameRanks[fact.NativeName] = entry
 		}
-		for name, rank := range nameRanks {
-			groups[name] = append(groups[name], contender{id, rank})
+		bySource[id] = nameRanks
+		for name, entry := range nameRanks {
+			groups[name] = append(groups[name], entry)
 		}
 	}
 	for _, id := range snapshot.order {
 		source := snapshot.sources[id]
-		if source.Availability.NativeNameEvidence != nil && source.Availability.NativeNameEvidence.Kind == EvidenceUnknown {
+		name := source.Availability.NativeName
+		own := bySource[id][name]
+		if own.definite == 0 {
 			precedence := source.Availability.Precedence
-			precedence.Evidence.Reason = source.Availability.NativeNameEvidence.Reason
+			if len(bySource[id]) > 0 {
+				precedence.Evidence.Reason = "native participation or name selection is unverified"
+			}
+			if source.Availability.NativeNameEvidence != nil && source.Availability.NativeNameEvidence.Kind == EvidenceUnknown {
+				precedence.Evidence.Reason = source.Availability.NativeNameEvidence.Reason
+			}
 			for _, fact := range source.Availability.References {
-				if fact.Participation != ParticipationEligible {
+				if fact.Participation != ParticipationEligible && fact.Participation != ParticipationUnknown {
 					continue
 				}
 				for _, other := range groups[fact.NativeName] {
@@ -334,53 +352,46 @@ func applyClaudePrecedence(snapshot *Snapshot, roots map[RootID]DiscoveryRoot, a
 			snapshot.sources[id] = source
 			continue
 		}
-		name := source.Availability.NativeName
-		best, possibleBest, ownRank, topCount := 0, 0, 0, 0
+		best, topCount := 0, 0
 		winner := SourceID("")
 		for _, other := range groups[name] {
-			if other.id == id {
-				ownRank = other.rank
-			}
-			if snapshot.sources[other.id].Availability.NativeNameEvidence.Kind == EvidenceUnknown {
-				if other.rank > possibleBest {
-					possibleBest = other.rank
-				}
-				continue
-			}
-			if other.rank > best {
-				best, winner, topCount = other.rank, other.id, 1
-			} else if other.rank == best {
+			if other.definite > best {
+				best, winner, topCount = other.definite, other.id, 1
+			} else if other.definite == best && best > 0 {
 				topCount++
 			}
 		}
-		if ownRank == 0 {
-			continue
-		}
+		possibleTie, participationUnknown, shadowed := false, false, false
 		precedence := PrecedenceExplanation{State: PrecedenceUnique, Winner: winner, Evidence: claudeEvidence(EvidenceInferred, "startup-name-precedence", source.Directory, "name="+name, "Claude 2.1.282 native catalog: enterprise (documented) > personal > nearest project > ancestor project; independent copies remain distinct")}
 		for _, other := range groups[name] {
 			if other.id != id {
 				precedence.RelatedSources = append(precedence.RelatedSources, other.id)
+				shadowed = shadowed || other.definite > max(own.definite, own.possible)
+			}
+			if other.id != winner && other.possible >= best {
+				possibleTie = true
+				participationUnknown = participationUnknown || other.unknownParticipation
 			}
 		}
-		if topCount > 1 || possibleBest >= best {
-			precedence.State = PrecedenceUnknown
-			precedence.Winner = ""
+		if topCount > 1 || possibleTie {
+			precedence.State, precedence.Winner = PrecedenceUnknown, ""
 			precedence.Evidence.Kind = EvidenceUnknown
 			precedence.Evidence.Reason = "equal-priority independent definitions; native winner within one root was not validated"
-			if possibleBest >= best {
-				precedence.Evidence.Reason = "an eligible shared-name contender may win this command; native name selection is unverified"
-			}
-			if ownRank == best {
-				if source.Availability.State != AvailabilityDisabled && source.Availability.State != AvailabilityUnavailable {
-					source.Availability.State = AvailabilityUnknown
-					source.Availability.Reason = precedence.Evidence.Reason
-					source.Availability.Evidence = &precedence.Evidence
+			if possibleTie {
+				precedence.Evidence.Reason = "a shared-name contender may win this command; native name selection is unverified"
+				if participationUnknown {
+					precedence.Evidence.Reason = "a matching-name contender may win this command; native participation or name selection is unverified"
 				}
-			} else {
+			}
+			if shadowed {
 				precedence.Evidence.Reason += "; higher-priority eligible definitions establish this lower source is shadowed"
+			} else if source.Availability.State != AvailabilityDisabled && source.Availability.State != AvailabilityUnavailable {
+				source.Availability.State = AvailabilityUnknown
+				source.Availability.Reason = precedence.Evidence.Reason
+				source.Availability.Evidence = &precedence.Evidence
 			}
 		}
-		if ownRank < best {
+		if shadowed {
 			source.Availability.State = AvailabilityShadowed
 			source.Availability.Reason = "higher-priority independent definition wins the native command name"
 			if precedence.Winner == "" {

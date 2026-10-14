@@ -21,10 +21,15 @@ func claudePrecedenceAlias(t *testing.T, bundle, alias string) {
 
 func claudePrecedenceInspect(t *testing.T, fx fixture, label string, want map[string]string, extra ...string) codexList {
 	t.Helper()
+	return claudePrecedenceInspectExit(t, fx, label, want, 0, extra...)
+}
+
+func claudePrecedenceInspectExit(t *testing.T, fx fixture, label string, want map[string]string, exit int, extra ...string) codexList {
+	t.Helper()
 	before := treeManifest(t, fx.base)
 	args := append([]string{"list", "--agent", "claude-code", "--project", fx.project, "--json"}, extra...)
 	r := fx.run(t, args...)
-	assertExit(t, r, 0)
+	assertExit(t, r, exit)
 	writeEvidence(t, "precedence/"+label+"-list.json", r.stdout)
 	var list codexList
 	decodeJSON(t, r.stdout, &list)
@@ -35,10 +40,13 @@ func claudePrecedenceInspect(t *testing.T, fx fixture, label string, want map[st
 		}
 		detailArgs := append([]string{"explain", "--agent", "claude-code", "--project", fx.project}, extra...)
 		detail := fx.run(t, append(detailArgs, s.ID)...)
-		assertExit(t, detail, 0)
+		assertExit(t, detail, exit)
 		writeEvidence(t, "precedence/"+label+"-"+filepath.Base(directory)+"-explain.txt", detail.stdout)
 		if !strings.Contains(string(detail.stdout), "Availability: "+state) {
 			t.Errorf("explain %s lacks Availability: %s", s.ID, state)
+		}
+		if s.Availability.Precedence.Winner == "" && strings.Contains(string(detail.stdout), "Winning source:") {
+			t.Error("human explanation manufactured a winner")
 		}
 		for _, related := range s.Availability.Precedence.RelatedSources {
 			if !strings.Contains(string(detail.stdout), "Related independent source: "+related) {
@@ -52,7 +60,8 @@ func claudePrecedenceInspect(t *testing.T, fx fixture, label string, want map[st
 		}
 		jsonArgs := append([]string{"explain", "--agent", "claude-code", "--project", fx.project, "--json"}, extra...)
 		jsonDetail := fx.run(t, append(jsonArgs, s.ID)...)
-		assertExit(t, jsonDetail, 0)
+		assertExit(t, jsonDetail, exit)
+		writeEvidence(t, "precedence/"+label+"-"+filepath.Base(directory)+"-explain.json", jsonDetail.stdout)
 		var parsed struct{ Source codexSource }
 		decodeJSON(t, jsonDetail.stdout, &parsed)
 		if !reflect.DeepEqual(parsed.Source.Availability, s.Availability) {
@@ -63,7 +72,7 @@ func claudePrecedenceInspect(t *testing.T, fx fixture, label string, want map[st
 	for _, state := range []string{"unknown", "available", "shadowed"} {
 		fargs := append(append([]string{}, args...), "--availability", state)
 		f := fx.run(t, fargs...)
-		assertExit(t, f, 0)
+		assertExit(t, f, exit)
 		writeEvidence(t, "precedence/"+label+"-"+state+"-filter.json", f.stdout)
 		var filtered codexList
 		decodeJSON(t, f.stdout, &filtered)
