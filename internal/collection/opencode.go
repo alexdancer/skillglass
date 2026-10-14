@@ -9,7 +9,13 @@ import (
 )
 
 func appendOpencodeRoot(request *Request, path string, context ReferenceContext, origin string, optional bool) {
-	request.Roots = append(request.Roots, DiscoveryRoot{ID: RootID(stableID("root_opencode", origin, path)), Path: path, Context: context, Origin: origin, Optional: optional})
+	root := DiscoveryRoot{ID: RootID(stableID("root_opencode", origin, path, string(context))), Path: path, Context: context, Origin: origin, Optional: optional}
+	for _, existing := range request.Roots {
+		if existing == root {
+			return
+		}
+	}
+	request.Roots = append(request.Roots, root)
 }
 func buildOpencode(ctx context.Context, request Request) (*Snapshot, error) {
 	original := cloneRequest(request)
