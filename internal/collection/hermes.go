@@ -258,7 +258,7 @@ func buildHermes(ctx context.Context, request Request) (*Snapshot, error) {
 			root.Evidence = &value
 		}
 	}
-	indexMetadata := make(map[SourceID]hermesIndexObservation)
+	indexMetadata := make(map[SourceID]hermesMetadataObservation)
 	for _, id := range snapshot.order {
 		indexMetadata[id] = observeHermesIndex(snapshot.sources[id].Manifest)
 		snapshot.sources[id] = explainHermesSource(snapshot, id, roots, &inputs, indexMetadata[id])
@@ -283,42 +283,52 @@ func buildHermes(ctx context.Context, request Request) (*Snapshot, error) {
 	return snapshot, nil
 }
 
-type hermesIndexObservation struct {
+type hermesMetadataObservation struct {
 	metadata map[string]any
 	known    bool
+	framed   bool
 	yaml     hermesYAMLObservation
 }
 
-func (index hermesIndexObservation) nameKnown() bool {
+func (index hermesMetadataObservation) nameKnown() bool {
 	return index.known && index.yaml.known("name")
 }
 
-func (index hermesIndexObservation) eligibleKnown() bool {
+func (index hermesMetadataObservation) eligibleKnown() bool {
 	return index.known && index.yaml.known("name", "description", "platforms", "environments") && !hermesEnvironmentDeclared(index.metadata)
 }
 
 var hermesClosingFence = regexp.MustCompile(`\n---[\s\p{Z}\x{0085}\x{001c}-\x{001f}]*\n`)
 
-func observeHermesIndex(manifest Manifest) hermesIndexObservation {
+func observeHermesIndex(manifest Manifest) hermesMetadataObservation {
+	return observeHermesMetadata(manifest, 4000)
+}
+
+func observeHermesMetadata(manifest Manifest, window int) hermesMetadataObservation {
 	if manifest.Status != ManifestParsed {
-		return hermesIndexObservation{}
+		return hermesMetadataObservation{}
 	}
 	text := strings.ReplaceAll(manifest.RawText, "\r\n", "\n")
 	text = strings.ReplaceAll(text, "\r", "\n")
-	chars := []rune(text)
-	text = string(chars[:min(len(chars), 4000)])
+	if window > 0 {
+		chars := []rune(text)
+		text = string(chars[:min(len(chars), window)])
+	}
+	if !strings.HasPrefix(text, "---") {
+		return hermesMetadataObservation{metadata: map[string]any{}, known: true, yaml: observeHermesYAML([]byte("{}"))}
+	}
 	closing := hermesClosingFence.FindStringIndex(text[3:])
 	if closing == nil {
-		return hermesIndexObservation{metadata: map[string]any{}, known: true, yaml: observeHermesYAML([]byte("{}"))}
+		return hermesMetadataObservation{metadata: map[string]any{}, known: true, yaml: observeHermesYAML([]byte("{}"))}
 	}
 	raw := []byte(text[3 : closing[0]+3])
 	metadata, _, err := decodeMetadata(raw)
-	return hermesIndexObservation{metadata: metadata, known: err == nil, yaml: observeHermesYAML(raw)}
+	return hermesMetadataObservation{metadata: metadata, known: err == nil, framed: true, yaml: observeHermesYAML(raw)}
 }
 
-func explainHermesSource(snapshot *Snapshot, id SourceID, roots map[RootID]DiscoveryRoot, inputs *hermesInputs, index hermesIndexObservation) Source {
+func explainHermesSource(snapshot *Snapshot, id SourceID, roots map[RootID]DiscoveryRoot, inputs *hermesInputs, index hermesMetadataObservation) Source {
 	source := snapshot.sources[id]
-	fullYAML := observeHermesYAML([]byte(source.Manifest.RawFrontmatter))
+	full := observeHermesMetadata(source.Manifest, 0)
 	name := source.Manifest.Name
 	if name == "" {
 		name = filepath.Base(source.Directory)
@@ -345,7 +355,7 @@ func explainHermesSource(snapshot *Snapshot, id SourceID, roots map[RootID]Disco
 		if root.Origin != "" && root.Origin != "hermes-plugin-inventory" {
 			fact.Participation = ParticipationEligible
 			fact.Evidence = hermesEvidence(EvidenceInferred, root.Origin, ref.DiscoveredPath, "", "native skill index searches this profile/configured root")
-			metadata := source.Manifest.Metadata
+			metadata := full.metadata
 			nativeIndex := root.Origin == "hermes-profile" || root.Origin == "hermes-external"
 			if nativeIndex {
 				metadata = index.metadata
@@ -361,9 +371,9 @@ func explainHermesSource(snapshot *Snapshot, id SourceID, roots map[RootID]Disco
 				fact.Evidence = hermesEvidence(EvidenceInferred, "index-exclusion", ref.DiscoveredPath, "", reason)
 			}
 			if plugin, ok := inputs.plugins[root.ID]; ok {
-				hermesPluginFact(&fact, &explanation, source, ref, plugin, inputs)
+				hermesPluginFact(&fact, &explanation, source, ref, plugin, inputs, full)
 			}
-			platformKnown := fullYAML.known("platforms")
+			platformKnown := full.known && full.yaml.known("platforms")
 			if nativeIndex {
 				platformKnown = index.known && index.yaml.known("platforms")
 			}
@@ -393,7 +403,7 @@ func explainHermesSource(snapshot *Snapshot, id SourceID, roots map[RootID]Disco
 			if !known && fact.Participation != ParticipationExcluded {
 				fact.Participation = ParticipationUnknown
 				fact.Evidence = hermesEvidence(EvidenceUnknown, "native-index-eligibility", source.Manifest.Path, "", "native metadata interpretation or index-window environment eligibility cannot be established")
-			} else if nativeIndex && platformKnown && hermesPlatformMatches(metadata["platforms"]) && fullYAML.known("platforms") && !hermesPlatformMatches(source.Manifest.Metadata["platforms"]) {
+			} else if nativeIndex && platformKnown && hermesPlatformMatches(metadata["platforms"]) && full.known && full.yaml.known("platforms") && !hermesPlatformMatches(full.metadata["platforms"]) {
 				explanation.Invocation.Evidence.Reason = "native index OS eligibility differs from full-content prompt filtering; running-session offers remain unknown"
 			}
 		}
@@ -446,8 +456,8 @@ func explainHermesSource(snapshot *Snapshot, id SourceID, roots map[RootID]Disco
 	if explanation.NativeNameEvidence.Kind == EvidenceUnknown {
 		explanation.Precedence = &PrecedenceExplanation{State: PrecedenceUnknown, Evidence: *explanation.NativeNameEvidence}
 	}
-	promptKnown := fullYAML.known("platforms", "environments", "metadata.hermes.requires_tools", "metadata.hermes.requires_toolsets", "metadata.hermes.fallback_for_tools", "metadata.hermes.fallback_for_toolsets")
-	if (!promptKnown || hermesEnvironmentDeclared(source.Manifest.Metadata) || hermesConditional(source.Manifest.Metadata)) && explanation.State == AvailabilityAvailable {
+	promptKnown := full.known && full.yaml.known("platforms", "environments", "metadata.hermes.requires_tools", "metadata.hermes.requires_toolsets", "metadata.hermes.fallback_for_tools", "metadata.hermes.fallback_for_toolsets")
+	if (!promptKnown || hermesEnvironmentDeclared(full.metadata) || hermesConditional(full.metadata)) && explanation.State == AvailabilityAvailable {
 		explanation.State = AvailabilityUnknown
 		explanation.Reason = "environment/toolset relevance is session-dependent; explicit native loading remains possible"
 		explanation.Invocation.State = "explicit-load-possible"
@@ -494,7 +504,33 @@ func hermesPermission(name string, inputs *hermesInputs) PermissionExplanation {
 	}
 	return PermissionExplanation{State: state, Evidence: hermesEvidence(kind, "disabled-name-union", inputs.config, "skills.disabled, skills.platform_disabled."+inputs.platform, reason), Layers: cloneLayers(inputs.scope.ConfigLayers)}
 }
+func hermesFieldFalsy(value any) bool {
+	switch value := value.(type) {
+	case nil:
+		return true
+	case bool:
+		return !value
+	case int:
+		return value == 0
+	case int64:
+		return value == 0
+	case uint64:
+		return value == 0
+	case float64:
+		return value == 0
+	case string:
+		return value == ""
+	case []any:
+		return len(value) == 0
+	case map[string]any:
+		return len(value) == 0
+	}
+	return false
+}
 func hermesPlatformMatches(value any) bool {
+	if hermesFieldFalsy(value) {
+		return true
+	}
 	list, ok := hermesStrings(value)
 	if !ok {
 		return false
@@ -532,7 +568,7 @@ func hermesConditional(data map[string]any) bool {
 }
 func hermesEnvironmentDeclared(data map[string]any) bool {
 	value := data["environments"]
-	if value == nil {
+	if hermesFieldFalsy(value) {
 		return false
 	}
 	list, ok := hermesStrings(value)
@@ -558,7 +594,7 @@ func hermesExcluded(ref Reference, root DiscoveryRoot) string {
 	}
 	return ""
 }
-func applyHermesPrecedence(snapshot *Snapshot, roots []DiscoveryRoot, indexMetadata map[SourceID]hermesIndexObservation) {
+func applyHermesPrecedence(snapshot *Snapshot, roots []DiscoveryRoot, indexMetadata map[SourceID]hermesMetadataObservation) {
 	type candidate struct {
 		source    SourceID
 		reference Reference

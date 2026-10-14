@@ -32,7 +32,7 @@ func (observation hermesYAMLObservation) known(paths ...string) bool {
 }
 
 func hermesYAMLPathKnown(node *yaml.Node, path []string, active map[*yaml.Node]bool) (bool, bool) {
-	if active[node] {
+	if node == nil || active[node] || len(active) >= 128 {
 		return false, true
 	}
 	active[node] = true
@@ -71,17 +71,90 @@ func hermesYAMLPathKnown(node *yaml.Node, path []string, active map[*yaml.Node]b
 		}
 		return true, false
 	}
-	if node.Kind == yaml.ScalarNode && node.Style == 0 && node.ShortTag() == "!!str" {
-		switch node.Value {
-		case "yes", "Yes", "YES", "no", "No", "NO", "on", "On", "ON", "off", "Off", "OFF":
+	if node.Kind == yaml.ScalarNode && node.Style == 0 && node.ShortTag() == "!!str" && hermesYAMLImplicitBoolean(node.Value) {
+		return false, true
+	}
+	children := node.Content
+	if node.Kind == yaml.MappingNode {
+		var known bool
+		children, known = hermesYAMLEffectiveEntries(node, make(map[*yaml.Node]bool))
+		if !known {
 			return false, true
 		}
 	}
-	for _, child := range node.Content {
+	for _, child := range children {
 		known, _ := hermesYAMLPathKnown(child, nil, active)
 		if !known {
 			return false, true
 		}
 	}
 	return true, true
+}
+
+func hermesYAMLImplicitBoolean(value string) bool {
+	switch value {
+	case "yes", "Yes", "YES", "no", "No", "NO", "on", "On", "ON", "off", "Off", "OFF":
+		return true
+	}
+	return false
+}
+
+func hermesYAMLEffectiveEntries(node *yaml.Node, active map[*yaml.Node]bool) ([]*yaml.Node, bool) {
+	if node == nil || active[node] || len(active) >= 128 {
+		return nil, false
+	}
+	active[node] = true
+	defer delete(active, node)
+	if node.Kind == yaml.AliasNode {
+		return hermesYAMLEffectiveEntries(node.Alias, active)
+	}
+	var entries []*yaml.Node
+	seen := make(map[string]bool)
+	add := func(key, value *yaml.Node) bool {
+		resolved := key
+		for depth := 0; resolved != nil && resolved.Kind == yaml.AliasNode && depth < 128; depth++ {
+			resolved = resolved.Alias
+		}
+		if resolved == nil || resolved.Kind != yaml.ScalarNode {
+			return false
+		}
+		tag := resolved.ShortTag()
+		if tag == "!!str" && resolved.Style == 0 && hermesYAMLImplicitBoolean(resolved.Value) {
+			tag = "!!bool"
+		}
+		identity := tag + "\x00" + resolved.Value
+		if !seen[identity] {
+			seen[identity] = true
+			entries = append(entries, key, value)
+		}
+		return true
+	}
+	var merges []*yaml.Node
+	switch node.Kind {
+	case yaml.MappingNode:
+		for index := 0; index < len(node.Content); index += 2 {
+			key, value := node.Content[index], node.Content[index+1]
+			if key.ShortTag() == "!!merge" {
+				merges = append(merges, value)
+			} else if !add(key, value) {
+				return nil, false
+			}
+		}
+	case yaml.SequenceNode:
+		merges = node.Content
+	default:
+		return nil, false
+	}
+	for _, merge := range merges {
+		inherited, known := hermesYAMLEffectiveEntries(merge, active)
+		if !known {
+			return nil, false
+		}
+		for index := 0; index < len(inherited); index += 2 {
+			if !add(inherited[index], inherited[index+1]) {
+				return nil, false
+			}
+		}
+	}
+	return entries, true
 }

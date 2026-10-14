@@ -271,7 +271,7 @@ func hermesPluginContained(path, root string) bool {
 	owner, err := filepath.EvalSymlinks(root)
 	return err == nil && pathWithin(resolved, owner)
 }
-func hermesPluginFact(fact *ReferenceAvailability, explanation *AvailabilityExplanation, source Source, ref Reference, plugin hermesPlugin, inputs *hermesInputs) {
+func hermesPluginFact(fact *ReferenceAvailability, explanation *AvailabilityExplanation, source Source, ref Reference, plugin hermesPlugin, inputs *hermesInputs, full hermesMetadataObservation) {
 	fact.Participation = plugin.state
 	kind := EvidenceInferred
 	if plugin.state == ParticipationUnknown {
@@ -283,7 +283,7 @@ func hermesPluginFact(fact *ReferenceAvailability, explanation *AvailabilityExpl
 		fact.Provenance.Evidence.Kind = EvidenceUnknown
 		fact.Provenance.Evidence.Reason = "native YAML version stringification is outside supported scalar semantics"
 	}
-	bare := source.Manifest.Name
+	bare, _ := full.metadata["name"].(string)
 	if plugin.portable {
 		bare = filepath.Base(ref.DiscoveredPath)
 	}
@@ -291,7 +291,7 @@ func hermesPluginFact(fact *ReferenceAvailability, explanation *AvailabilityExpl
 	explanation.NativeName = qualified
 	fact.Permission = hermesPermission(qualified, inputs)
 	if plugin.portable {
-		valid, known := hermesPortableSkillValid(source, bare)
+		valid, known := hermesPortableSkillValid(full, bare)
 		if fact.Participation != ParticipationExcluded {
 			if !known {
 				fact.Participation = ParticipationUnknown
@@ -304,7 +304,7 @@ func hermesPluginFact(fact *ReferenceAvailability, explanation *AvailabilityExpl
 	}
 
 	explanation.NativeNameEvidence = &Evidence{Kind: EvidenceInferred, Rule: "plugin-qualified-name", InputPath: plugin.path, AgentVersion: hermesValidatedVersion, Reason: "portable namespace derives from registry key; native dynamic registration names remain unverified"}
-	if !plugin.nameKnown || source.Manifest.Status != ManifestParsed || !observeHermesYAML([]byte(source.Manifest.RawFrontmatter)).known("name") {
+	if !plugin.nameKnown || !full.framed || !full.nameKnown() {
 		explanation.NativeName = ""
 		explanation.NativeNameEvidence.Kind = EvidenceUnknown
 		explanation.NativeNameEvidence.Reason = "native plugin or skill name string interpretation cannot be established"
@@ -313,14 +313,22 @@ func hermesPluginFact(fact *ReferenceAvailability, explanation *AvailabilityExpl
 	}
 }
 
-func hermesPortableSkillValid(source Source, bare string) (bool, bool) {
-	if source.Manifest.Status != ManifestParsed || !observeHermesYAML([]byte(source.Manifest.RawFrontmatter)).known("name", "description", "license", "compatibility", "metadata", "allowed-tools") {
+func hermesPortableSkillValid(full hermesMetadataObservation, bare string) (bool, bool) {
+	if !full.known {
 		return false, false
 	}
-	if source.Manifest.Name != bare || source.Manifest.Description == "" || !regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`).MatchString(bare) || len(bare) > 64 || len([]rune(source.Manifest.Description)) > 1024 {
+	if !full.framed {
 		return false, true
 	}
-	data := source.Manifest.Metadata
+	if !full.yaml.known("name", "description", "license", "compatibility", "metadata", "allowed-tools") {
+		return false, false
+	}
+	data := full.metadata
+	name, _ := data["name"].(string)
+	description, _ := data["description"].(string)
+	if name != bare || description == "" || !regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`).MatchString(bare) || len(bare) > 64 || len([]rune(description)) > 1024 {
+		return false, true
+	}
 	for _, key := range []string{"license", "allowed-tools"} {
 		if value, present := data[key]; present {
 			if _, ok := value.(string); !ok {

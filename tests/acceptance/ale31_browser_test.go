@@ -17,7 +17,8 @@ func TestALE31HermesBrowserExplanationFilterRefreshAndNarrowScope(t *testing.T) 
 	for _, width := range []int{48, 80} {
 		t.Run(strconv.Itoa(width), func(t *testing.T) {
 			fx, profile := hermesFixture(t)
-			codexSkill(t, filepath.Join(profile, "skills"), "very-long-source-path-for-native-hermes-profile-browser-artifact", "browser-hermes")
+			manifest := codexSkill(t, filepath.Join(profile, "skills"), "very-long-source-path-for-native-hermes-profile-browser-artifact", "browser-hermes")
+			writeFile(t, manifest, []byte("---\nname: browser-hermes\ndescription: Inert.\nplatforms: false\nenvironments: false\n---\nBrowser content.\n"), 0600)
 			before := treeManifest(t, fx.base)
 			socket := fmt.Sprintf("ale31-%d-%d", os.Getpid(), width)
 			defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
