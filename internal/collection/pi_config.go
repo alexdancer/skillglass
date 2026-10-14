@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 const piValidatedVersion = "pi 1.1.0"
@@ -71,14 +72,21 @@ func (inputs *piInputs) settings(path, scope string) piSettings {
 	layer.State = "read"
 	layer.Reason = "Pi resource settings observed"
 	if value, ok := data["skills"]; ok {
-		if json.Unmarshal(value, &s.skills) != nil || string(value) == "null" {
+		var valid bool
+		s.skills, valid = piResourceArray(value)
+		if !valid {
 			// Native migration accepts the legacy customDirectories shape.
 			var legacy struct {
-				CustomDirectories []string `json:"customDirectories"`
-				Enable            *bool    `json:"enableSkillCommands"`
+				CustomDirectories json.RawMessage `json:"customDirectories"`
+				Enable            *bool           `json:"enableSkillCommands"`
 			}
 			if json.Unmarshal(value, &legacy) == nil && len(value) > 0 && value[0] == '{' {
-				s.skills = legacy.CustomDirectories
+				if len(legacy.CustomDirectories) > 0 && string(legacy.CustomDirectories) != "null" {
+					s.skills, valid = piResourceArray(legacy.CustomDirectories)
+					if !valid {
+						s.uncertain = true
+					}
+				}
 				s.commands = legacy.Enable
 			} else {
 				s.uncertain = true
@@ -93,15 +101,24 @@ func (inputs *piInputs) settings(path, scope string) piSettings {
 			for _, raw := range packages {
 				var p piPackage
 				if json.Unmarshal(raw, &p.Source) != nil {
+					var registration struct {
+						Source   string `json:"source"`
+						Autoload *bool  `json:"autoload"`
+					}
 					var shape map[string]json.RawMessage
-					if json.Unmarshal(raw, &p) != nil || json.Unmarshal(raw, &shape) != nil {
+					if json.Unmarshal(raw, &registration) != nil || json.Unmarshal(raw, &shape) != nil {
 						s.uncertain = true
 						continue
 					}
+					p.Source, p.Autoload = registration.Source, registration.Autoload
 					p.object = true
 					_, p.hasSkills = shape["skills"]
-					if p.hasSkills && string(shape["skills"]) == "null" {
-						s.uncertain = true
+					if p.hasSkills {
+						var valid bool
+						p.Skills, valid = piResourceArray(shape["skills"])
+						if !valid {
+							s.uncertain = true
+						}
 					}
 				}
 				if p.Source == "" {
@@ -128,6 +145,23 @@ func (inputs *piInputs) settings(path, scope string) piSettings {
 		inputs.problem(path, layer.Reason)
 	}
 	return s
+}
+func piResourceArray(raw json.RawMessage) ([]string, bool) {
+	var entries []json.RawMessage
+	if json.Unmarshal(raw, &entries) != nil || entries == nil {
+		return nil, false
+	}
+	values := make([]string, 0, len(entries))
+	valid := true
+	for _, entry := range entries {
+		var value *string
+		if json.Unmarshal(entry, &value) != nil || value == nil {
+			valid = false
+			continue
+		}
+		values = append(values, *value)
+	}
+	return values, valid
 }
 func piAgentDir(home string) (string, error) {
 	if value := os.Getenv("PI_CODING_AGENT_DIR"); value != "" {
@@ -278,7 +312,9 @@ func piMatch(path, pattern, base string, exact bool) (bool, bool) {
 			expr.WriteString(part)
 			i += end + 1
 		default:
-			expr.WriteString(regexp.QuoteMeta(string(pattern[i])))
+			literal, width := utf8.DecodeRuneInString(pattern[i:])
+			expr.WriteString(regexp.QuoteMeta(string(literal)))
+			i += width - 1
 		}
 	}
 	expr.WriteString("$")

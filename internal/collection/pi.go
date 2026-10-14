@@ -448,9 +448,13 @@ func (inputs *piInputs) addPackages(request *Request, agentDir string) {
 		if manifest.Pi != nil {
 			value, hasSkills := (*manifest.Pi)["skills"]
 			var entries []string
-			if hasSkills && (json.Unmarshal(value, &entries) != nil || string(value) == "null") {
-				fact.uncertain = true
-				inputs.problem(filepath.Join(root, "package.json"), "Pi package skills must be an array of strings")
+			if hasSkills {
+				var valid bool
+				entries, valid = piResourceArray(value)
+				if !valid {
+					fact.uncertain = true
+					inputs.problem(filepath.Join(root, "package.json"), "Pi package skills must be an array of strings")
+				}
 			}
 			switch {
 			case p.hasSkills || fact.delta:
