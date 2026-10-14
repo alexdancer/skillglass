@@ -44,7 +44,7 @@ func TestRuntimeContentIsolation(t *testing.T) {
 	positive := runPositiveControls(t, allowedSentinel, liveHomeSentinel, blockedWrite, listener)
 
 	canonicalAllowed := canonicalPath(t, filepath.Join(fx.base, "allowed"))
-	canonicalProduct := canonicalPath(t, skillglassBinary)
+	canonicalProduct := canonicalPath(t, skillglassExecutable)
 	canonicalProbe := canonicalPath(t, isolationProbeBinary)
 	profiles := filepath.Join(fx.base, "allowed", "sandbox-profiles")
 	productProfile := filepath.Join(profiles, "product.sb")
@@ -289,6 +289,10 @@ func runtimeProfile(executable, allowedRoot string) string {
 	return fmt.Sprintf(`(version 1)
 (allow default)
 (deny network*)
+(deny file-read* (subpath "/private/etc/codex") (with errno 2))
+(deny file-read* (subpath "/etc/codex") (with errno 2))
+(deny file-read* (subpath "/Library/Application Support/opencode") (with errno 2))
+(deny file-read* (subpath "/Library/Managed Preferences") (with errno 2))
 (deny file-write*)
 (deny file-read-data (require-not (require-any
  (literal %s) (literal "/") %s

@@ -44,6 +44,7 @@ type PermissionState string
 
 const (
 	PermissionAllowed PermissionState = "allowed"
+	PermissionAsk     PermissionState = "ask"
 	PermissionDenied  PermissionState = "denied"
 	PermissionUnknown PermissionState = "unknown"
 )

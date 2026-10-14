@@ -21,7 +21,7 @@ const usage = `Usage:
   skillglass browse [SCOPE]
 
 Scope:
-  --agent APP          codex or claude-code native scope and configured availability
+  --agent APPLICATION  codex, claude-code or opencode; inferred native scope and availability
   --root ROOT          custom discovery root; repeatable
   --project PROJECT    selected project context
   --project-root ROOT  discovery root associated with --project; repeatable
@@ -32,7 +32,7 @@ Filters:
   --problem CODE       one documented problem code
   --availability STATE all, available, disabled, explicit-only, ask, shadowed, unavailable, unknown
 
-Without --agent, at least one explicit --root or --project-root is required. The selected agent adds native roots for the selected project only.
+Without --agent, at least one explicit --root or --project-root is required. The selected application adds native roots for the selected project only.
 `
 
 type stringList []string
@@ -64,7 +64,7 @@ type commonOptions struct {
 }
 
 func (options *commonOptions) bind(flags *flag.FlagSet, includeFilters, includeJSON bool) {
-	flags.StringVar(&options.agent, "agent", "", "selected agent application (codex or claude-code)")
+	flags.StringVar(&options.agent, "agent", "", "selected agent application (codex, claude-code or opencode)")
 	flags.Var(&options.roots, "root", "explicit custom discovery root; repeatable")
 	flags.Var(&options.projectRoots, "project-root", "explicit project-associated discovery root; repeatable")
 	flags.Var(&options.project, "project", "selected project context")

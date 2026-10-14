@@ -1,0 +1,289 @@
+[
+  {
+    "value": "🔍",
+    "pattern": "?",
+    "pattern_json": "\"?\"",
+    "scalar_pattern": true,
+    "matched": false
+  },
+  {
+    "value": "🔍",
+    "pattern": "??",
+    "pattern_json": "\"??\"",
+    "scalar_pattern": true,
+    "matched": true
+  },
+  {
+    "value": "🔍",
+    "pattern": "🔍",
+    "pattern_json": "\"🔍\"",
+    "scalar_pattern": true,
+    "matched": true
+  },
+  {
+    "value": "🔍",
+    "pattern": "*",
+    "pattern_json": "\"*\"",
+    "scalar_pattern": true,
+    "matched": true
+  },
+  {
+    "value": "🔍x",
+    "pattern": "??x",
+    "pattern_json": "\"??x\"",
+    "scalar_pattern": true,
+    "matched": true
+  },
+  {
+    "value": "🔍x",
+    "pattern": "?x",
+    "pattern_json": "\"?x\"",
+    "scalar_pattern": true,
+    "matched": false
+  },
+  {
+    "value": "🔍x",
+    "pattern": "🔍?",
+    "pattern_json": "\"🔍?\"",
+    "scalar_pattern": true,
+    "matched": true
+  },
+  {
+    "value": "🔍x",
+    "pattern": "*?",
+    "pattern_json": "\"*?\"",
+    "scalar_pattern": true,
+    "matched": true
+  },
+  {
+    "value": "x🔍",
+    "pattern": "x??",
+    "pattern_json": "\"x??\"",
+    "scalar_pattern": true,
+    "matched": true
+  },
+  {
+    "value": "x🔍",
+    "pattern": "x?",
+    "pattern_json": "\"x?\"",
+    "scalar_pattern": true,
+    "matched": false
+  },
+  {
+    "value": "🔍🔍",
+    "pattern": "????",
+    "pattern_json": "\"????\"",
+    "scalar_pattern": true,
+    "matched": true
+  },
+  {
+    "value": "🔍🔍",
+    "pattern": "??",
+    "pattern_json": "\"??\"",
+    "scalar_pattern": true,
+    "matched": false
+  },
+  {
+    "value": "é",
+    "pattern": "?",
+    "pattern_json": "\"?\"",
+    "scalar_pattern": true,
+    "matched": true
+  },
+  {
+    "value": "é",
+    "pattern": "??",
+    "pattern_json": "\"??\"",
+    "scalar_pattern": true,
+    "matched": false
+  },
+  {
+    "value": "x",
+    "pattern": "?",
+    "pattern_json": "\"?\"",
+    "scalar_pattern": true,
+    "matched": true
+  },
+  {
+    "value": "xy",
+    "pattern": "??",
+    "pattern_json": "\"??\"",
+    "scalar_pattern": true,
+    "matched": true
+  },
+  {
+    "value": "xy",
+    "pattern": "?",
+    "pattern_json": "\"?\"",
+    "scalar_pattern": true,
+    "matched": false
+  },
+  {
+    "value": "a.b+[c](d)$^|",
+    "pattern": "a.b+[c](d)$^|",
+    "pattern_json": "\"a.b+[c](d)$^|\"",
+    "scalar_pattern": true,
+    "matched": true
+  },
+  {
+    "value": "a.b",
+    "pattern": "a?b",
+    "pattern_json": "\"a?b\"",
+    "scalar_pattern": true,
+    "matched": true
+  },
+  {
+    "value": "Ab",
+    "pattern": "ab",
+    "pattern_json": "\"ab\"",
+    "scalar_pattern": true,
+    "matched": false
+  },
+  {
+    "value": "slash\\name",
+    "pattern": "slash/name",
+    "pattern_json": "\"slash/name\"",
+    "scalar_pattern": true,
+    "matched": true
+  },
+  {
+    "value": "slash/name",
+    "pattern": "slash\\name",
+    "pattern_json": "\"slash\\\\name\"",
+    "scalar_pattern": true,
+    "matched": true
+  },
+  {
+    "value": "command",
+    "pattern": "command *",
+    "pattern_json": "\"command *\"",
+    "scalar_pattern": true,
+    "matched": true
+  },
+  {
+    "value": "command args",
+    "pattern": "command *",
+    "pattern_json": "\"command *\"",
+    "scalar_pattern": true,
+    "matched": true
+  },
+  {
+    "value": "commandx",
+    "pattern": "command *",
+    "pattern_json": "\"command *\"",
+    "scalar_pattern": true,
+    "matched": false
+  },
+  {
+    "value": "line\nbreak",
+    "pattern": "line?break",
+    "pattern_json": "\"line?break\"",
+    "scalar_pattern": true,
+    "matched": true
+  },
+  {
+    "value": "line\nbreak",
+    "pattern": "line*break",
+    "pattern_json": "\"line*break\"",
+    "scalar_pattern": true,
+    "matched": true
+  },
+  {
+    "value": "x\n",
+    "pattern": "x",
+    "pattern_json": "\"x\"",
+    "scalar_pattern": true,
+    "matched": false
+  },
+  {
+    "value": "x\r\n",
+    "pattern": "x",
+    "pattern_json": "\"x\"",
+    "scalar_pattern": true,
+    "matched": false
+  },
+  {
+    "value": "x ",
+    "pattern": "x",
+    "pattern_json": "\"x\"",
+    "scalar_pattern": true,
+    "matched": false
+  },
+  {
+    "value": "x ",
+    "pattern": "x",
+    "pattern_json": "\"x\"",
+    "scalar_pattern": true,
+    "matched": false
+  },
+  {
+    "value": "𐀀",
+    "pattern": "?",
+    "pattern_json": "\"?\"",
+    "scalar_pattern": true,
+    "matched": false
+  },
+  {
+    "value": "𐀀",
+    "pattern": "??",
+    "pattern_json": "\"??\"",
+    "scalar_pattern": true,
+    "matched": true
+  },
+  {
+    "value": "",
+    "pattern": "?",
+    "pattern_json": "\"?\"",
+    "scalar_pattern": true,
+    "matched": true
+  },
+  {
+    "value": "",
+    "pattern": "🔍",
+    "pattern_json": "\"🔍\"",
+    "scalar_pattern": true,
+    "matched": false
+  },
+  {
+    "value": "skill",
+    "pattern": "sk?ll",
+    "pattern_json": "\"sk?ll\"",
+    "scalar_pattern": true,
+    "matched": true
+  },
+  {
+    "value": "skill",
+    "pattern": "s*",
+    "pattern_json": "\"s*\"",
+    "scalar_pattern": true,
+    "matched": true
+  },
+  {
+    "value": "skill",
+    "pattern": "sk??ll",
+    "pattern_json": "\"sk??ll\"",
+    "scalar_pattern": true,
+    "matched": false
+  },
+  {
+    "value": "🔍",
+    "pattern": "\ud83d?",
+    "pattern_json": "\"\\ud83d?\"",
+    "scalar_pattern": false,
+    "matched": true
+  },
+  {
+    "value": "🔍",
+    "pattern": "?\udd0d",
+    "pattern_json": "\"?\\udd0d\"",
+    "scalar_pattern": false,
+    "matched": true
+  },
+  {
+    "value": "🔍",
+    "pattern": "\ud83da",
+    "pattern_json": "\"\\ud83da\"",
+    "scalar_pattern": false,
+    "matched": false
+  }
+]

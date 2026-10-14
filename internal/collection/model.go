@@ -88,8 +88,8 @@ func NewRequest(rawRoots, rawProjectRoots []string, rawProject *string) (Request
 }
 
 func NewRequestWithAgent(rawRoots, rawProjectRoots []string, rawProject *string, agent string) (Request, error) {
-	if agent != "" && agent != "codex" && agent != "claude-code" {
-		return Request{}, fmt.Errorf("unknown agent %q; use codex or claude-code", agent)
+	if agent != "" && agent != "codex" && agent != "opencode" && agent != "claude-code" {
+		return Request{}, fmt.Errorf("unknown agent %q; use codex, claude-code or opencode", agent)
 	}
 	request := Request{Roots: make([]DiscoveryRoot, 0, len(rawRoots)+len(rawProjectRoots))}
 	if rawProject != nil {
@@ -138,8 +138,12 @@ func NewRequestWithAgent(rawRoots, rawProjectRoots []string, rawProject *string,
 		if err != nil {
 			return Request{}, err
 		}
-		request.codexHome = codexHome(request.home)
-		request.claudeHome = claudeHome(request.home)
+		if agent == "codex" {
+			request.codexHome = codexHome(request.home)
+		}
+		if agent == "claude-code" {
+			request.claudeHome = claudeHome(request.home)
+		}
 	}
 	return request, nil
 }
@@ -356,10 +360,10 @@ type Snapshot struct {
 }
 
 func Build(ctx context.Context, request Request) (*Snapshot, error) {
-	if request.Agent != "" && request.Agent != "codex" && request.Agent != "claude-code" {
+	if request.Agent != "" && request.Agent != "codex" && request.Agent != "opencode" && request.Agent != "claude-code" {
 		return nil, fmt.Errorf("unknown agent %q", request.Agent)
 	}
-	if request.Agent != "" && request.home == "" {
+	if (request.Agent != "" && request.home == "") || (request.Agent == "codex" && request.codexHome == "") {
 		return nil, errors.New("native scope requires NewRequestWithAgent")
 	}
 	if len(request.Roots) == 0 && request.Agent == "" {
@@ -372,6 +376,9 @@ func Build(ctx context.Context, request Request) (*Snapshot, error) {
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if request.Agent == "opencode" {
+		return buildOpencode(ctx, request)
 	}
 	if request.Agent == "codex" {
 		return buildCodex(ctx, request)

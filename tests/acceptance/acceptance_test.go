@@ -24,6 +24,7 @@ import (
 var (
 	tmuxSocketDirectory  string
 	skillglassBinary     string
+	skillglassExecutable string
 	isolationProbeBinary string
 	repositoryRoot       string
 	builtBinaryDir       string
@@ -96,6 +97,7 @@ func TestMain(testMain *testing.M) {
 			os.Exit(1)
 		}
 	}
+	skillglassExecutable = skillglassBinary
 	code := testMain.Run()
 	os.RemoveAll(tmuxSocketDirectory)
 	if err := writeEvidenceCaseIndex(); err != nil {
@@ -714,6 +716,7 @@ func newFixture(t *testing.T) fixture {
 		fx.xdgCache,
 		fx.xdgState,
 		fx.temporary,
+		filepath.Join(fx.base, "allowed", "git-templates"),
 		fx.project,
 		fx.cleanRoot,
 		fx.hostileRoot,
@@ -817,15 +820,7 @@ func (fx fixture) run(t *testing.T, args ...string) commandResult {
 	command.Dir = fx.project
 	command.Env = fx.environment()
 	command.Stdin = bytes.NewReader(nil)
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	command.Stdout = &stdout
-	command.Stderr = &stderr
-	started := time.Now()
-	launch := recordLaunch(t, command)
-	err := command.Run()
-	duration := time.Since(started)
-	result := commandResult{code: launchExitCode(err), stdout: stdout.Bytes(), stderr: stderr.Bytes(), duration: duration, launch: launch}
+	result, err := executeFinalizedCommand(t, command)
 	recordEvidenceCommand(t, "public-cli-contained", result)
 	if ctx.Err() != nil {
 		t.Fatalf("command timed out: %s %s", skillglassBinary, strings.Join(args, " "))
@@ -839,8 +834,22 @@ func (fx fixture) run(t *testing.T, args ...string) commandResult {
 	return result
 }
 
+func executeFinalizedCommand(t *testing.T, command *exec.Cmd) (commandResult, error) {
+	t.Helper()
+	var stdout, stderr bytes.Buffer
+	command.Stdout, command.Stderr = &stdout, &stderr
+	started := time.Now()
+	launch := recordLaunch(t, command)
+	err := command.Run()
+	return commandResult{code: launchExitCode(err), stdout: stdout.Bytes(), stderr: stderr.Bytes(), duration: time.Since(started), launch: launch}, err
+}
+
 func (fx fixture) environment() []string {
 	environment := []string{
+		"GIT_CONFIG_NOSYSTEM=1",
+		"GIT_CONFIG_GLOBAL=" + filepath.Join(fx.home, "missing-global.gitconfig"),
+		"GIT_CONFIG_SYSTEM=" + filepath.Join(fx.home, "missing-system.gitconfig"),
+		"GIT_TEMPLATE_DIR=" + filepath.Join(fx.base, "allowed", "git-templates"),
 		"HOME=" + fx.home,
 		"XDG_CONFIG_HOME=" + fx.xdgConfig,
 		"XDG_DATA_HOME=" + fx.xdgData,

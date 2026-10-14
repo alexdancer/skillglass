@@ -167,7 +167,9 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 	}
 
 	rootIsBundle, manifestErr := hasManifest(resolvedRoot)
-	if rootIsBundle {
+	if strings.HasPrefix(root.Origin, "opencode-") {
+		builder.discoverOpencodeChildren(ctx, root, root.Path, make(map[string]bool), new(int))
+	} else if rootIsBundle {
 		if builder.discoverCandidate(ctx, root, root.Path, ".") {
 			report.SourceCount++
 		}

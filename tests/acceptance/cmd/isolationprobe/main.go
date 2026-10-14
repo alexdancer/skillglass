@@ -25,6 +25,10 @@ func main() {
 		fixturePolicy()
 		return
 	}
+	absence := len(os.Args) == 6 && os.Args[1] == "--absence"
+	if absence {
+		os.Args = append(os.Args[:1], os.Args[2:]...)
+	}
 	if len(os.Args) != 5 {
 		os.Exit(2)
 	}
@@ -47,6 +51,11 @@ func main() {
 		"file_write_denied":    os.IsPermission(writeError),
 		"network_denied":       denied(networkError),
 		"child_exec_denied":    os.IsPermission(childError),
+	}
+	if absence {
+		_, metadataError := os.Stat(os.Args[2])
+		checks["excluded_read_denied"] = os.IsNotExist(excludedError)
+		checks["excluded_metadata_absent"] = os.IsNotExist(metadataError)
 	}
 	passed := true
 	for _, check := range checks {
