@@ -93,10 +93,15 @@ func availabilitySummaryLines(value collection.AvailabilityExplanation) []string
 	}
 	lines := []string{"Availability: " + string(value.State) + " (" + string(value.Evidence.Kind) + ")"}
 	for _, fact := range value.References {
-		if fact.Participation != collection.ParticipationInspection {
-			lines = append(lines, "Configured permission: "+string(fact.Permission.State)+" ("+string(fact.Permission.Evidence.Kind)+")")
-			break
+		if value.ReferenceID != "" {
+			if fact.Reference != value.ReferenceID {
+				continue
+			}
+		} else if fact.Participation == collection.ParticipationInspection {
+			continue
 		}
+		lines = append(lines, "Configured permission: "+string(fact.Permission.State)+" ("+string(fact.Permission.Evidence.Kind)+")")
+		break
 	}
 	lines = append(lines, "Session: unknown | Reload: unknown")
 	return lines

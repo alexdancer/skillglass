@@ -183,6 +183,7 @@ func (inputs *piInputs) explain(snapshot *Snapshot, id SourceID, roots map[RootI
 		ex.References = append(ex.References, ra)
 	}
 	if best != nil {
+		ex.ReferenceID = best.Reference
 		ex.Evidence = &best.Evidence
 		switch {
 		case bestFact.trust == "ask":
