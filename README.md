@@ -2,17 +2,17 @@
 
 A clear view into your local agent skills.
 
-Skillglass is a Go terminal tool for browsing, reading, and comparing local agent skills. The planned product will also control skills across agent applications, explain where a skill comes from, and show what a proposed change would affect.
+Skillglass is a Go terminal tool for browsing, reading, and comparing local agent skills. The planned product will also control skills across agent applications and show what a proposed change would affect.
 
 ## Status
 
-The production read-only inventory, identity, and comparison slices are implemented. Skillglass discovers explicit custom and project roots, groups references only when they resolve to the same proven directory object, reports collection problems without discarding healthy sources, and exposes the same immutable snapshot through the CLI and keyboard browser. Codex integration adds native scope and factored local configured-availability explanations; existing-session enforcement remains unknown and all controls remain unsupported. Generic explicit-root inventory keeps unknown ownership and availability. The repository also contains the approved specification, ticket breakdown, local agent scheduler, and the [ALE-22 terminal prototype](prototypes/ale-22/README.md) that preceded the production implementation.
+The production read-only inventory, identity, and comparison slices are implemented. Skillglass discovers explicit custom and project roots, groups references only when they resolve to the same proven directory object, reports collection problems without discarding healthy sources, and exposes the same immutable snapshot through the CLI and keyboard browser. Codex and Claude Code integrations add native scope and factored local configured-availability explanations; existing-session enforcement remains unknown and all controls remain unsupported. Generic explicit-root inventory keeps unknown ownership and availability. The repository also contains the approved specification, ticket breakdown, local agent scheduler, and the [ALE-22 terminal prototype](prototypes/ale-22/README.md) that preceded the production implementation.
 
 The project was planned as **Skill Viewer**. Existing Linear titles and historical planning documents retain that name; **Skillglass** is the product and repository name.
 
 ## Planned capabilities
 
-- Explain availability by agent application and project, including precedence and unsupported controls.
+- Extend availability explanations to the remaining agent applications.
 - Preview and apply validated enable/disable controls, or permanently delete explicitly selected content after confirmation.
 - Work offline, with the first release targeting macOS.
 
@@ -30,6 +30,7 @@ Planned integrations cover Codex, Claude Code, Hermes, Pi, OpenCode, Gemini CLI,
 - [ALE-24 verification](docs/verification/ale-24.md)
 - [ALE-25 verification](docs/verification/ale-25.md)
 - [ALE-26 Codex verification](docs/verification/ale-26.md)
+- [ALE-29 Claude Code verification](docs/verification/ale-29.md)
 
 [Linear](https://linear.app/alex-dancer/project/skill-viewer-58706f175bed) holds live ticket requirements, status, and dependencies. The local copies are references.
 
@@ -42,9 +43,12 @@ Build on macOS with Go 1.27.1. Download the pinned dependencies once with networ
 /opt/homebrew/bin/go build -mod=readonly -trimpath -o bin/skillglass ./cmd/skillglass
 ```
 
-Generic inventory operations require an explicit discovery root; help does not. `--agent codex` selects bounded native roots instead. See [Codex behavior, evidence and limits](docs/verification/ale-26.md). Repeat `--root` for custom locations. Use `--project-root` for roots associated with a selected `--project`; using a project root without `--project` is a usage error. Without `--agent`, project context never selects a root implicitly. Explicit roots containing `SKILL.md` select that bundle; otherwise only direct child bundle candidates are inspected, not nested collections. Explicit directory and manifest symlinks may resolve outside the root, but their siblings are not scanned.
+Generic inventory operations require an explicit discovery root; help does not. `--agent codex` or `--agent claude-code` selects bounded application-specific native roots instead. See [Codex behavior, evidence and limits](docs/verification/ale-26.md) and [Claude Code rules and native evidence](docs/verification/ale-29.md). Repeat `--root` for custom locations. Use `--project-root` for roots associated with a selected `--project`; using a project root without `--project` is a usage error. Without `--agent`, project context never selects a root implicitly. Explicit roots containing `SKILL.md` select that bundle; otherwise only direct child bundle candidates are inspected, not nested collections. Explicit directory and manifest symlinks may resolve outside the root, but their siblings are not scanned.
 
 ```sh
+bin/skillglass list --agent claude-code --project /path/to/repository --availability explicit-only --json
+bin/skillglass explain --agent claude-code --project /path/to/repository SOURCE_ID
+bin/skillglass browse --agent claude-code --project /path/to/repository
 bin/skillglass list --agent codex --project /path/to/repository --availability disabled --json
 bin/skillglass explain --agent codex --project /path/to/repository SOURCE_ID
 bin/skillglass browse --agent codex --project /path/to/repository
@@ -72,11 +76,11 @@ In the browser, move with the arrow keys or `j`/`k`, press `/` to search the cur
 
 In Sources, press `m` to mark the focused source as the left side, navigate or search for a partner, then press `v` to compare. The same marked source can also be selected to inspect shared-source semantics. Comparison runs asynchronously and shows pair identity, coverage and paged differences; scroll with `j`/`k`, `PgUp`/`PgDn`, and `g`/`G`, and press `Esc` to return. Press `r` in Comparison to refresh the inventory and return to Sources, then `v` to compare again. `Esc` in Sources clears the mark; refresh retains it only while the same proven directory object remains reachable.
 
-For Codex, press `a` to cycle configured availability and `c` to cycle global/system/managed as well as the ordinary reference contexts. Press `c` to cycle all, project, and custom reference contexts in generic inventory; `o` to cycle selected roots; `f` to cycle problem codes; and `r` to refresh explicitly. The browser has no watcher. Refresh observes external edits and retains a selected source only while the same proven directory object remains reachable. A rename or one retargeted alias can retain selection when another reference still reaches that object. Replacement, loss, uncertain identity, or retargeting its final reference clears selection visibly. A selected source hidden by filters remains explicitly identified as hidden and is never rebound to a visible row.
+For a selected native agent, press `a` to cycle configured availability and `c` to cycle global/system/managed as well as the ordinary reference contexts. Press `c` to cycle all, project, and custom reference contexts in generic inventory; `o` to cycle selected roots; `f` to cycle problem codes; and `r` to refresh explicitly. The browser has no watcher. Refresh observes external edits and retains a selected source only while the same proven directory object remains reachable. A rename or one retargeted alias can retain selection when another reference still reaches that object. Replacement, loss, uncertain identity, or retargeting its final reference clears selection visibly. A selected source hidden by filters remains explicitly identified as hidden and is never rebound to a visible row.
 
 Press `s` from either inventory view or source/problem detail to inspect the full selected project, every discovery root, and active filters. The scope view scrolls with the arrow keys or `j`/`k`, `PgUp`/`PgDn`, and `g`/`G`; press `Esc` or the left arrow to return. While search input is active, `a`, `c`, `o`, `f`, `r`, and `s` remain ordinary query text. Long searches retain the complete query for filtering and show its current tail on one row with a leading ellipsis.
 
-Manifests require YAML mapping frontmatter with a non-empty string `name` and an optional string `description`. Mapping keys must decode to unique UTF-8 strings within each mapping; non-string keys and invalid decoded strings are rejected. Ordinary aliases and merge overrides remain supported. A malformed readable UTF-8 manifest stays selectable with exact `manifest.raw_text` and diagnostics, without fabricated valid metadata. Manifest reads are limited to 4 MiB and resource inventories to 10,000 entries; exceeding either bound reports incomplete coverage rather than silent truncation.
+Generic inventory and Codex snapshots require YAML mapping frontmatter with a non-empty string `name` and an optional string `description`. Claude Code's name fallback is described in its [native rules](docs/verification/ale-29.md#native-observations-and-resulting-rules). Mapping keys must decode to unique UTF-8 strings within each mapping; non-string keys and invalid decoded strings are rejected. Ordinary aliases and merge overrides remain supported. A malformed readable UTF-8 manifest stays selectable with exact `manifest.raw_text` and diagnostics, without fabricated valid metadata. Manifest reads are limited to 4 MiB and resource inventories to 10,000 entries; exceeding either bound reports incomplete coverage rather than silent truncation.
 
 JSON output preserves YAML non-finite floats with an explicit, portable representation instead of failing serialization:
 

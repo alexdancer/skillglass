@@ -1,0 +1,202 @@
+[
+  {
+    "name": "absent",
+    "homepage": null,
+    "present": false,
+    "native_valid": true,
+    "public_state": "available",
+    "diagnostic": ""
+  },
+  {
+    "name": "https-valid",
+    "homepage": "https://example.invalid/docs",
+    "present": true,
+    "native_valid": true,
+    "public_state": "available",
+    "diagnostic": ""
+  },
+  {
+    "name": "https-bare",
+    "homepage": "https:",
+    "present": true,
+    "native_valid": false,
+    "public_state": "unknown",
+    "diagnostic": "WHATWG URL parsing"
+  },
+  {
+    "name": "https-empty-authority",
+    "homepage": "https://",
+    "present": true,
+    "native_valid": false,
+    "public_state": "unknown",
+    "diagnostic": "WHATWG URL parsing"
+  },
+  {
+    "name": "https-no-slashes",
+    "homepage": "https:example.invalid/docs",
+    "present": true,
+    "native_valid": true,
+    "public_state": "available",
+    "diagnostic": ""
+  },
+  {
+    "name": "https-one-slash",
+    "homepage": "https:/example.invalid/docs",
+    "present": true,
+    "native_valid": true,
+    "public_state": "available",
+    "diagnostic": ""
+  },
+  {
+    "name": "https-three-slashes",
+    "homepage": "https:///example.invalid/docs",
+    "present": true,
+    "native_valid": true,
+    "public_state": "available",
+    "diagnostic": ""
+  },
+  {
+    "name": "https-query-no-host",
+    "homepage": "https://?q=x",
+    "present": true,
+    "native_valid": false,
+    "public_state": "unknown",
+    "diagnostic": "WHATWG URL parsing"
+  },
+  {
+    "name": "https-backslashes",
+    "homepage": "https:\\example.invalid\\docs",
+    "present": true,
+    "native_valid": true,
+    "public_state": "available",
+    "diagnostic": ""
+  },
+  {
+    "name": "https-leading-space",
+    "homepage": " https://example.invalid/docs",
+    "present": true,
+    "native_valid": true,
+    "public_state": "available",
+    "diagnostic": ""
+  },
+  {
+    "name": "https-trailing-space",
+    "homepage": "https://example.invalid/docs ",
+    "present": true,
+    "native_valid": true,
+    "public_state": "available",
+    "diagnostic": ""
+  },
+  {
+    "name": "https-uppercase",
+    "homepage": "HTTPS://example.invalid/docs",
+    "present": true,
+    "native_valid": true,
+    "public_state": "available",
+    "diagnostic": ""
+  },
+  {
+    "name": "https-unicode-host",
+    "homepage": "https://\u00e9xample.invalid/docs",
+    "present": true,
+    "native_valid": true,
+    "public_state": "unknown",
+    "diagnostic": "IDNA validity"
+  },
+  {
+    "name": "https-ipv4-port",
+    "homepage": "https://127.0.0.1:443/docs",
+    "present": true,
+    "native_valid": true,
+    "public_state": "available",
+    "diagnostic": ""
+  },
+  {
+    "name": "https-bad-port",
+    "homepage": "https://example.invalid:99999/docs",
+    "present": true,
+    "native_valid": false,
+    "public_state": "unknown",
+    "diagnostic": "WHATWG URL parsing"
+  },
+  {
+    "name": "https-percent-host",
+    "homepage": "https://%65xample.invalid/docs",
+    "present": true,
+    "native_valid": true,
+    "public_state": "available",
+    "diagnostic": ""
+  },
+  {
+    "name": "mailto-opaque",
+    "homepage": "mailto:user@example.invalid",
+    "present": true,
+    "native_valid": true,
+    "public_state": "available",
+    "diagnostic": ""
+  },
+  {
+    "name": "data-opaque",
+    "homepage": "data:text/plain,fixture",
+    "present": true,
+    "native_valid": true,
+    "public_state": "available",
+    "diagnostic": ""
+  },
+  {
+    "name": "file-one-slash",
+    "homepage": "file:/fixture",
+    "present": true,
+    "native_valid": true,
+    "public_state": "available",
+    "diagnostic": ""
+  },
+  {
+    "name": "file-three-slashes",
+    "homepage": "file:///fixture",
+    "present": true,
+    "native_valid": true,
+    "public_state": "available",
+    "diagnostic": ""
+  },
+  {
+    "name": "custom-opaque",
+    "homepage": "fixture:opaque",
+    "present": true,
+    "native_valid": true,
+    "public_state": "available",
+    "diagnostic": ""
+  },
+  {
+    "name": "custom-authority",
+    "homepage": "fixture://example.invalid/docs",
+    "present": true,
+    "native_valid": true,
+    "public_state": "available",
+    "diagnostic": ""
+  },
+  {
+    "name": "relative",
+    "homepage": "example.invalid/docs",
+    "present": true,
+    "native_valid": false,
+    "public_state": "unknown",
+    "diagnostic": "WHATWG URL parsing"
+  },
+  {
+    "name": "empty",
+    "homepage": "",
+    "present": true,
+    "native_valid": false,
+    "public_state": "unknown",
+    "diagnostic": "WHATWG URL parsing"
+  },
+  {
+    "name": "valid-repeat",
+    "homepage": "https://example.invalid/docs",
+    "present": true,
+    "native_valid": true,
+    "public_state": "available",
+    "diagnostic": ""
+  }
+]

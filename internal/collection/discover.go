@@ -195,7 +195,7 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 		sort.Slice(entries, func(left, right int) bool {
 			return entries[left].Name() < entries[right].Name()
 		})
-		if root.Origin != "" {
+		if root.Origin != "" && !strings.HasPrefix(root.Origin, "claude-") {
 			builder.discoverNativeChildren(ctx, root, root.Path, make(map[string]bool), new(int))
 			entries = nil
 		}
@@ -366,7 +366,7 @@ func (builder *discoveryBuilder) discoverCandidate(
 		return true
 	}
 
-	manifest, manifestProblems := inspectManifest(resolvedPath)
+	manifest, manifestProblems := inspectManifest(resolvedPath, builder.request.Agent == "claude-code")
 	resources, resourceProblems := inventoryResources(ctx, resolvedPath)
 	problems := append(manifestProblems, resourceProblems...)
 	if identityErr != nil {
