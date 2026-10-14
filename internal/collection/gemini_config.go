@@ -15,6 +15,7 @@ import (
 
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
+	"golang.org/x/text/transform"
 )
 
 const geminiValidatedVersion = "Gemini CLI 0.63.0"
@@ -74,16 +75,37 @@ func (rules *geminiTrustRules) UnmarshalJSON(raw []byte) error {
 	return err
 }
 
-func geminiTrustKey(path string) string {
+func geminiTrustKey(path string) (string, error) {
 	key := strings.ReplaceAll(filepath.Clean(path), "\\", "/")
 	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
-		key = geminiComparisonKey(key)
+		return geminiComparisonKey(key)
 	}
-	return key
+	return key, nil
 }
 
-func geminiComparisonKey(value string) string {
-	return cases.Lower(language.Und).String(value)
+func geminiComparisonKey(value string) (string, error) {
+	source := []byte(value)
+	destination := make([]byte, max(1, len(source)))
+	lower := cases.Lower(language.Und)
+	for {
+		// Whole-input retries retain the context lost by String's 128-byte chunks.
+		lower.Reset()
+		written, consumed, err := lower.Transform(destination, source, true)
+		if err == transform.ErrShortDst {
+			if len(destination) > int(^uint(0)>>1)/2 {
+				return "", errors.New("lowercase comparison key exceeds buffer capacity")
+			}
+			destination = make([]byte, len(destination)*2)
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		if consumed != len(source) {
+			return "", errors.New("lowercase comparison key did not consume the complete input")
+		}
+		return string(destination[:written]), nil
+	}
 }
 
 func geminiEvidence(kind EvidenceKind, rule, path, setting, reason string) Evidence {
@@ -237,7 +259,13 @@ func (in *geminiInputs) loadSettings(path, scope string, apply bool) {
 					layer.State = "unknown"
 					continue
 				}
-				in.disabled[geminiComparisonKey(name)] = path
+				key, err := geminiComparisonKey(name)
+				if err != nil {
+					in.problem(path, "skills.disabled name could not be lowercased")
+					layer.State = "unknown"
+					continue
+				}
+				in.disabled[key] = path
 				layer.Choices = append(layer.Choices, PermissionChoice{Path: name, Enabled: false})
 			}
 		}
@@ -364,7 +392,12 @@ func (in *geminiInputs) readTrust() {
 			in.trust = ParticipationUnknown
 			return
 		}
-		key := geminiTrustKey(rule.path)
+		key, err := geminiTrustKey(rule.path)
+		if err != nil {
+			in.problem(path, "trusted-folder key could not be lowercased")
+			in.trust = ParticipationUnknown
+			return
+		}
 		normalized := normalizedRule{key, rule.path, rule.level}
 		if index, ok := positions[key]; ok {
 			ordered[index] = normalized
@@ -374,7 +407,12 @@ func (in *geminiInputs) readTrust() {
 		}
 	}
 	length := -1
-	project := geminiTrustKey(in.project)
+	project, err := geminiTrustKey(in.project)
+	if err != nil {
+		in.problem(path, "workspace path could not be lowercased for folder trust")
+		in.trust = ParticipationUnknown
+		return
+	}
 	for _, rule := range ordered {
 		target := rule.key
 		if rule.level == "TRUST_PARENT" {
@@ -383,7 +421,12 @@ func (in *geminiInputs) readTrust() {
 		if resolved, err := filepath.EvalSymlinks(target); err == nil {
 			target = resolved
 		}
-		target = geminiTrustKey(target)
+		target, err = geminiTrustKey(target)
+		if err != nil {
+			in.problem(path, "resolved trusted-folder path could not be lowercased")
+			in.trust = ParticipationUnknown
+			return
+		}
 		rel, err := filepath.Rel(target, project)
 		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			continue
@@ -406,7 +449,13 @@ func (in *geminiInputs) permission(name string) PermissionExplanation {
 		result.State = PermissionDenied
 		result.Evidence = geminiEvidence(EvidenceInferred, "skills-enabled", in.enabledPath, "skills.enabled=false", "skills subsystem is disabled")
 	}
-	if path, ok := in.disabled[geminiComparisonKey(name)]; ok {
+	key, err := geminiComparisonKey(name)
+	if err != nil {
+		result.State = PermissionUnknown
+		result.Evidence = geminiEvidence(EvidenceUnknown, "invalid-name-comparison", "", "", "native skill name could not be lowercased for disabled-name comparison")
+		return result
+	}
+	if path, ok := in.disabled[key]; ok {
 		result.State = PermissionDenied
 		result.Evidence = geminiEvidence(EvidenceInferred, "disabled-name-union", path, "skills.disabled", "case-insensitive disabled name remains disabled across settings layers")
 	}
