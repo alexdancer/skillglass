@@ -991,10 +991,11 @@ func (model browserModel) detailBodyLines(source collection.Source) []string {
 	if len(source.Problems) > 0 {
 		lines = append(lines, "", "Diagnostics:")
 		for _, problem := range source.Problems {
-			lines = append(lines, wrapLine(
-				"  "+string(problem.Code)+": "+safeInline(problem.Summary)+" ("+safeInline(problem.Detail)+")",
-				model.width,
-			)...)
+			line := "  " + string(problem.Code) + ": " + safeInline(problem.Summary)
+			if problem.Detail != "" {
+				line += " (" + safeInline(problem.Detail) + ")"
+			}
+			lines = append(lines, wrapLine(line, model.width)...)
 		}
 	}
 	if source.Manifest.Status == collection.ManifestParsed {
