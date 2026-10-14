@@ -48,7 +48,8 @@ func TestBrowserPTYJourney(t *testing.T) {
 	command.Env = fx.environment()
 	started := time.Now()
 	launch := recordLaunch(t, command)
-	terminal, err := pty.StartWithSize(command, &pty.Winsize{Rows: 24, Cols: 80})
+	recorded := fx.wrap(command)
+	terminal, err := recorded.startPTY(&pty.Winsize{Rows: 24, Cols: 80})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,6 +90,9 @@ func TestBrowserPTYJourney(t *testing.T) {
 	err = command.Wait()
 	<-copyDone
 	_ = terminal.Close()
+	if receiptErr := recorded.completePTY(err, raw.Bytes()); receiptErr != nil {
+		t.Fatal(receiptErr)
+	}
 	recordEvidenceCommand(t, "browser-pty-contained", commandResult{code: launchExitCode(err), stdout: raw.Bytes(), duration: time.Since(started), launch: launch})
 	if ctx.Err() != nil {
 		t.Fatal("browser PTY journey timed out")
@@ -633,10 +637,11 @@ func runTmuxProduct(t *testing.T, tmux string, fx fixture, socket string, payloa
 	}
 	commandArgs := append([]string{"-S", fx.tmuxSocket(socket), "-f", "/dev/null"}, options...)
 	commandArgs = append(commandArgs, "-c", payloadLaunch.Cwd, strings.Join(parts, " "))
-	command := exec.Command(tmux, commandArgs...)
+	command := fx.wrap(exec.Command(tmux, commandArgs...))
+	command.payloadProfile = []byte(payloadLaunch.Profile)
 	command.Dir, command.Env = fx.project, fx.environment()
 	started := time.Now()
-	utilityLaunch := recordLaunch(t, command)
+	utilityLaunch := recordLaunch(t, command.Cmd)
 	output, err := command.CombinedOutput()
 	result := commandResult{code: launchExitCode(err), stdout: output, duration: time.Since(started), launch: utilityLaunch, payload: payloadLaunch}
 	recordEvidenceCommand(t, "tmux-contained-product-start", result)
@@ -649,7 +654,7 @@ func runTmuxProduct(t *testing.T, tmux string, fx fixture, socket string, payloa
 func runTmux(t *testing.T, tmux string, fx fixture, socket string, args ...string) string {
 	t.Helper()
 	commandArgs := append([]string{"-S", fx.tmuxSocket(socket), "-f", "/dev/null"}, args...)
-	command := exec.Command(tmux, commandArgs...)
+	command := fx.wrap(exec.Command(tmux, commandArgs...))
 	command.Dir = fx.project
 	command.Env = fx.environment()
 	output, err := command.CombinedOutput()
@@ -661,10 +666,14 @@ func runTmux(t *testing.T, tmux string, fx fixture, socket string, args ...strin
 
 func runTmuxIgnoringError(tmux string, fx fixture, socket string, args ...string) {
 	commandArgs := append([]string{"-S", fx.tmuxSocket(socket), "-f", "/dev/null"}, args...)
-	command := exec.Command(tmux, commandArgs...)
+	command := fx.wrap(exec.Command(tmux, commandArgs...))
 	command.Dir = fx.project
 	command.Env = fx.environment()
-	_ = command.Run()
+	if err := command.Run(); err != nil {
+		if _, expectedExit := err.(*exec.ExitError); !expectedExit {
+			panic(err)
+		}
+	}
 }
 
 func waitForPane(
@@ -855,4 +864,16 @@ func writeEvidence(t *testing.T, relative string, content []byte) {
 	if err := os.WriteFile(path, content, 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func runContainedTmux(t *testing.T, tmux string, fx fixture, socket string, args ...string) string {
+	t.Helper()
+	commandArgs := append([]string{"-S", fx.tmuxSocket(socket), "-f", "/dev/null"}, args...)
+	command := fx.recordedCommand(context.Background(), tmux, commandArgs...)
+	command.Dir, command.Env = fx.project, fx.environment()
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("contained tmux %s: %v\n%s", strings.Join(args, " "), err, output)
+	}
+	return string(output)
 }

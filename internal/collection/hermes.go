@@ -73,7 +73,7 @@ func readHermesInputs(request Request) hermesInputs {
 	if filepath.Base(filepath.Dir(inputs.home)) != "profiles" && os.Getenv("HERMES_S6_SUPERVISED_CHILD") == "" {
 		root := inputs.home
 		native := filepath.Join(request.home, ".hermes")
-		if pathWithin(inputs.home, native) {
+		if hermesPathWithin(inputs.home, native) {
 			root = native
 		}
 		marker := filepath.Join(root, "active_profile")
@@ -165,7 +165,7 @@ func hermesHas(values []string, name string) bool {
 	}
 	return false
 }
-func pathWithin(path, root string) bool {
+func hermesPathWithin(path, root string) bool {
 	relative, err := filepath.Rel(root, path)
 	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }
@@ -228,7 +228,7 @@ func (inputs *hermesInputs) roots(request *Request) {
 		if resolved, err := filepath.EvalSymlinks(projectPath); err == nil {
 			projectPath = resolved
 		}
-		if request.Project.Selected && pathWithin(value, projectPath) {
+		if request.Project.Selected && hermesPathWithin(value, projectPath) {
 			context = ContextProject
 		}
 		add(value, context, "hermes-external", false)
@@ -283,7 +283,7 @@ func buildHermes(ctx context.Context, request Request) (*Snapshot, error) {
 		}
 	}
 	// The shared problem attachment routine is independent of Codex policy.
-	applyNativeInputProblems(snapshot, inputs.problems, roots)
+	applyNativeProblems(snapshot, inputs.problems, roots)
 	return snapshot, nil
 }
 
@@ -753,7 +753,7 @@ func hermesExplicitSupportPath(path, root string, manifests map[string]bool) (bo
 			if manifests[owner] {
 				return true, true
 			}
-			if pathWithin(owner, root) {
+			if hermesPathWithin(owner, root) {
 				_, err := os.Stat(filepath.Join(owner, "SKILL.md"))
 				if err == nil {
 					return true, true
@@ -872,7 +872,7 @@ func applyHermesExplicitLookup(snapshot *Snapshot, roots map[RootID]DiscoveryRoo
 			for _, lookup := range lookupNames {
 				for root, known := range searchRoots {
 					candidate := filepath.Join(root, lookup)
-					if !pathWithin(candidate, root) {
+					if !hermesPathWithin(candidate, root) {
 						continue
 					}
 					if directPaths[candidate] == "" && manifestDirs[filepath.Dir(candidate)] {

@@ -15,8 +15,9 @@ import (
 
 type fixtureCommand struct {
 	*exec.Cmd
-	fixture fixture
-	record  *launchrecord.Record
+	fixture        fixture
+	record         *launchrecord.Record
+	payloadProfile []byte
 }
 
 func invocationDirectory() string {
@@ -33,12 +34,18 @@ func (command *fixtureCommand) begin() error {
 	if command.record != nil {
 		return errors.New("fixture command already launched")
 	}
-	var profile []byte
+	profile := append([]byte(nil), command.payloadProfile...)
 	executable := command.Path
 	if filepath.Base(command.Path) == "sandbox-exec" && len(command.Args) >= 4 {
 		executable = command.Args[3]
 		if command.Args[1] == "-p" {
 			profile = []byte(command.Args[2])
+		} else if command.Args[1] == "-f" {
+			var err error
+			profile, err = os.ReadFile(command.Args[2])
+			if err != nil {
+				return err
+			}
 		}
 	}
 	var artifacts []string
@@ -52,7 +59,11 @@ func (command *fixtureCommand) begin() error {
 			}
 			last := len(command.Args) - 1
 			payload := command.Args[last]
-			command.Args[last] = "exec " + shellQuote(fixtureLaunchBinary) + " --directory " + shellQuote(filepath.Join(command.fixture.tmuxTemporary, "invocations")) + " --profile " + shellQuote(base64.StdEncoding.EncodeToString(profile)) + " --artifact " + shellQuote(skillglassBinary) + " -- /bin/sh -c " + shellQuote(payload)
+			profileMode := ""
+			if len(command.payloadProfile) != 0 {
+				profileMode = " --deferred-profile"
+			}
+			command.Args[last] = "exec " + shellQuote(fixtureLaunchBinary) + " --directory " + shellQuote(filepath.Join(command.fixture.tmuxTemporary, "invocations")) + " --profile " + shellQuote(base64.StdEncoding.EncodeToString(profile)) + profileMode + " --artifact " + shellQuote(skillglassBinary) + " -- /bin/sh -c " + shellQuote(payload)
 			artifacts = []string{fixtureLaunchBinary, skillglassBinary}
 			break
 		}

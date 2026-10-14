@@ -24,6 +24,7 @@ func run() int {
 	directory := flag.String("directory", "", "")
 	encoded := flag.String("profile", "", "")
 	artifact := flag.String("artifact", "", "")
+	deferred := flag.Bool("deferred-profile", false, "policy is applied by the payload rather than inherited")
 	flag.Parse()
 	args := flag.Args()
 	if len(args) == 0 {
@@ -36,6 +37,9 @@ func run() int {
 		return 125
 	}
 	profile := &launchrecord.Profile{Bytes: raw, SHA256: launchrecord.Digest(raw), InheritedFrom: launchrecord.Digest(raw)}
+	if *deferred {
+		profile.InheritedFrom = ""
+	}
 	if len(raw) == 0 {
 		profile = nil
 	}

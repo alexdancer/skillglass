@@ -25,7 +25,9 @@ var (
 	tmuxSocketDirectory  string
 	skillglassBinary     string
 	skillglassExecutable string
+	rawSkillglassBinary  string
 	isolationProbeBinary string
+	fixtureLaunchBinary  string
 	repositoryRoot       string
 	builtBinaryDir       string
 	evidenceMu           sync.Mutex
@@ -97,7 +99,18 @@ func TestMain(testMain *testing.M) {
 			os.Exit(1)
 		}
 	}
+	fixtureLaunchBinary = filepath.Join(builtBinaryDir, "fixturelaunch")
+	launcherBuild := exec.Command(goBinary, "build", "-trimpath", "-o", fixtureLaunchBinary, "./tests/acceptance/cmd/fixturelaunch")
+	launcherBuild.Dir = repositoryRoot
+	launcherBuild.Stdout = os.Stdout
+	launcherBuild.Stderr = os.Stderr
+	if err := launcherBuild.Run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.RemoveAll(builtBinaryDir)
+		os.Exit(1)
+	}
 	skillglassExecutable = skillglassBinary
+	rawSkillglassBinary = skillglassBinary
 	code := testMain.Run()
 	os.RemoveAll(tmuxSocketDirectory)
 	if err := writeEvidenceCaseIndex(); err != nil {
@@ -126,6 +139,7 @@ type fixture struct {
 	unreadableRoot string
 	missingRoot    string
 	marker         string
+	tmuxTemporary  string
 }
 
 type commandResult struct {
@@ -691,9 +705,68 @@ func TestDirectoryObjectIdentitySurvivesRename(t *testing.T) {
 func newFixture(t *testing.T) fixture {
 	t.Helper()
 	base := t.TempDir()
+	tmuxTemporary, err := os.MkdirTemp("/private/tmp", "sgmux-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(tmuxTemporary) })
+	t.Cleanup(func() {
+		root := filepath.Join(tmuxTemporary, "invocations")
+		entries, err := os.ReadDir(root)
+		if os.IsNotExist(err) {
+			return
+		}
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			pending := false
+			for _, entry := range entries {
+				if !strings.HasSuffix(entry.Name(), ".invocation.json") {
+					continue
+				}
+				completion := strings.TrimSuffix(entry.Name(), ".invocation.json") + ".completion.json"
+				if _, err := os.Stat(filepath.Join(root, completion)); os.IsNotExist(err) {
+					pending = true
+				} else if err != nil {
+					t.Error(err)
+				}
+			}
+			if !pending {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Error("tmux payload shutdown did not complete its launch receipts")
+				break
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		entries, err = os.ReadDir(root)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		for _, entry := range entries {
+			raw, err := os.ReadFile(filepath.Join(root, entry.Name()))
+			if err != nil {
+				t.Error(err)
+				continue
+			}
+			if err := os.MkdirAll(invocationDirectory(), 0700); err != nil {
+				t.Error(err)
+				continue
+			}
+			if err := os.WriteFile(filepath.Join(invocationDirectory(), entry.Name()), raw, 0600); err != nil {
+				t.Error(err)
+			}
+		}
+	})
 	fx := fixture{
 		base:           base,
 		policy:         filepath.Join(base, "allowed", "fixture-policy.sb"),
+		tmuxTemporary:  tmuxTemporary,
 		home:           filepath.Join(base, "allowed", "home"),
 		xdgConfig:      filepath.Join(base, "allowed", "xdg-config"),
 		xdgData:        filepath.Join(base, "allowed", "xdg-data"),
@@ -840,7 +913,7 @@ func executeFinalizedCommand(t *testing.T, command *exec.Cmd) (commandResult, er
 	command.Stdout, command.Stderr = &stdout, &stderr
 	started := time.Now()
 	launch := recordLaunch(t, command)
-	err := command.Run()
+	err := (&fixtureCommand{Cmd: command}).Run()
 	return commandResult{code: launchExitCode(err), stdout: stdout.Bytes(), stderr: stderr.Bytes(), duration: time.Since(started), launch: launch}, err
 }
 
@@ -858,6 +931,7 @@ func (fx fixture) environment() []string {
 		"XDG_CACHE_HOME=" + fx.xdgCache,
 		"XDG_STATE_HOME=" + fx.xdgState,
 		"TMPDIR=" + fx.temporary,
+		"TMUX_TMPDIR=" + fx.tmuxTemporary,
 		"PATH=/usr/bin:/bin",
 		"TERM=xterm-256color",
 		"LC_ALL=C",

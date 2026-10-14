@@ -520,14 +520,18 @@ func (model *browserModel) refresh() {
 			model.marked = ""
 		}
 	}
+	objectKind := "directory"
+	if previous, ok := model.snapshot.Source(model.selected); ok && previous.Identity.Method == "darwin-file-object" {
+		objectKind = "file"
+	}
 	model.comparisonGeneration++
 	model.snapshot = refreshed
 	switch change.State {
 	case collection.SelectionChangeCleared:
 		model.clearSelectedSource()
-		model.feedback = "Refresh: selection cleared because its directory object is no longer reachable"
+		model.feedback = "Refresh: selection cleared because its " + objectKind + " object is no longer reachable"
 	case collection.SelectionChangeRetained:
-		model.feedback = "Refresh: selected directory object retained"
+		model.feedback = "Refresh: selected " + objectKind + " object retained"
 	case collection.SelectionChangeNone:
 		model.feedback = "Refresh: collection updated"
 	default:

@@ -20,7 +20,18 @@ import (
 const maxManifestBytes int64 = 4 << 20
 
 func inspectManifest(bundleDirectory string, allowUnnamed bool) (Manifest, []Problem) {
-	lexicalPath := filepath.Join(bundleDirectory, "SKILL.md")
+	return inspectManifestPath(filepath.Join(bundleDirectory, "SKILL.md"), false, allowUnnamed)
+}
+
+func inspectManifestForAgent(bundleDirectory, agent string) (Manifest, []Problem) {
+	return inspectManifestPath(filepath.Join(bundleDirectory, "SKILL.md"), agent == "pi", agent == "claude-code")
+}
+
+func inspectManifestFile(lexicalPath string, pi bool) (Manifest, []Problem) {
+	return inspectManifestPath(lexicalPath, pi, false)
+}
+
+func inspectManifestPath(lexicalPath string, pi, allowUnnamed bool) (Manifest, []Problem) {
 	manifest := Manifest{Path: lexicalPath, Status: ManifestUnreadable}
 
 	info, err := os.Lstat(lexicalPath)
@@ -145,7 +156,12 @@ func inspectManifest(bundleDirectory string, allowUnnamed bool) (Manifest, []Pro
 	}
 
 	manifest.RawText = string(raw)
-	frontmatter, instructions, err := splitManifest(raw)
+	var frontmatter, instructions []byte
+	if pi {
+		frontmatter, instructions, err = splitPiManifest(raw)
+	} else {
+		frontmatter, instructions, err = splitManifest(raw)
+	}
 	if err != nil {
 		manifest.Status = ManifestMalformed
 		problem := makeProblem(
@@ -160,7 +176,11 @@ func inspectManifest(bundleDirectory string, allowUnnamed bool) (Manifest, []Pro
 
 	manifest.RawFrontmatter = string(frontmatter)
 	manifest.Instructions = string(instructions)
-	metadata, nonFiniteValues, err := decodeMetadata(frontmatter)
+	parsingFrontmatter := frontmatter
+	if pi {
+		parsingFrontmatter = bytes.ReplaceAll(bytes.ReplaceAll(frontmatter, []byte("\r\n"), []byte("\n")), []byte("\r"), []byte("\n"))
+	}
+	metadata, nonFiniteValues, err := decodeMetadata(parsingFrontmatter)
 	if err != nil {
 		manifest.Status = ManifestMalformed
 		problem := makeProblem(
@@ -175,10 +195,13 @@ func inspectManifest(bundleDirectory string, allowUnnamed bool) (Manifest, []Pro
 
 	name, ok := metadata["name"].(string)
 	if _, present := metadata["name"]; !present && allowUnnamed {
-		name = filepath.Base(bundleDirectory)
+		name = filepath.Base(filepath.Dir(lexicalPath))
 		ok = true
 	}
-	if !ok || strings.TrimSpace(name) == "" {
+	if pi && (!ok || name == "") {
+		name, ok = filepath.Base(filepath.Dir(lexicalPath)), true
+	}
+	if !ok || (!pi && strings.TrimSpace(name) == "") {
 		manifest.Status = ManifestMalformed
 		problem := makeProblem(
 			ProblemMalformedManifest,
@@ -324,6 +347,38 @@ func splitManifest(raw []byte) ([]byte, []byte, error) {
 		}
 		if lineEndRelative < 0 {
 			break
+		}
+		cursor = next
+	}
+	return nil, nil, errors.New("frontmatter has no closing --- line")
+}
+
+func splitPiManifest(raw []byte) ([]byte, []byte, error) {
+	cursor := 0
+	if bytes.HasPrefix(raw, []byte("\xef\xbb\xbf")) {
+		cursor = 3
+	}
+	frontmatterStart := -1
+	for cursor < len(raw) {
+		end := len(raw)
+		if offset := bytes.IndexAny(raw[cursor:], "\r\n"); offset >= 0 {
+			end = cursor + offset
+		}
+		next := end
+		if next < len(raw) {
+			next++
+			if raw[end] == '\r' && next < len(raw) && raw[next] == '\n' {
+				next++
+			}
+		}
+		line := raw[cursor:end]
+		if frontmatterStart < 0 {
+			if !bytes.Equal(line, []byte("---")) || end == len(raw) {
+				return nil, nil, errors.New("frontmatter must begin with a --- line")
+			}
+			frontmatterStart = next
+		} else if bytes.Equal(line, []byte("---")) {
+			return raw[frontmatterStart:cursor], raw[next:], nil
 		}
 		cursor = next
 	}

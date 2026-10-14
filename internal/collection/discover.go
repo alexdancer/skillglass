@@ -150,6 +150,11 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 		report.ProblemCount = 1
 		return report
 	}
+	if root.piFile && rootInfo.Mode().IsRegular() {
+		builder.discoverPiFile(ctx, root, root.Path, ".")
+		report.State = RootSearched
+		return report
+	}
 	if !rootInfo.IsDir() {
 		err := fmt.Errorf("selected root resolves to %s, not a directory", rootInfo.Mode().Type())
 		problem := makeProblem(
@@ -167,6 +172,19 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 	}
 
 	rootIsBundle, manifestErr := hasManifest(resolvedRoot)
+	if root.childrenOnly {
+		if root.inspectRootManifest {
+			if rootIsBundle {
+				builder.discoverCandidate(ctx, root, root.Path, ".")
+			} else if manifestErr != nil {
+				problem := manifestPresenceProblem(resolvedRoot, manifestErr)
+				problem.RootIDs = []RootID{root.ID}
+				builder.addProblem(problem)
+			}
+		}
+		rootIsBundle = false
+		manifestErr = nil
+	}
 	if strings.HasPrefix(root.Origin, "opencode-") {
 		builder.discoverOpencodeChildren(ctx, root, root.Path, make(map[string]bool), new(int))
 	} else if rootIsBundle {
@@ -174,7 +192,10 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 			report.SourceCount++
 		}
 	}
-	if !rootIsBundle || strings.HasPrefix(root.Origin, "gemini-") {
+	if rootIsBundle && strings.HasPrefix(root.Origin, "hermes-") && root.Origin != "hermes-plugin" {
+		builder.discoverHermesChildren(ctx, root, root.Path, make(map[string]bool), new(int))
+	}
+	if !strings.HasPrefix(root.Origin, "opencode-") && (!rootIsBundle || strings.HasPrefix(root.Origin, "gemini-")) {
 		entries, readErr := os.ReadDir(resolvedRoot)
 		if readErr != nil {
 			problem := makeProblem(
@@ -198,7 +219,13 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 		sort.Slice(entries, func(left, right int) bool {
 			return entries[left].Name() < entries[right].Name()
 		})
-		if strings.HasPrefix(root.Origin, "codex-") {
+		if strings.HasPrefix(root.Origin, "pi-") {
+			builder.discoverPiChildren(ctx, root, root.Path, make(map[string]bool), new(int), true)
+			entries = nil
+		} else if strings.HasPrefix(root.Origin, "hermes-") {
+			builder.discoverHermesChildren(ctx, root, root.Path, make(map[string]bool), new(int))
+			entries = nil
+		} else if strings.HasPrefix(root.Origin, "codex-") {
 			builder.discoverNativeChildren(ctx, root, root.Path, make(map[string]bool), new(int))
 			entries = nil
 		}
@@ -372,7 +399,7 @@ func (builder *discoveryBuilder) discoverCandidate(
 		return true
 	}
 
-	manifest, manifestProblems := inspectManifest(resolvedPath, builder.request.Agent == "claude-code")
+	manifest, manifestProblems := inspectManifestForAgent(resolvedPath, builder.request.Agent)
 	resources, resourceProblems := inventoryResources(ctx, resolvedPath)
 	problems := append(manifestProblems, resourceProblems...)
 	if identityErr != nil {

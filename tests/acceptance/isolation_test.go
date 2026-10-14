@@ -205,7 +205,7 @@ func runSandboxCommand(
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	commandArgs := append([]string{"-f", profile, executable}, args...)
-	command := exec.CommandContext(ctx, "/usr/bin/sandbox-exec", commandArgs...)
+	command := fx.wrap(exec.CommandContext(ctx, "/usr/bin/sandbox-exec", commandArgs...))
 	command.Dir = canonicalPath(t, fx.project)
 	command.Env = fx.environment()
 	var stdout bytes.Buffer
@@ -213,7 +213,7 @@ func runSandboxCommand(
 	command.Stdout = &stdout
 	command.Stderr = &stderr
 	started := time.Now()
-	launch := recordLaunch(t, command)
+	launch := recordLaunch(t, command.Cmd)
 	err := command.Run()
 	result := commandResult{
 		code:     launchExitCode(err),
@@ -232,7 +232,7 @@ func runSandboxCommand(
 			t.Fatalf("run sandboxed command: %v", err)
 		}
 	}
-	assertRecordedContext(t, launch, command)
+	assertRecordedContext(t, launch, command.Cmd)
 	return result
 }
 
@@ -243,13 +243,17 @@ func runSandboxBrowser(t *testing.T, fx fixture, profile, executable string, bro
 	if len(browserArgs) == 0 {
 		browserArgs = []string{"browse", "--root", fx.cleanRoot, "--project", fx.project}
 	}
+	if browserArgs[0] != "browse" {
+		browserArgs = append([]string{"browse"}, browserArgs...)
+	}
 	commandArgs := append([]string{"-f", profile, executable}, browserArgs...)
 	command := exec.CommandContext(ctx, "/usr/bin/sandbox-exec", commandArgs...)
 	command.Dir = canonicalPath(t, fx.project)
 	command.Env = fx.environment()
 	started := time.Now()
 	launch := recordLaunch(t, command)
-	terminal, err := pty.StartWithSize(command, &pty.Winsize{Rows: 30, Cols: 80})
+	recorded := fx.wrap(command)
+	terminal, err := recorded.startPTY(&pty.Winsize{Rows: 30, Cols: 80})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,6 +270,9 @@ func runSandboxBrowser(t *testing.T, fx fixture, profile, executable string, bro
 	err = command.Wait()
 	<-copyDone
 	_ = terminal.Close()
+	if receiptErr := recorded.completePTY(err, raw.Bytes()); receiptErr != nil {
+		t.Fatal(receiptErr)
+	}
 	recordEvidenceCommand(t, "sandboxed-browser-pty", commandResult{code: launchExitCode(err), stdout: raw.Bytes(), duration: time.Since(started), launch: launch})
 	if ctx.Err() != nil {
 		t.Fatal("sandboxed browser timed out")
@@ -292,7 +299,7 @@ func runtimeProfile(executable, allowedRoot string) string {
  (subpath %s) (subpath %s)
  (subpath "/Library/Application Support/ClaudeCode") (subpath "/Library/Managed Preferences")
  (literal "/Library/Preferences/com.anthropic.claudecode.plist")
- (subpath "/etc/codex") (subpath "/private/etc/codex")
+ (subpath "/etc/codex") (subpath "/private/etc/codex") (subpath "/etc/hermes") (subpath "/private/etc/hermes")
  (subpath "/System") (subpath "/usr/lib") (subpath "/dev"))))
 (deny process-exec (require-not (literal %s)))
 (deny file-read* (subpath %s) (with errno ENOENT))

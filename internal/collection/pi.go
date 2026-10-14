@@ -336,10 +336,6 @@ func piHasIgnore(root, file string) bool {
 	}
 	return false
 }
-func pathWithin(root, path string) bool {
-	rel, err := filepath.Rel(root, path)
-	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
-}
 func applyPiPrecedence(snapshot *Snapshot, ranks map[SourceID]int) {
 	order := map[SourceID]int{}
 	for index, rid := range snapshot.referenceOrder {

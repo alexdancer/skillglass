@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"syscall"
 	"time"
 )
@@ -21,15 +22,30 @@ func main() {
 		boundary()
 		return
 	}
+	if len(os.Args) == 3 && os.Args[1] == "--system" {
+		_, readErr := os.ReadFile(os.Args[2])
+		_, statErr := os.Stat(os.Args[2])
+		_, dirErr := os.ReadDir(filepath.Dir(os.Args[2]))
+		passed := os.IsNotExist(readErr) && os.IsNotExist(statErr) && os.IsNotExist(dirErr)
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"passed": passed, "read_absent": os.IsNotExist(readErr), "stat_absent": os.IsNotExist(statErr), "directory_absent": os.IsNotExist(dirErr)})
+		if !passed {
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "fixture-policy" {
 		fixturePolicy()
 		return
+	}
+	systemPolicy := len(os.Args) == 7 && os.Args[1] == "--system-policy"
+	if systemPolicy {
+		os.Args = append(os.Args[:1], os.Args[2:]...)
 	}
 	absence := len(os.Args) == 6 && os.Args[1] == "--absence"
 	if absence {
 		os.Args = append(os.Args[:1], os.Args[2:]...)
 	}
-	if len(os.Args) != 5 {
+	if len(os.Args) != 5 && len(os.Args) != 6 {
 		os.Exit(2)
 	}
 	allowed, allowedError := os.ReadFile(os.Args[1])
@@ -56,6 +72,21 @@ func main() {
 		_, metadataError := os.Stat(os.Args[2])
 		checks["excluded_read_denied"] = os.IsNotExist(excludedError)
 		checks["excluded_metadata_absent"] = os.IsNotExist(metadataError)
+	} else if systemPolicy {
+		_, systemError := os.ReadFile(os.Args[5])
+		checks["system_absent"] = os.IsNotExist(systemError)
+	} else if len(os.Args) == 6 {
+		_, statError := os.Stat(os.Args[2])
+		_, listingError := os.ReadDir(os.Args[5])
+		_, configStatError := os.Stat("/etc/codex/config.toml")
+		_, configReadError := os.ReadFile("/etc/codex/config.toml")
+		_, systemStatError := os.Stat("/etc/codex/skills")
+		_, systemListingError := os.ReadDir("/etc/codex/skills")
+		checks["excluded_read_denied"] = os.IsNotExist(excludedError)
+		checks["model_stat_absent"] = os.IsNotExist(statError)
+		checks["model_listing_absent"] = os.IsNotExist(listingError)
+		checks["system_config_absent"] = os.IsNotExist(configStatError) && os.IsNotExist(configReadError)
+		checks["system_skills_absent"] = os.IsNotExist(systemStatError) && os.IsNotExist(systemListingError)
 	}
 	passed := true
 	for _, check := range checks {

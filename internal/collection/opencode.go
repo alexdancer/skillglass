@@ -180,10 +180,6 @@ func explainOpencodeSource(snapshot *Snapshot, id SourceID, roots map[RootID]Dis
 	source.Availability = availability
 	return source
 }
-func pathWithin(root, path string) bool {
-	relative, err := filepath.Rel(root, path)
-	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
-}
 func applyOpencodeConflicts(snapshot *Snapshot) {
 	groups := map[string][]SourceID{}
 	for _, id := range snapshot.order {

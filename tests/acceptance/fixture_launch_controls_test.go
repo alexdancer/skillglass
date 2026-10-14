@@ -36,7 +36,7 @@ func TestOrdinaryLaunchContainmentCLIAndPTYAndTmux(t *testing.T) {
 		t.Fatalf("system positive: %s %v", data, err)
 	}
 	before := treeManifest(t, fx.base)
-	args := []string{allowed, excluded, blocked, listener.Addr().String(), system}
+	args := []string{"--system-policy", allowed, excluded, blocked, listener.Addr().String(), system}
 	check := func(raw []byte) {
 		var result struct {
 			Passed bool

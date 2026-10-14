@@ -288,7 +288,7 @@ func hermesPluginContained(path, root string) bool {
 		return false
 	}
 	owner, err := filepath.EvalSymlinks(root)
-	return err == nil && pathWithin(resolved, owner)
+	return err == nil && hermesPathWithin(resolved, owner)
 }
 func hermesPluginFact(fact *ReferenceAvailability, explanation *AvailabilityExplanation, source Source, ref Reference, plugin hermesPlugin, inputs *hermesInputs, full hermesMetadataObservation) {
 	fact.Participation = plugin.state

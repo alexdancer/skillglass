@@ -52,7 +52,7 @@ Inspect `cases.json`, raw PTY bytes, driven keys, pane dimensions, and current t
 Run repository checks after the last source or documentation change. The full Go suite now includes Codex snapshot and writer fault tests in `internal/collection`, which do not contain their own process. Set `SKILLGLASS_TEST_EXEC` to the absolute path of the coordinator-provided contained test launcher before running that suite. It must launch the collection test executable with disposable HOME/CODEX_HOME/CLAUDE_CONFIG_DIR/XDG paths, external TMPDIR/GOTMPDIR, controlled native-system-input absence, denied network and outside-content reads, and bounded fixture writes, while allowing the exact `/bin/ls` ACL helper. Prove its positive and negative controls and record finalized launch contexts using the [containment contract](ale-23.md#runtime-containment-boundary). Do not substitute an uncontained full-suite command if the launcher is unavailable.
 
 ```sh
-/opt/homebrew/bin/gofmt -l cmd internal tests/acceptance
+/opt/homebrew/bin/gofmt -l cmd internal tests/acceptance tests/launchrecord
 env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go vet ./...
 : "${SKILLGLASS_TEST_EXEC:?Supply the proved contained collection-test launcher}"
 env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go test -count=1 -mod=readonly -exec "$SKILLGLASS_TEST_EXEC" ./...

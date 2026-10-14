@@ -18,7 +18,7 @@ import (
 
 func absentSystemPolicy() string {
 	var policy strings.Builder
-	for _, path := range []string{"/Library/Application Support/ClaudeCode", "/Library/Managed Preferences", "/Library/Preferences/com.anthropic.claudecode.plist", "/etc/codex", "/private/etc/codex"} {
+	for _, path := range []string{"/Library/Application Support/ClaudeCode", "/Library/Managed Preferences", "/Library/Preferences/com.anthropic.claudecode.plist", "/etc/codex", "/private/etc/codex", "/Library/Application Support/opencode", "/etc/hermes", "/private/etc/hermes"} {
 		fmt.Fprintf(&policy, "(deny file-read* (subpath %s) (with errno ENOENT))\n", sandboxString(path))
 	}
 	return policy.String()
@@ -47,7 +47,7 @@ func (fx fixture) fixturePolicy(t *testing.T, writer bool) string {
 		t.Fatal(err)
 	}
 	executableLiterals := " (literal " + sandboxString(product) + ") (literal " + sandboxString(probe) + ")"
-	writeRule := "(deny file-write*)"
+	writeRule := "(deny file-write*)\n(allow file-write* (literal \"/dev/null\") (literal \"/dev/tty\"))"
 	if writer {
 		executableLiterals += " (literal \"/bin/ls\")"
 		writeRule = "(deny file-write* (require-not (subpath " + sandboxString(allowed) + ")))"
@@ -58,23 +58,28 @@ func (fx fixture) fixturePolicy(t *testing.T, writer bool) string {
 %s
 (deny file-read-data (require-not (require-any
  %s (literal "/") %s
- (subpath %s) (subpath %s) (subpath %s)
+ (subpath %s) (subpath %s) (subpath %s) (subpath %s)
  (subpath "/Library/Application Support/ClaudeCode") (subpath "/Library/Managed Preferences")
- (literal "/Library/Preferences/com.anthropic.claudecode.plist") (subpath "/etc/codex") (subpath "/private/etc/codex")
+ (literal "/Library/Preferences/com.anthropic.claudecode.plist") (subpath "/etc/codex") (subpath "/private/etc/codex") (subpath "/etc/hermes") (subpath "/private/etc/hermes")
  (subpath "/System") (subpath "/usr/lib") (subpath "/dev"))))
 (deny file-read* (subpath %s))
 (allow file-read* (require-any %s))
 (deny process-exec (require-not (require-any %s)))
-`, writeRule, executableLiterals, ancestorReadLiterals(allowed), sandboxString(allowed), sandboxString(filepath.Join(fx.base, "excluded", "system-inputs")), sandboxString(filepath.Join(fx.base, "excluded", "controlled-system")), sandboxString(account.HomeDir), executableLiterals, executableLiterals)
+`, writeRule, executableLiterals, ancestorReadLiterals(allowed), sandboxString(allowed), sandboxString(filepath.Join(fx.base, "excluded", "system-inputs")), sandboxString(filepath.Join(fx.base, "excluded", "controlled-system")), sandboxString(filepath.Join(fx.base, "excluded", "modeled-system")), sandboxString(account.HomeDir), executableLiterals, executableLiterals)
 	policy += absentSystemPolicy()
 	policy += fmt.Sprintf("(deny file-read* (subpath %s) (with errno ENOENT))\n", sandboxString(filepath.Join(fx.base, "excluded", "system-inputs")))
 	policy += fmt.Sprintf("(deny file-read* (subpath %s) (with errno ENOENT))\n", sandboxString(filepath.Join(fx.base, "excluded", "controlled-system")))
+	policy += fmt.Sprintf("(deny file-read* (subpath %s) (with errno ENOENT))\n", sandboxString(filepath.Join(fx.base, "excluded", "modeled-system")))
+	policy += fmt.Sprintf("(deny file-read* (subpath %s) (with errno ENOENT))\n", sandboxString(filepath.Join(fx.base, "excluded", "system-model")))
 	return policy
 }
 
 func (fx fixture) seal(t *testing.T) {
 	t.Helper()
-	writeFile(t, fx.policy, []byte(fx.fixturePolicy(t, false)), 0600)
+	policy := fx.fixturePolicy(t, false)
+	writeFile(t, fx.policy, []byte(policy), 0600)
+	digest := sha256.Sum256([]byte(policy))
+	writeEvidence(t, fmt.Sprintf("launch-profiles/%x.sb", digest), []byte(policy))
 }
 
 func (fx fixture) invocation(t *testing.T, executable string, args ...string) []string {
@@ -84,10 +89,7 @@ func (fx fixture) invocation(t *testing.T, executable string, args ...string) []
 
 func (fx fixture) command(t *testing.T, ctx context.Context, args ...string) *exec.Cmd {
 	t.Helper()
-	argv := fx.invocation(t, skillglassBinary, args...)
-	command := exec.CommandContext(ctx, argv[0], argv[1:]...)
-	command.Dir, command.Env = fx.project, fx.environment()
-	return command
+	return fx.containedCommand(t, ctx, skillglassBinary, args...)
 }
 
 func (fx fixture) productCommand(t *testing.T, args ...string) *exec.Cmd {
@@ -241,4 +243,13 @@ func TestALE29KnownClaudeAndCodexSystemInputsAreControlledAbsent(t *testing.T) {
 			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 		})
 	}
+}
+
+func mustReadFixturePolicy(t *testing.T, fx fixture) []byte {
+	t.Helper()
+	policy, err := os.ReadFile(fx.policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return policy
 }

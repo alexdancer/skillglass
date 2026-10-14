@@ -21,7 +21,7 @@ func TestALE33FindingLaunchReceipts(t *testing.T) {
 		code    int
 		output  string
 	}{{"/usr/bin/printf", 0, "receipt-output"}, {"/usr/bin/printf", 0, "new-session"}, {"/usr/bin/false", 1, ""}} {
-		command := fx.command(context.Background(), result.program)
+		command := fx.recordedCommand(context.Background(), result.program)
 		if result.output != "" {
 			command.Args = append(command.Args, result.output)
 		}
@@ -38,7 +38,7 @@ func TestALE33FindingLaunchReceipts(t *testing.T) {
 	}
 	t.Run("prelaunch-ordering", func(t *testing.T) {
 		t.Setenv("SKILLGLASS_EVIDENCE", fx.tmuxTemporary)
-		command := fx.command(context.Background(), "/bin/sh", "-c", `set -- "$FIXTURE_RECEIPTS"/invocations/*.invocation.json; test -f "$1" || exit 7; printf prelaunch`)
+		command := fx.recordedCommand(context.Background(), "/bin/sh", "-c", `set -- "$FIXTURE_RECEIPTS"/invocations/*.invocation.json; test -f "$1" || exit 7; printf prelaunch`)
 		command.Dir = fx.project
 		command.Env = append(fx.environment(), "FIXTURE_RECEIPTS="+fx.tmuxTemporary)
 		output, err := command.CombinedOutput()
@@ -48,7 +48,7 @@ func TestALE33FindingLaunchReceipts(t *testing.T) {
 		assertLaunchReceipt(t, command, output, 0)
 	})
 	t.Run("finalized-fields", func(t *testing.T) {
-		command := fx.command(context.Background(), "/usr/bin/printf", "initial")
+		command := fx.recordedCommand(context.Background(), "/usr/bin/printf", "initial")
 		command.Dir = fx.project
 		command.Env = append(fx.environment(), "FIXTURE_VALUE=final")
 		command.Args[len(command.Args)-1] = "final"
@@ -84,7 +84,7 @@ func TestALE33FindingLaunchReceipts(t *testing.T) {
 		}
 	})
 	t.Run("pty", func(t *testing.T) {
-		command := fx.command(context.Background(), "/usr/bin/printf", "pty-receipt")
+		command := fx.recordedCommand(context.Background(), "/usr/bin/printf", "pty-receipt")
 		command.Dir = fx.project
 		command.Env = fx.environment()
 		terminal, err := command.startPTY(nil)
@@ -102,7 +102,7 @@ func TestALE33FindingLaunchReceipts(t *testing.T) {
 	t.Run("failed-start", func(t *testing.T) {
 		invalid := filepath.Join(fx.temporary, "not-executable")
 		writeFile(t, invalid, []byte("not executable\n"), 0600)
-		command := fx.command(context.Background(), invalid)
+		command := fx.recordedCommand(context.Background(), invalid)
 		command.Dir = fx.project
 		command.Env = fx.environment()
 		output, err := command.CombinedOutput()
@@ -129,7 +129,7 @@ func TestALE33FindingLaunchReceipts(t *testing.T) {
 		writeFile(t, destination, nil, 0600)
 		t.Setenv("SKILLGLASS_EVIDENCE", destination)
 		marker := filepath.Join(fx.temporary, "must-not-run")
-		command := fx.command(context.Background(), "/bin/sh", "-c", "printf forbidden > "+shellQuote(marker))
+		command := fx.recordedCommand(context.Background(), "/bin/sh", "-c", "printf forbidden > "+shellQuote(marker))
 		command.Dir = fx.project
 		command.Env = fx.environment()
 		if err := command.Run(); err == nil {
@@ -149,9 +149,9 @@ func TestALE33FindingTmuxReceipts(t *testing.T) {
 	}
 	socket := "receipts-" + filepath.Base(fx.base)
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-	runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", "48", "-y", "24", "-s", "receipt", "exec /bin/sleep 30")
-	runTmux(t, tmux, fx, socket, "set-option", "-g", "remain-on-exit", "on")
-	runTmux(t, tmux, fx, socket, "new-window", "-t", "receipt", "-n", "probe", "exec /usr/bin/printf 'tmux-receipt\\n'")
+	runContainedTmux(t, tmux, fx, socket, "new-session", "-d", "-x", "48", "-y", "24", "-s", "receipt", "exec /bin/sleep 30")
+	runContainedTmux(t, tmux, fx, socket, "set-option", "-g", "remain-on-exit", "on")
+	runContainedTmux(t, tmux, fx, socket, "new-window", "-t", "receipt", "-n", "probe", "exec /usr/bin/printf 'tmux-receipt\\n'")
 	directory := filepath.Join(fx.tmuxTemporary, "invocations")
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
