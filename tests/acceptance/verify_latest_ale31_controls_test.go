@@ -142,21 +142,11 @@ func TestVerifyLatestALE31Browser(t *testing.T) {
 					if seenPermission && seenFact || strings.Contains(frame, "G2_FULL_CONTENT_SENTINEL") {
 						break
 					}
-					var start, end, total int
-					for _, line := range strings.Split(frame, "\n") {
-						if strings.HasPrefix(line, "Read lines ") {
-							if _, err := fmt.Sscanf(line, "Read lines %d-%d of %d", &start, &end, &total); err != nil {
-								t.Fatal(err)
-							}
-						}
-					}
-					next := min(start+3, total-(end-start))
-					if start == 0 || next <= start {
+					var advanced bool
+					frame, advanced = advanceSourceDetailFrame(t, tmux, fx, socket, frame)
+					if !advanced {
 						break
 					}
-					frame = actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() {
-						runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Down", "Down", "Down")
-					}, fmt.Sprintf("Read lines %d-", next))
 				}
 				if !seenPermission || !seenFact {
 					t.Fatalf("browser lost selector/platform facts: %s", frame)

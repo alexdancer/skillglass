@@ -139,13 +139,15 @@ func (inputs *hermesInputs) readPolicyEnv(path string, managed bool) {
 		if !managed {
 			line = hermesDotenvExport.ReplaceAllString(line, "")
 		}
-		key, value, present := strings.Cut(line, "=")
+		if key := hermesDotenvDeclarationKey(line); key != "" {
+			inputs.policyDeclared[key] = true
+		}
+		key, value, present := hermesDotenvAssignment(line)
 		key = strings.TrimSpace(key)
 		value = strings.TrimSpace(value)
 		if !present {
 			continue
 		}
-		inputs.policyDeclared[key] = true
 		if !managed && !hermesDotenvQuoteClosed(value) {
 			uncertain = true
 			inputs.problem(path, "multiline or unclosed environment binding is outside the bounded inert parser")
@@ -180,6 +182,32 @@ func (inputs *hermesInputs) readPolicyEnv(path string, managed bool) {
 }
 
 var hermesDotenvExport = regexp.MustCompile(`^export\s+`)
+
+// Declaration identity is shared by the profile and managed dotenv loaders. Values
+// remain inert unless the separate behavioral policy parser supports them.
+func hermesDotenvDeclarationKey(line string) string {
+	key, _, present := hermesDotenvAssignment(hermesDotenvExport.ReplaceAllString(line, ""))
+	if !present {
+		return ""
+	}
+	if strings.HasPrefix(key, "'") {
+		return key[1 : len(key)-1]
+	}
+	return key
+}
+
+func hermesDotenvAssignment(line string) (key, value string, present bool) {
+	if strings.HasPrefix(line, "'") {
+		end := strings.IndexByte(line[1:], '\'')
+		if end < 0 {
+			return "", "", false
+		}
+		value, present = strings.CutPrefix(strings.TrimSpace(line[end+2:]), "=")
+		return line[:end+2], value, present
+	}
+	key, value, present = strings.Cut(line, "=")
+	return strings.TrimSpace(key), value, present
+}
 
 func hermesDotenvQuoteClosed(value string) bool {
 	if len(value) == 0 || (value[0] != '\'' && value[0] != '"') {

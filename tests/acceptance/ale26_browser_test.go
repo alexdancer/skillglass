@@ -189,3 +189,23 @@ func sourceDetailRange(cells string) (first, last, total int) {
 	}
 	return 0, 0, 0
 }
+
+func advanceSourceDetailFrame(t *testing.T, tmux string, fx fixture, socket, frame string) (string, bool) {
+	t.Helper()
+	start, end, total := sourceDetailRange(frame)
+	if start == 0 {
+		for _, line := range strings.Split(frame, "\n") {
+			if strings.HasPrefix(line, "Read lines ") {
+				t.Fatalf("invalid source detail footer: %s", line)
+			}
+		}
+		return frame, false
+	}
+	next := min(start+3, total-(end-start))
+	if next <= start {
+		return frame, false
+	}
+	return actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Down", "Down", "Down")
+	}, fmt.Sprintf("Read lines %d-", next)), true
+}
