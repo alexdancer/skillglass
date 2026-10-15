@@ -28,7 +28,11 @@ func TestReviewRejectUncontainedTmuxPayload(t *testing.T) {
 			options := []string{"new-session", "-d", "-x", "220", "-y", "24", "-s", "probe"}
 			target := "probe:0.0"
 			if operation != "new-session" {
-				runTmuxProduct(t, tmux, fx, socket, fx.recordedCommand(context.Background(), "/bin/sleep", "30").Cmd, "new-session", "-d", "-x", "220", "-y", "24", "-s", "control")
+				control := "printf '\\033]0;receipt-control-ready\\007'; exec /bin/sleep 30"
+				runTmuxProduct(t, tmux, fx, socket, fx.recordedCommand(context.Background(), "/bin/sh", "-c", control).Cmd, "new-session", "-d", "-x", "220", "-y", "24", "-s", "control")
+				// Output relay starts after fixturelaunch installs its shutdown handlers.
+				// Do not tear the control down while its launch receipt is still being written.
+				waitForPaneTitle(t, tmux, fx, socket, "control:0.0", "receipt-control-ready")
 				if operation == "new-window" {
 					options = []string{"new-window", "-d", "-t", "control", "-n", "probe"}
 					target = "control:probe.0"

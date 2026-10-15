@@ -156,6 +156,10 @@ func TestALE33FindingTmuxReceipts(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		files, err := os.ReadDir(directory)
+		if os.IsNotExist(err) {
+			time.Sleep(20 * time.Millisecond)
+			continue
+		}
 		if err != nil {
 			t.Fatal(err)
 		}
