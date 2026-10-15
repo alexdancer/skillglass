@@ -19,6 +19,7 @@ type codexEvidence struct {
 	Setting            string `json:"setting"`
 }
 type codexAvailability struct {
+	ReferenceID        string        `json:"reference_id"`
 	NativeNameEvidence codexEvidence `json:"native_name_evidence"`
 	NativeName         string        `json:"native_name"`
 
@@ -222,8 +223,12 @@ func TestALE26NativeDiscoveryCoexistenceSharingAndExplanation(t *testing.T) {
 		}
 	}
 	for _, capability := range sharedSource.Availability.Capabilities {
-		if capability.State != "unsupported" {
-			t.Fatal("enabled a writer")
+		if capability.Operation == "enable" || capability.Operation == "disable" {
+			if capability.State != "supported" || capability.Scope != "global" {
+				t.Fatal("validated global writer missing")
+			}
+		} else if capability.State != "unsupported" {
+			t.Fatal("broadened control scope")
 		}
 	}
 	assertTreeUnchanged(t, before, treeManifest(t, fx.base))

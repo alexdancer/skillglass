@@ -77,7 +77,7 @@ func TestALE26BrowserAvailabilityEmptyAndGenericShortcut(t *testing.T) {
 				runTmuxProduct(t, tmux, fx, socket, fx.productCommand(t, scope...), "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser")
 				runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 				runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height))
-				pane := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "Root filter: all")
+				pane := waitForPane(t, tmux, fx, socket, false, "Skillglass", "Filters:")
 				prefix := fmt.Sprintf("empty-filter/tmux/%dx%d/%s/", size.width, size.height, kind)
 				writeEvidence(t, prefix+"before.txt", []byte(pane))
 				send := func(keys []string, needles ...string) string {
@@ -91,17 +91,17 @@ func TestALE26BrowserAvailabilityEmptyAndGenericShortcut(t *testing.T) {
 					pane = send([]string{"a"}, "Availability filter: disabled")
 				case "generic-sources", "generic-problems":
 					if kind == "generic-problems" {
-						send([]string{"Tab"}, "SKILLGLASS | Problems")
+						send([]string{"Tab"}, "No matching problems.")
 					}
-					send([]string{"a", "s"}, "SKILLGLASS | Scope and filters")
+					send([]string{"a", "s"}, "Scope and filters")
 					writeEvidence(t, prefix+"scope.txt", []byte(capturePane(t, tmux, fx, socket, false)))
-					title := "SKILLGLASS | Sources"
+					title := "Search /"
 					if kind == "generic-problems" {
-						title = "SKILLGLASS | Problems"
+						title = "Search /"
 					}
 					pane = send([]string{"Escape"}, title)
 					if kind == "generic-problems" {
-						pane = send([]string{"Tab"}, "SKILLGLASS | Sources")
+						pane = send([]string{"Tab"}, "Focus: 1/2")
 					}
 				}
 				writeEvidence(t, prefix+"after.txt", []byte(pane))

@@ -72,7 +72,11 @@ func availabilityLines(value collection.AvailabilityExplanation) []string {
 	if value.Precedence != nil {
 		lines = append(lines, "Precedence: "+string(value.Precedence.State)+" ("+string(value.Precedence.Evidence.Kind)+") | "+value.Precedence.Evidence.Rule+" | "+value.Precedence.Evidence.Reason)
 		if value.Precedence.Winner != "" {
-			lines = append(lines, "Winning source: "+string(value.Precedence.Winner))
+			label := "Winning source: "
+			if value.Precedence.Evidence.Rule == "native-index-first-name" {
+				label = "Winning index source: "
+			}
+			lines = append(lines, label+string(value.Precedence.Winner))
 		}
 		for _, id := range value.Precedence.RelatedSources {
 			lines = append(lines, "Related independent source: "+string(id))
@@ -117,10 +121,15 @@ func availabilitySummaryLines(value collection.AvailabilityExplanation) []string
 	}
 	lines := []string{"Availability: " + string(value.State) + " (" + string(value.Evidence.Kind) + ")"}
 	for _, fact := range value.References {
-		if fact.Participation != collection.ParticipationInspection {
-			lines = append(lines, "Configured permission: "+string(fact.Permission.State)+" ("+string(fact.Permission.Evidence.Kind)+")")
-			break
+		if value.ReferenceID != "" {
+			if fact.Reference != value.ReferenceID {
+				continue
+			}
+		} else if fact.Participation == collection.ParticipationInspection {
+			continue
 		}
+		lines = append(lines, "Configured permission: "+string(fact.Permission.State)+" ("+string(fact.Permission.Evidence.Kind)+")")
+		break
 	}
 	lines = append(lines, "Session: unknown | Reload: unknown")
 	return lines

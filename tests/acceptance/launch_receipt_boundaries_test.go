@@ -76,7 +76,7 @@ func TestFinalizedTmuxLaunchReceipt(t *testing.T) {
 	socket := "finalized-launch"
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
 	launch := runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", "80", "-y", "30", "-s", "browser")
-	frame := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "configured-home-literal", "Focus: 1/1")
+	frame := waitForPane(t, tmux, fx, socket, false, "Skillglass", "configured-home-literal", "Focus: 1/1")
 	if strings.Contains(frame, "default-home-literal") {
 		t.Fatal("tmux payload lost finalized configured home")
 	}

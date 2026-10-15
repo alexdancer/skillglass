@@ -44,6 +44,7 @@ type PermissionState string
 
 const (
 	PermissionAllowed PermissionState = "allowed"
+	PermissionAsk     PermissionState = "ask"
 	PermissionDenied  PermissionState = "denied"
 	PermissionUnknown PermissionState = "unknown"
 )
@@ -61,6 +62,8 @@ type PrecedenceState string
 
 const (
 	PrecedenceUnique     PrecedenceState = "unique"
+	PrecedenceWinning    PrecedenceState = "winning"
+	PrecedenceShadowed   PrecedenceState = "shadowed"
 	PrecedenceCoexisting PrecedenceState = "coexisting"
 	PrecedenceUnknown    PrecedenceState = "unknown"
 )
@@ -136,6 +139,7 @@ type Capability struct {
 	Evidence  Evidence `json:"evidence"`
 }
 type AvailabilityExplanation struct {
+	ReferenceID        ReferenceID             `json:"reference_id,omitempty"`
 	NativeNameEvidence *Evidence               `json:"native_name_evidence,omitempty"`
 	NativeName         string                  `json:"native_name,omitempty"`
 	State              AvailabilityState       `json:"state"`

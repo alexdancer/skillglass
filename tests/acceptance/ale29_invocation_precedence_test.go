@@ -212,7 +212,7 @@ func TestALE29UncertainWinnerKeepsInvocationExclusionBrowser(t *testing.T) {
 			runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser")
 			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height))
-			frame := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "work", "disabled (inferred)", "Focus: 1/1")
+			frame := waitForPane(t, tmux, fx, socket, false, "Skillglass", "work", "disabled (inferred)", "Focus: 1/1")
 			assertPaneCells(t, frame, size.width, size.height)
 			prefix := fmt.Sprintf("tmux/invocation-precedence/%dx%d/", size.width, size.height)
 			writeEvidence(t, prefix+"disabled-filter.txt", []byte(frame))
@@ -220,7 +220,8 @@ func TestALE29UncertainWinnerKeepsInvocationExclusionBrowser(t *testing.T) {
 				return actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", key) }, needles...)
 			}
 			collect := func(label string, needles ...string) {
-				frame := send("Enter", "Read lines")
+				send("Enter", "Rendered instructions")
+				frame := send("d", "Source ID:", "Read lines")
 				rows := map[int]string{}
 				for page := 0; page < 60; page++ {
 					assertPaneCells(t, frame, size.width, size.height)
@@ -254,7 +255,7 @@ func TestALE29UncertainWinnerKeepsInvocationExclusionBrowser(t *testing.T) {
 				t.Fatal("invocation precedence detail pager did not finish")
 			}
 			collect("disabled", "Availability: disabled (inferred)", "skill-visibility-override", "skillOverrides.work=off", "Precedence: unknown (unknown)", "Related independent source:", "Invocation: disabled (inferred)", "unsupported")
-			send("Escape", "SKILLGLASS | Sources")
+			send("Escape", "Search /")
 			for _, state := range []string{"explicit-only", "ask", "shadowed", "unavailable"} {
 				frame = send("a", "Availability filter: "+state)
 				assertPaneCells(t, frame, size.width, size.height)
@@ -262,7 +263,7 @@ func TestALE29UncertainWinnerKeepsInvocationExclusionBrowser(t *testing.T) {
 			frame = waitForPane(t, tmux, fx, socket, false, "stop", "unavailable (inferred)", "Focus: 1/1")
 			writeEvidence(t, prefix+"unavailable-filter.txt", []byte(frame))
 			collect("no-invoker", "Availability: unavailable (inferred)", "invocation-frontmatter", "Precedence: unknown (unknown)", "Related independent source:", "Invocation: no-invoker (inferred)", "unsupported")
-			send("Escape", "SKILLGLASS | Sources")
+			send("Escape", "Search /")
 			frame = send("a", "Availability filter: unknown", "Focus: 1/2")
 			assertPaneCells(t, frame, size.width, size.height)
 			writeEvidence(t, prefix+"unknown-filter.txt", []byte(frame))

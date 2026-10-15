@@ -46,9 +46,9 @@ func TestALE29MultipleRegistrationBrowser(t *testing.T) {
 			runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser")
 			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height))
-			frame := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "unknown (unknown)", "Focus: 1/1")
+			frame := waitForPane(t, tmux, fx, socket, false, "Skillglass", "unknown (unknown)", "Focus: 1/1")
 			writeEvidence(t, prefix+"sources.txt", []byte(frame))
-			frame = actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter") }, "Read lines")
+			frame = actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter", "d") }, "Read lines")
 			rows := map[int]string{}
 			for page := 0; page < 100; page++ {
 				assertPaneCells(t, frame, size.width, size.height)

@@ -48,7 +48,8 @@ func TestBrowserPTYJourney(t *testing.T) {
 	command.Env = fx.environment()
 	started := time.Now()
 	launch := recordLaunch(t, command)
-	terminal, err := pty.StartWithSize(command, &pty.Winsize{Rows: 24, Cols: 80})
+	recorded := fx.wrap(command)
+	terminal, err := recorded.startPTY(&pty.Winsize{Rows: 24, Cols: 80})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,14 +63,16 @@ func TestBrowserPTYJourney(t *testing.T) {
 	keys := []string{
 		"enter",
 		"G",
+		"d",
+		"G",
 		"esc",
 		"/",
 		"definitely-no-match",
 		"enter",
 		"q",
 	}
-	raw.wait(t, 0, "Selected: none", "Focus: 1/2", "normal-skill", "Enter read")
-	postconditions := []string{"Read lines", "LAST_INSTRUCTION_SENTINEL", "Enter read", "type to search", "0 matches | selected source unchanged", "Enter read", ""}
+	raw.wait(t, 0, "Focused: normal-skill", "Focus: 1/2", "normal-skill", "Enter open")
+	postconditions := []string{"Rendered instructions", "LAST_INSTRUCTION_SENTINEL", "Details", "scripts/never-run.sh", "Enter open", "Type to filter", "No matching sources.", "Enter open", ""}
 	for index, key := range keys {
 		checkpoint := len(raw.Bytes())
 		payload := key
@@ -89,6 +92,9 @@ func TestBrowserPTYJourney(t *testing.T) {
 	err = command.Wait()
 	<-copyDone
 	_ = terminal.Close()
+	if receiptErr := recorded.completePTY(err, raw.Bytes()); receiptErr != nil {
+		t.Fatal(receiptErr)
+	}
 	recordEvidenceCommand(t, "browser-pty-contained", commandResult{code: launchExitCode(err), stdout: raw.Bytes(), duration: time.Since(started), launch: launch})
 	if ctx.Err() != nil {
 		t.Fatal("browser PTY journey timed out")
@@ -101,20 +107,20 @@ func TestBrowserPTYJourney(t *testing.T) {
 			t.Fatalf("PTY did not restore terminal mode %q", restored)
 		}
 	}
+	visibleOutput := ansi.Strip(string(raw.Bytes()))
 	for _, expected := range []string{
-		"Project:",
-		"Coverage: complete",
+		"coverage complete",
 		"normal-skill",
 		normal.ID,
 		"description-only-literal",
 		"Manifest: parsed",
 		"LAST_INSTRUCTION_SENTINEL",
-		"Resources:",
+		"Resources",
 		"scripts/never-run.sh",
 		"executable",
 		"0 matches | selected source unchanged",
 	} {
-		if !bytes.Contains(raw.Bytes(), []byte(expected)) {
+		if !strings.Contains(visibleOutput, expected) {
 			t.Fatalf("PTY output missing %q", expected)
 		}
 	}
@@ -168,9 +174,16 @@ func TestBrowserTmuxCellsAtRequiredWidths(t *testing.T) {
 			)
 
 			initial := waitForPane(
-				t, tmux, fx, socket, false, "Selected: none", "normal-skill", "Focus: 1/2", "Scope: 1 root |",
+				t, tmux, fx, socket, false, "Skillglass", "Focused: normal-skill", "normal-skill", "Focus: 1/2", "Scope: 1 root",
 			)
 			assertPaneCells(t, initial, width, 30)
+			if width >= 96 {
+				for _, expected := range []string{"normal-skill", "second-skill", "FIRST_INSTRUCTION_SENTINEL"} {
+					if !paneContains(initial, expected) {
+						t.Fatalf("wide inventory is missing %q from list plus preview:\n%s", expected, initial)
+					}
+				}
+			}
 			writeEvidence(t, fmt.Sprintf("tmux/%d/00-inventory.txt", width), []byte(initial))
 			if width == 80 {
 				if !strings.Contains(initial, "description-only-literal") {
@@ -178,24 +191,28 @@ func TestBrowserTmuxCellsAtRequiredWidths(t *testing.T) {
 				}
 				scope := actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() {
 					runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "s")
-				}, "SKILLGLASS | Scope", "Root 1 [searched]", "Esc back")
+				}, "Scope and filters", "Root 1 [searched]", "← back")
 				assertPaneCells(t, scope, 80, 30)
 				writeEvidence(t, "tmux/80/00-scope.txt", []byte(scope))
-				resizedScope := resizePaneAt(t, tmux, fx, socket, "browser:0.0", 63, 20, "SKILLGLASS | Scope", "Root 1 [searched]", "Esc back")
+				resizedScope := resizePaneAt(t, tmux, fx, socket, "browser:0.0", 63, 20, "Scope and filters", "Root 1 [searched]", "← back")
 				assertPaneCells(t, resizedScope, 63, 20)
 				writeEvidence(t, "tmux/80/00-scope-resized-63x20.txt", []byte(resizedScope))
-				restoredScope := resizePaneAt(t, tmux, fx, socket, "browser:0.0", 80, 30, "SKILLGLASS | Scope", "Root 1 [searched]", "Esc back")
+				restoredScope := resizePaneAt(t, tmux, fx, socket, "browser:0.0", 80, 30, "Scope and filters", "Root 1 [searched]", "← back")
 				writeEvidence(t, "tmux/80/00-scope-restored-80x30.txt", []byte(restoredScope))
 				_ = actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() {
 					runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Escape")
-				}, "Selected: none", "normal-skill")
+				}, "Focused: normal-skill", "normal-skill", "Search / type to filter")
 			}
 
+			searchTail := "description-only-literal"
+			if width == 96 {
+				searchTail = "only-literal"
+			}
 			search := actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() {
 				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "/")
 				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "description-only-literal")
-			}, "Search: description-only-literal█", "Focus: 1/1", normal.Name, "type to search")
-			assertSearchViewport(t, search, width, 30, "description-only-literal", true, false)
+			}, searchTail+"█", normal.Name, "Enter keep")
+			assertSearchViewport(t, search, width, 30, searchTail, true, width == 96)
 			if strings.Contains(search, "second-skill") {
 				t.Fatalf("description search retained a nonmatching inventory row:\n%s", search)
 			}
@@ -203,23 +220,41 @@ func TestBrowserTmuxCellsAtRequiredWidths(t *testing.T) {
 
 			_ = actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() {
 				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter")
-			}, "Search: description-only-literal", "Focus: 1/1", normal.Name, "Enter read")
+			}, "description-only-literal", "Focus: 1/1", normal.Name, "? help")
 			detail := actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() {
 				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter")
-			}, "Manifest: parsed", "Read lines", "Selector: "+normal.ID)
+			}, "Selected: normal-skill", "Rendered instructions", "FIRST_INSTRUCTION_SENTINEL")
 			assertPaneCells(t, detail, width, 30)
-			writeEvidence(t, fmt.Sprintf("tmux/%d/02-detail.txt", width), []byte(detail))
+			if width == 80 {
+				for index := 0; index < 8; index++ {
+					expected := fmt.Sprintf("instruction line %02d", index)
+					if !paneContains(detail, expected) {
+						t.Fatalf("80x30 reader is missing unscrolled body marker %q:\n%s", expected, detail)
+					}
+				}
+			}
+			writeEvidence(t, fmt.Sprintf("tmux/%d/02-instructions.txt", width), []byte(detail))
+
+			details := actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() {
+				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "d")
+			}, "Details", "Manifest: parsed", "Source ID: "+normal.ID)
+			assertPaneCells(t, details, width, 30)
+			writeEvidence(t, fmt.Sprintf("tmux/%d/03-details.txt", width), []byte(details))
 
 			endJoined := actForPaneAt(t, tmux, fx, socket, "browser:0.0", true, func() {
 				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "G")
 			}, "scripts/never-run.sh", "executable", "q quit")
 			end := capturePane(t, tmux, fx, socket, false)
 			assertPaneCells(t, end, width, 30)
-			if !strings.Contains(endJoined, "Esc back") {
-				t.Fatalf("joined end capture does not expose complete footer:\n%s", endJoined)
+			backHint := "← back"
+			if width < 60 {
+				backHint = "Esc back"
 			}
-			writeEvidence(t, fmt.Sprintf("tmux/%d/03-end.txt", width), []byte(end))
-			writeEvidence(t, fmt.Sprintf("tmux/%d/03-end-joined.txt", width), []byte(endJoined))
+			if !strings.Contains(endJoined, backHint) {
+				t.Fatalf("joined end capture does not expose complete footer %q:\n%s", backHint, endJoined)
+			}
+			writeEvidence(t, fmt.Sprintf("tmux/%d/04-end.txt", width), []byte(end))
+			writeEvidence(t, fmt.Sprintf("tmux/%d/04-end-joined.txt", width), []byte(endJoined))
 			dimensions := strings.TrimSpace(runTmux(
 				t, tmux, fx, socket,
 				"display-message", "-p", "-t", "browser:0.0", "#{pane_width}x#{pane_height}",
@@ -228,7 +263,7 @@ func TestBrowserTmuxCellsAtRequiredWidths(t *testing.T) {
 				t.Fatalf("pane dimensions = %q", dimensions)
 			}
 			writeEvidence(t, fmt.Sprintf("tmux/%d/dimensions.txt", width), []byte(dimensions+"\n"))
-			writeEvidence(t, fmt.Sprintf("tmux/%d/keys.txt", width), []byte("/\ndescription-only-literal\nEnter\nEnter\nG\nq\n"))
+			writeEvidence(t, fmt.Sprintf("tmux/%d/keys.txt", width), []byte("/\ndescription-only-literal\nEnter\nEnter\nd\nG\nq\n"))
 			writeEvidence(t, fmt.Sprintf("tmux/%d/command.txt", width), []byte(strings.Join(launch.Argv, "\n")+"\n"))
 			title := strings.TrimSpace(runTmux(
 				t, tmux, fx, socket,
@@ -248,10 +283,10 @@ func TestBrowserTmuxCellsAtRequiredWidths(t *testing.T) {
 			writeEvidence(t, fmt.Sprintf("tmux/%d/title.txt", width), []byte(title+"\n"))
 			writeEvidence(t, fmt.Sprintf("tmux/%d/cursor.txt", width), []byte(cursor+" hidden\n"))
 			if width == 80 {
-				resized := resizePaneAt(t, tmux, fx, socket, "browser:0.0", 63, 20, "SKILLGLASS | Source", "Read lines", "scripts/never-run.sh", "q quit")
+				resized := resizePaneAt(t, tmux, fx, socket, "browser:0.0", 63, 20, "Selected: normal-skill", "Details", "scripts/never-run.sh", "q quit")
 				assertPaneCells(t, resized, 63, 20)
 				writeEvidence(t, "tmux/80/04-resized-63x20.txt", []byte(resized))
-				restored := resizePaneAt(t, tmux, fx, socket, "browser:0.0", 80, 30, "SKILLGLASS | Source", "Read lines", "scripts/never-run.sh", "q quit")
+				restored := resizePaneAt(t, tmux, fx, socket, "browser:0.0", 80, 30, "Selected: normal-skill", "Details", "scripts/never-run.sh", "q quit")
 				assertPaneCells(t, restored, 80, 30)
 				writeEvidence(t, "tmux/80/05-resized-restored.txt", []byte(restored))
 			}
@@ -264,6 +299,243 @@ func TestBrowserTmuxCellsAtRequiredWidths(t *testing.T) {
 	}
 	if _, err := os.Stat(fx.marker); !os.IsNotExist(err) {
 		t.Fatalf("browser executed fixture script: %v", err)
+	}
+}
+
+func TestBrowserHelpIsScrollableAt48x20(t *testing.T) {
+	tmux, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skip("tmux is unavailable")
+	}
+	fx := newFixture(t)
+	before := treeManifest(t, fx.base)
+	socket := fmt.Sprintf("skillglass-help-%d", os.Getpid())
+	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
+	command := fx.productCommand(t, "browse", "--root", fx.cleanRoot, "--project", fx.project, "--theme", "none")
+	launch := runTmuxProduct(t, tmux, fx, socket, command,
+		"new-session", "-d", "-x", "48", "-y", "20", "-s", "help")
+	runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
+	runTmux(t, tmux, fx, socket, "resize-window", "-t", "help:0", "-x", "48", "-y", "20")
+	target := "help:0.0"
+	_ = waitForPaneAt(t, tmux, fx, socket, target, false, "Focused: normal-skill", "? help", "q quit")
+	top := actForPaneAt(t, tmux, fx, socket, target, false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "-l", "?")
+	}, "Keys", "Move selection or scroll", "Open the focused source or problem; keep search", "Esc/←/? close", "q quit")
+	end := actForPaneAt(t, tmux, fx, socket, target, false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "-l", "G")
+	}, "g / G", "Move to the top or end", "?", "Toggle this help", "q", "Quit",
+		"Themes: browse --theme auto|dark|light|none",
+		"NO_COLOR forces no-color output. No theme writes settings.")
+	if top == end {
+		t.Fatal("G did not expose the end of compact help")
+	}
+	restored := actForPaneAt(t, tmux, fx, socket, target, false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "Escape")
+	}, "Focused: normal-skill", "Search / type to filter", "? help", "q quit")
+	assertPaneCells(t, top, 48, 20)
+	assertPaneCells(t, end, 48, 20)
+	assertPaneCells(t, restored, 48, 20)
+	writeEvidence(t, "tmux/help-48x20/00-top.txt", []byte(top))
+	writeEvidence(t, "tmux/help-48x20/01-end.txt", []byte(end))
+	writeEvidence(t, "tmux/help-48x20/02-restored.txt", []byte(restored))
+	writeEvidence(t, "tmux/help-48x20/command.txt", []byte(strings.Join(launch.Argv, "\n")+"\n"))
+	writeEvidence(t, "tmux/help-48x20/keys.txt", []byte("?\nG\nEsc\nq\n"))
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "-l", "q")
+	if !bytes.Equal(before, treeManifest(t, fx.base)) {
+		t.Fatal("help journey mutated its fixture")
+	}
+}
+
+func TestBrowserDisambiguatesEqualSourcesUnderSameBasenameRoots(t *testing.T) {
+	tmux, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skip("tmux is unavailable")
+	}
+	fx := newFixture(t)
+	rootOne := filepath.Join(fx.base, "allowed", "same-basename", "one", "skills")
+	rootTwo := filepath.Join(fx.base, "allowed", "same-basename", "two", "skills")
+	manifest := []byte("---\nname: same-basename\ndescription: equal description\n---\nEQUAL_INSTRUCTIONS\n")
+	writeFile(t, filepath.Join(rootOne, "copy", "SKILL.md"), manifest, 0o644)
+	writeFile(t, filepath.Join(rootTwo, "copy", "SKILL.md"), manifest, 0o644)
+	before := treeManifest(t, fx.base)
+
+	socket := fmt.Sprintf("skillglass-same-basename-%d", os.Getpid())
+	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
+	command := fx.productCommand(t, "browse", "--root", rootOne, "--root", rootTwo, "--theme", "none")
+	launch := runTmuxProduct(t, tmux, fx, socket, command,
+		"new-session", "-d", "-x", "120", "-y", "30", "-s", "same-basename")
+	runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
+	runTmux(t, tmux, fx, socket, "resize-window", "-t", "same-basename:0", "-x", "120", "-y", "30")
+	target := "same-basename:0.0"
+	initial := waitForPaneAt(t, tmux, fx, socket, target, false,
+		"Focused: same-basename [", "custom · #1 skills", "custom · #2 skills", "EQUAL_INSTRUCTIONS",
+	)
+	firstFocused := frameLineWithPrefix(t, initial, "Focused: ")
+	firstHint := identityHint(firstFocused)
+	if firstHint == "" {
+		t.Fatalf("focused source lacks an identity hint:\n%s", initial)
+	}
+	firstOrdinal := "#1"
+	secondOrdinal := "#2"
+	if strings.Contains(firstFocused, "#2 skills") {
+		firstOrdinal, secondOrdinal = secondOrdinal, firstOrdinal
+	}
+	compact := resizePaneAt(t, tmux, fx, socket, target, 48, 20,
+		"Focus: 1/2", "Focused:", "custom · #1 skills", "custom · #2 skills",
+	)
+	compactFocused := frameLineWithPrefix(t, compact, "Focused: ")
+	if identityHint(compactFocused) != firstHint || !strings.Contains(compactFocused, firstOrdinal) {
+		t.Fatalf("resize lost focused identity or root ordinal:\n%s", compact)
+	}
+	selectedSibling := actForPaneAt(t, tmux, fx, socket, target, false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "Down")
+	}, "Focus: 2/2", "Focused:", "custom · #1 skills", "custom · #2 skills")
+	secondFocused := frameLineWithPrefix(t, selectedSibling, "Focused: ")
+	secondHint := identityHint(secondFocused)
+	if secondHint == "" || secondHint == firstHint || !strings.Contains(secondFocused, secondOrdinal) {
+		t.Fatalf("sibling focus lost distinct identity or root ordinal:\n%s", selectedSibling)
+	}
+	reader := actForPaneAt(t, tmux, fx, socket, target, false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "Enter")
+	}, "Selected:", "EQUAL_INSTRUCTIONS", "Details")
+	selectedLabel := frameLineWithPrefix(t, reader, "Selected: ")
+	if identityHint(selectedLabel) != secondHint || !strings.Contains(selectedLabel, secondOrdinal) {
+		t.Fatalf("reader lost selected identity or root ordinal:\n%s", reader)
+	}
+	assertPaneCells(t, initial, 120, 30)
+	assertPaneCells(t, compact, 48, 20)
+	assertPaneCells(t, selectedSibling, 48, 20)
+	assertPaneCells(t, reader, 48, 20)
+	writeEvidence(t, "tmux/same-basename/00-wide.txt", []byte(initial))
+	writeEvidence(t, "tmux/same-basename/01-compact.txt", []byte(compact))
+	writeEvidence(t, "tmux/same-basename/02-sibling.txt", []byte(selectedSibling))
+	writeEvidence(t, "tmux/same-basename/03-reader.txt", []byte(reader))
+	writeEvidence(t, "tmux/same-basename/command.txt", []byte(strings.Join(launch.Argv, "\n")+"\n"))
+	writeEvidence(t, "tmux/same-basename/keys.txt", []byte("resize 48x20\nDown\nEnter\nq\n"))
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "-l", "q")
+	if !bytes.Equal(before, treeManifest(t, fx.base)) {
+		t.Fatal("same-basename browser journey mutated its fixture")
+	}
+}
+
+func TestBrowserDisambiguatesEqualSourcesWithinOneRoot(t *testing.T) {
+	tmux, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skip("tmux is unavailable")
+	}
+	fx := newFixture(t)
+	root := filepath.Join(fx.base, "allowed", "same-root", "skills")
+	manifest := []byte("---\nname: same-root\ndescription: equal description\n---\nEQUAL_INSTRUCTIONS\n")
+	writeFile(t, filepath.Join(root, "first-bundle", "SKILL.md"), manifest, 0o644)
+	writeFile(t, filepath.Join(root, "second-bundle", "SKILL.md"), manifest, 0o644)
+	before := treeManifest(t, fx.base)
+
+	socket := fmt.Sprintf("skillglass-same-root-%d", os.Getpid())
+	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
+	command := fx.productCommand(t, "browse", "--root", root, "--theme", "none")
+	launch := runTmuxProduct(t, tmux, fx, socket, command,
+		"new-session", "-d", "-x", "120", "-y", "30", "-s", "same-root")
+	runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
+	runTmux(t, tmux, fx, socket, "resize-window", "-t", "same-root:0", "-x", "120", "-y", "30")
+	target := "same-root:0.0"
+	initial := waitForPaneAt(t, tmux, fx, socket, target, false,
+		"Focus: 1/2", "Focused: same-root [", "custom · skills", "EQUAL_INSTRUCTIONS",
+	)
+	focusedLabel := func(frame string) string {
+		const prefix = "Focused: "
+		start := strings.Index(frame, prefix)
+		if start < 0 {
+			t.Fatalf("missing focused label in frame:\n%s", frame)
+		}
+		start += len(prefix)
+		end := strings.Index(frame[start:], " @ ")
+		if end < 0 {
+			t.Fatalf("missing provenance after focused label in frame:\n%s", frame)
+		}
+		return frame[start : start+end]
+	}
+	first := focusedLabel(initial)
+	if !strings.Contains(first, "same-root [") {
+		t.Fatalf("first source lacks identity hint: %q", first)
+	}
+	selectedSibling := actForPaneAt(t, tmux, fx, socket, target, false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "Down")
+	}, "Focus: 2/2", "Focused: same-root [", "custom · skills", "EQUAL_INSTRUCTIONS")
+	second := focusedLabel(selectedSibling)
+	if second == first {
+		t.Fatalf("independent sources have the same visible label %q", first)
+	}
+	if !strings.Contains(initial, second) {
+		t.Fatalf("wide inventory does not expose sibling label %q:\n%s", second, initial)
+	}
+	compact := resizePaneAt(t, tmux, fx, socket, target, 48, 20,
+		"Focus: 2/2", "Focused: "+second+" @ custom · skills", first, second,
+	)
+	reader := actForPaneAt(t, tmux, fx, socket, target, false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "Enter")
+	}, "Selected: "+second+" @ custom · skills", second, "EQUAL_INSTRUCTIONS", "Details")
+	assertPaneCells(t, initial, 120, 30)
+	assertPaneCells(t, selectedSibling, 120, 30)
+	assertPaneCells(t, compact, 48, 20)
+	assertPaneCells(t, reader, 48, 20)
+	writeEvidence(t, "tmux/same-root/00-wide.txt", []byte(initial))
+	writeEvidence(t, "tmux/same-root/01-sibling.txt", []byte(selectedSibling))
+	writeEvidence(t, "tmux/same-root/02-compact.txt", []byte(compact))
+	writeEvidence(t, "tmux/same-root/03-reader.txt", []byte(reader))
+	writeEvidence(t, "tmux/same-root/command.txt", []byte(strings.Join(launch.Argv, "\n")+"\n"))
+	writeEvidence(t, "tmux/same-root/keys.txt", []byte("Down\nresize 48x20\nEnter\nq\n"))
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "-l", "q")
+	if !bytes.Equal(before, treeManifest(t, fx.base)) {
+		t.Fatal("same-root browser journey mutated its fixture")
+	}
+}
+
+func TestBrowserThemeModesApplyDeterministically(t *testing.T) {
+	tmux, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skip("tmux is unavailable")
+	}
+	fx := newFixture(t)
+	type themeCase struct {
+		name       string
+		theme      string
+		noColor    bool
+		wantStyles bool
+	}
+	cases := []themeCase{
+		{name: "dark", theme: "dark", wantStyles: true},
+		{name: "light", theme: "light", wantStyles: true},
+		{name: "none", theme: "none"},
+		{name: "no-color", theme: "dark", noColor: true},
+	}
+	frames := make(map[string]string, len(cases))
+	for _, testCase := range cases {
+		socket := fmt.Sprintf("skillglass-theme-%s-%d", testCase.name, os.Getpid())
+		command := fx.productCommand(t, "browse", "--root", fx.cleanRoot, "--project", fx.project, "--theme", testCase.theme)
+		if testCase.noColor {
+			command.Env = append(command.Env, "NO_COLOR=1")
+		}
+		launch := runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", "120", "-y", "30", "-s", "theme")
+		runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
+		runTmux(t, tmux, fx, socket, "resize-window", "-t", "theme:0", "-x", "120", "-y", "30")
+		target := "theme:0.0"
+		_ = waitForPaneAt(t, tmux, fx, socket, target, false, "Focused: normal-skill", "FIRST_INSTRUCTION_SENTINEL")
+		ansiFrame := runTmux(t, tmux, fx, socket, "capture-pane", "-p", "-e", "-t", target)
+		hasStyles := strings.Contains(ansiFrame, "\x1b[")
+		if hasStyles != testCase.wantStyles {
+			t.Fatalf("theme %s styled capture = %t, want %t:\n%q", testCase.name, hasStyles, testCase.wantStyles, ansiFrame)
+		}
+		frames[testCase.name] = ansiFrame
+		writeEvidence(t, "tmux/themes/"+testCase.name+".ansi", []byte(ansiFrame))
+		writeEvidence(t, "tmux/themes/"+testCase.name+"-command.txt", []byte(strings.Join(launch.Argv, "\n")+"\n"))
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "-l", "q")
+		runTmuxIgnoringError(tmux, fx, socket, "kill-server")
+	}
+	if frames["dark"] == frames["light"] {
+		t.Fatal("dark and light themes emitted identical styled cells")
+	}
+	if frames["none"] != frames["no-color"] {
+		t.Fatal("NO_COLOR did not produce the same unstyled cells as --theme none")
 	}
 }
 
@@ -297,7 +569,8 @@ func TestBrowserManyRootsHasScrollableScopeAt60Columns(t *testing.T) {
 	}
 	bundle := filepath.Join(roots[0], "many-root-source")
 	writeFile(t, filepath.Join(bundle, "SKILL.md"), []byte(
-		"---\nname: many-root-source\ndescription: source remains visible\n---\nMANY_ROOT_INSTRUCTIONS\n",
+		"---\nname: many-root-source\ndescription: source remains visible\n---\nMANY_ROOT_START\n\n"+
+			strings.Repeat("A separate instruction paragraph.\n\n", 50)+"MANY_ROOT_INSTRUCTIONS\n",
 	), 0o644)
 
 	socket := fmt.Sprintf("skillglass-many-roots-%d", os.Getpid())
@@ -321,8 +594,8 @@ func TestBrowserManyRootsHasScrollableScopeAt60Columns(t *testing.T) {
 		false,
 		"many-root-source",
 		"Focus: 1/1",
-		"Scope: 8 roots |",
-		"s scope",
+		"Scope: 8 roots",
+		"? help",
 		"q quit",
 	)
 	assertPaneCells(t, initial, 60, 30)
@@ -330,14 +603,14 @@ func TestBrowserManyRootsHasScrollableScopeAt60Columns(t *testing.T) {
 	searchS := actForPaneAt(t, tmux, fx, socket, "many:0.0", false, func() {
 		runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "/")
 		runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "-l", "s")
-	}, "Search: s", "type to search")
-	if strings.Contains(searchS, "SKILLGLASS | Scope") {
+	}, "Search / s", "Type to filter")
+	if strings.Contains(searchS, "Scope and filters") {
 		t.Fatal("s opened scope while search input was active")
 	}
 	writeEvidence(t, "tmux/many-roots/00-search-s.txt", []byte(searchS))
 	_ = actForPaneAt(t, tmux, fx, socket, "many:0.0", false, func() {
 		runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "Escape")
-	}, "many-root-source", "Focus: 1/1", "s scope")
+	}, "many-root-source", "Focus: 1/1", "? help")
 
 	canonicalFirst := canonicalPath(t, roots[0])
 	scopeTop := actForPaneAt(
@@ -348,12 +621,12 @@ func TestBrowserManyRootsHasScrollableScopeAt60Columns(t *testing.T) {
 		"many:0.0",
 		false,
 		func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "-l", "s") },
-		"SKILLGLASS | Scope",
+		"Scope and filters",
 		longProject,
 		roots[0],
 		canonicalFirst,
 		"Root 1 [searched]",
-		"Esc back",
+		"← back",
 	)
 	assertPaneCells(t, scopeTop, 60, 30)
 	writeEvidence(t, "tmux/many-roots/01-scope-top.txt", []byte(scopeTop))
@@ -370,7 +643,7 @@ func TestBrowserManyRootsHasScrollableScopeAt60Columns(t *testing.T) {
 		"Root 8 [empty]",
 		roots[len(roots)-1],
 		canonicalLast,
-		"Esc back",
+		"← back",
 		"q quit",
 	)
 	assertPaneCells(t, scopeEnd, 60, 30)
@@ -378,19 +651,23 @@ func TestBrowserManyRootsHasScrollableScopeAt60Columns(t *testing.T) {
 
 	restoredInventory := actForPaneAt(t, tmux, fx, socket, "many:0.0", false, func() {
 		runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "Escape")
-	}, "many-root-source", "Focus: 1/1", "s scope")
+	}, "many-root-source", "Focus: 1/1", "? help")
 	assertPaneCells(t, restoredInventory, 60, 30)
 	writeEvidence(t, "tmux/many-roots/03-inventory-restored.txt", []byte(restoredInventory))
 
 	detail := actForPaneAt(t, tmux, fx, socket, "many:0.0", false, func() {
 		runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "Enter")
-	}, "Selected: many-root-source", "Read lines", "s scope")
+	}, "Selected: many-root-source", "Rendered instructions", "MANY_ROOT_START")
 	assertPaneCells(t, detail, 60, 30)
 	writeEvidence(t, "tmux/many-roots/04-detail.txt", []byte(detail))
 	detailLineCount := 0
 	for _, line := range strings.Split(detail, "\n") {
 		var first, last, total int
-		if _, err := fmt.Sscanf(strings.TrimSpace(line), "Read lines %d-%d of %d", &first, &last, &total); err == nil {
+		status := strings.TrimSpace(line)
+		if offset := strings.Index(status, "Read lines "); offset >= 0 {
+			if _, err := fmt.Sscanf(status[offset:], "Read lines %d-%d of %d", &first, &last, &total); err != nil {
+				continue
+			}
 			detailLineCount = total
 			break
 		}
@@ -399,19 +676,20 @@ func TestBrowserManyRootsHasScrollableScopeAt60Columns(t *testing.T) {
 		t.Fatalf("detail frame does not report its line count:\n%s", detail)
 	}
 	detailEndStatus := fmt.Sprintf("-%d of %d", detailLineCount, detailLineCount)
-	// Long fixture prefixes can push instructions below the first viewport.
-	// Prove they are reachable and that the scope round trip keeps that position.
 	detailEnd := actForPaneAt(t, tmux, fx, socket, "many:0.0", false, func() {
 		runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "-l", "G")
-	}, "MANY_ROOT_INSTRUCTIONS", detailEndStatus, "s scope")
+	}, "MANY_ROOT_INSTRUCTIONS", detailEndStatus)
+	if detailEnd == detail || paneContains(detailEnd, "MANY_ROOT_START") {
+		t.Fatalf("reader did not reach a distinct nonzero-scroll viewport:\n%s", detailEnd)
+	}
 	assertPaneCells(t, detailEnd, 60, 30)
 	writeEvidence(t, "tmux/many-roots/04-detail-end.txt", []byte(detailEnd))
 	_ = actForPaneAt(t, tmux, fx, socket, "many:0.0", false, func() {
 		runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "-l", "s")
-	}, "SKILLGLASS | Scope", longProject)
+	}, "Scope and filters", longProject)
 	restoredDetail := actForPaneAt(t, tmux, fx, socket, "many:0.0", false, func() {
 		runTmux(t, tmux, fx, socket, "send-keys", "-t", "many:0.0", "Escape")
-	}, "MANY_ROOT_INSTRUCTIONS", detailEndStatus, "s scope")
+	}, "MANY_ROOT_INSTRUCTIONS", detailEndStatus, "? help")
 	assertPaneCells(t, restoredDetail, 60, 30)
 	if restoredDetail != detailEnd {
 		t.Fatalf("scope round trip changed detail viewport\nbefore:\n%s\nafter:\n%s", detailEnd, restoredDetail)
@@ -455,7 +733,7 @@ func TestBrowserLongSearchUsesSingleRowTailViewport(t *testing.T) {
 	)
 	runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 	runTmux(t, tmux, fx, socket, "resize-window", "-t", "long:0", "-x", "60", "-y", "30")
-	_ = waitForPaneAt(t, tmux, fx, socket, "long:0.0", false, "Focus: 1/2", "/ search")
+	_ = waitForPaneAt(t, tmux, fx, socket, "long:0.0", false, "Focus: 1/2", "Search /")
 	writeEvidence(t, "tmux/long-search/command.txt", []byte(strings.Join(launch.Argv, "\n")+"\n"))
 
 	longEditing := actForPaneAt(
@@ -464,8 +742,8 @@ func TestBrowserLongSearchUsesSingleRowTailViewport(t *testing.T) {
 			runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "/")
 			runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "-l", longQuery)
 		},
-		asciiTail+"█", "No matching sources.", "0 matches | selected source unchanged",
-		"type to search", "Enter keep", "Esc cancel", "Ctrl+U clear",
+		asciiTail+"█", "No matching sources.", "Focused: no matching sources",
+		"Type to filter", "Enter keep", "Esc cancel", "Ctrl+U",
 	)
 	writeEvidence(t, "tmux/long-search/01-long-editing-60x30.txt", []byte(longEditing))
 	longRow := assertSearchViewport(t, longEditing, 60, 30, asciiTail, true, true)
@@ -473,8 +751,8 @@ func TestBrowserLongSearchUsesSingleRowTailViewport(t *testing.T) {
 
 	narrow := resizePaneAt(
 		t, tmux, fx, socket, "long:0.0", 48, 20,
-		asciiTail+"█", "No matching sources.", "0 matches | selected source unchanged",
-		"type to search", "Enter keep", "Esc cancel", "Ctrl+U clear",
+		asciiTail+"█", "No matching sources.", "Focused: no matching sources",
+		"Enter keep", "Esc cancel", "Ctrl+U clear",
 	)
 	writeEvidence(t, "tmux/long-search/02-long-editing-48x20.txt", []byte(narrow))
 	narrowRow := assertSearchViewport(t, narrow, 48, 20, asciiTail, true, true)
@@ -485,8 +763,8 @@ func TestBrowserLongSearchUsesSingleRowTailViewport(t *testing.T) {
 
 	restored := resizePaneAt(
 		t, tmux, fx, socket, "long:0.0", 60, 30,
-		longRow, "No matching sources.", "0 matches | selected source unchanged",
-		"type to search", "Enter keep", "Esc cancel", "Ctrl+U clear",
+		longRow, "No matching sources.", "Focused: no matching sources",
+		"Type to filter", "Enter keep", "Esc cancel", "Ctrl+U",
 	)
 	writeEvidence(t, "tmux/long-search/03-long-editing-restored.txt", []byte(restored))
 	if restoredRow := assertSearchViewport(t, restored, 60, 30, asciiTail, true, true); restoredRow != longRow {
@@ -497,22 +775,22 @@ func TestBrowserLongSearchUsesSingleRowTailViewport(t *testing.T) {
 	kept := actForPaneAt(
 		t, tmux, fx, socket, "long:0.0", false,
 		func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "Enter") },
-		asciiTail, "No matching sources.", "0 matches | selected source unchanged", "Enter read", "s scope",
+		asciiTail, "No matching sources.", "0 matches", "? help", "q quit",
 	)
 	writeEvidence(t, "tmux/long-search/04-long-kept.txt", []byte(kept))
 	assertSearchViewport(t, kept, 60, 30, asciiTail, false, true)
 
 	_ = actForPaneAt(t, tmux, fx, socket, "long:0.0", false, func() {
 		runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "/")
-	}, asciiTail+"█", "type to search")
+	}, asciiTail+"█", "Type to filter")
 	cancelTail := "CANCEL_TAIL"
 	_ = actForPaneAt(t, tmux, fx, socket, "long:0.0", false, func() {
 		runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "-l", cancelTail)
-	}, cancelTail+"█", "type to search")
+	}, cancelTail+"█", "Type to filter")
 	cancelled := actForPaneAt(
 		t, tmux, fx, socket, "long:0.0", false,
 		func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "Escape") },
-		asciiTail, "No matching sources.", "0 matches | selected source unchanged", "Enter read", "s scope",
+		asciiTail, "No matching sources.", "0 matches", "? help", "q quit",
 	)
 	writeEvidence(t, "tmux/long-search/05-long-cancelled.txt", []byte(cancelled))
 	assertSearchViewport(t, cancelled, 60, 30, asciiTail, false, true)
@@ -522,11 +800,11 @@ func TestBrowserLongSearchUsesSingleRowTailViewport(t *testing.T) {
 
 	_ = actForPaneAt(t, tmux, fx, socket, "long:0.0", false, func() {
 		runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "/")
-	}, asciiTail+"█", "type to search")
+	}, asciiTail+"█", "Type to filter")
 	cleared := actForPaneAt(
 		t, tmux, fx, socket, "long:0.0", false,
 		func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "C-u") },
-		"Search: █", "Focus: 1/2", "tail-only-source", "other-source", "Ctrl+U clear",
+		"Search / █", "tail-only-source", "other-source", "Ctrl+U",
 	)
 	writeEvidence(t, "tmux/long-search/06-cleared.txt", []byte(cleared))
 	assertSearchViewport(t, cleared, 60, 30, "", true, false)
@@ -536,7 +814,7 @@ func TestBrowserLongSearchUsesSingleRowTailViewport(t *testing.T) {
 	wide := actForPaneAt(
 		t, tmux, fx, socket, "long:0.0", false,
 		func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "-l", wideQuery) },
-		wideTail+"█", "No matching sources.", "0 matches | selected source unchanged", "Ctrl+U clear",
+		wideTail+"█", "No matching sources.", "Focused: no matching sources", "Ctrl+U",
 	)
 	writeEvidence(t, "tmux/long-search/07-wide-editing.txt", []byte(wide))
 	assertSearchViewport(t, wide, 60, 30, wideTail, true, true)
@@ -553,10 +831,10 @@ func TestBrowserLongSearchUsesSingleRowTailViewport(t *testing.T) {
 
 	_ = actForPaneAt(t, tmux, fx, socket, "long:0.0", false, func() {
 		runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "C-u")
-	}, "Search: █", "Focus: 1/2")
+	}, "Search / █", "tail-only-source", "other-source")
 	clearKept := actForPaneAt(t, tmux, fx, socket, "long:0.0", false, func() {
 		runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "Enter")
-	}, "Search:", "Focus: 1/2", "Enter read")
+	}, "Search /", "Focus: 1/2", "? help", "q quit")
 	writeEvidence(t, "tmux/long-search/09-clear-kept.txt", []byte(clearKept))
 	assertSearchViewport(t, clearKept, 60, 30, "", false, false)
 	writeEvidence(t, "tmux/long-search/keys.txt", []byte(
@@ -584,22 +862,17 @@ func TestBrowserHostileTerminalDataUsesSafeCells(t *testing.T) {
 	assertPaneCells(t, initial, 80, 24)
 	detail := actForPaneAt(t, tmux, fx, socket, "hostile:0.0", false, func() {
 		runTmux(t, tmux, fx, socket, "send-keys", "-t", "hostile:0.0", "Enter")
-	}, "SKILLGLASS | Source", "Read lines", `description-START\x1b]0;HOSTILE_TITLE\a-END`)
+	}, "Selected: hostile-name", "Rendered instructions", `description-START\x1b]0;HOSTILE_TITLE\a-END`)
 	if detail == initial {
 		t.Fatal("hostile Source detail equals inventory")
 	}
 	assertPaneCells(t, detail, 80, 24)
-	end := actForPaneAt(
-		t,
-		tmux,
-		fx,
-		socket,
-		"hostile:0.0",
-		false,
-		func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "hostile:0.0", "-l", "G") },
-		`BODY_START\x1b[31mBODY_END\rCR_END\aBELL_END`,
-		"LAST_HOSTILE_SENTINEL",
-	)
+	end := capturePaneAt(t, tmux, fx, socket, "hostile:0.0", false)
+	for _, expected := range []string{`BODY_START\x1b[31mBODY_END\rCR_END\aBELL_END`, "LAST_HOSTILE_SENTINEL"} {
+		if !paneContains(end, expected) {
+			t.Fatalf("hostile instructions missing %q:\n%s", expected, end)
+		}
+	}
 	assertPaneCells(t, end, 80, 24)
 	title := strings.TrimSpace(runTmux(
 		t, tmux, fx, socket,
@@ -613,10 +886,10 @@ func TestBrowserHostileTerminalDataUsesSafeCells(t *testing.T) {
 	writeEvidence(t, "tmux/hostile/02-end.txt", []byte(end))
 	writeEvidence(t, "tmux/hostile/title.txt", []byte(title+"\n"))
 	writeEvidence(t, "tmux/hostile/dimensions.txt", []byte("80x24\n"))
-	writeEvidence(t, "tmux/hostile/keys.txt", []byte("Enter\nG\nq\n"))
+	writeEvidence(t, "tmux/hostile/keys.txt", []byte("Enter\nq\n"))
 	controlCommand := "printf '\\033]0;HOSTILE_TITLE\\007'; exec /bin/sleep 2"
-	runTmux(t, tmux, fx, socket,
-		"new-session", "-d", "-x", "80", "-y", "24", "-s", "control", controlCommand,
+	runTmuxProduct(t, tmux, fx, socket, fx.recordedCommand(context.Background(), "/bin/sh", "-c", controlCommand).Cmd,
+		"new-session", "-d", "-x", "80", "-y", "24", "-s", "control",
 	)
 	controlTitle := waitForPaneTitle(t, tmux, fx, socket, "control:0.0", "HOSTILE_TITLE")
 	writeEvidence(t, "tmux/hostile/negative-control-title.txt", []byte(controlTitle+"\n"))
@@ -627,16 +900,20 @@ func TestBrowserHostileTerminalDataUsesSafeCells(t *testing.T) {
 func runTmuxProduct(t *testing.T, tmux string, fx fixture, socket string, payload *exec.Cmd, options ...string) *launchReceipt {
 	t.Helper()
 	payloadLaunch := recordLaunch(t, payload)
+	if payloadLaunch.Profile == "" {
+		t.Fatal("uncontained tmux payload")
+	}
 	parts := []string{"exec", "/usr/bin/env", "-i"}
 	for _, arg := range append(append([]string(nil), payloadLaunch.Environment...), payloadLaunch.Argv...) {
 		parts = append(parts, shellQuote(arg))
 	}
 	commandArgs := append([]string{"-S", fx.tmuxSocket(socket), "-f", "/dev/null"}, options...)
 	commandArgs = append(commandArgs, "-c", payloadLaunch.Cwd, strings.Join(parts, " "))
-	command := exec.Command(tmux, commandArgs...)
+	command := fx.wrap(exec.Command(tmux, commandArgs...))
+	command.payloadProfile = []byte(payloadLaunch.Profile)
 	command.Dir, command.Env = fx.project, fx.environment()
 	started := time.Now()
-	utilityLaunch := recordLaunch(t, command)
+	utilityLaunch := recordLaunch(t, command.Cmd)
 	output, err := command.CombinedOutput()
 	result := commandResult{code: launchExitCode(err), stdout: output, duration: time.Since(started), launch: utilityLaunch, payload: payloadLaunch}
 	recordEvidenceCommand(t, "tmux-contained-product-start", result)
@@ -649,7 +926,7 @@ func runTmuxProduct(t *testing.T, tmux string, fx fixture, socket string, payloa
 func runTmux(t *testing.T, tmux string, fx fixture, socket string, args ...string) string {
 	t.Helper()
 	commandArgs := append([]string{"-S", fx.tmuxSocket(socket), "-f", "/dev/null"}, args...)
-	command := exec.Command(tmux, commandArgs...)
+	command := fx.wrap(exec.Command(tmux, commandArgs...))
 	command.Dir = fx.project
 	command.Env = fx.environment()
 	output, err := command.CombinedOutput()
@@ -661,10 +938,14 @@ func runTmux(t *testing.T, tmux string, fx fixture, socket string, args ...strin
 
 func runTmuxIgnoringError(tmux string, fx fixture, socket string, args ...string) {
 	commandArgs := append([]string{"-S", fx.tmuxSocket(socket), "-f", "/dev/null"}, args...)
-	command := exec.Command(tmux, commandArgs...)
+	command := fx.wrap(exec.Command(tmux, commandArgs...))
 	command.Dir = fx.project
 	command.Env = fx.environment()
-	_ = command.Run()
+	if err := command.Run(); err != nil {
+		if _, expectedExit := err.(*exec.ExitError); !expectedExit {
+			panic(err)
+		}
+	}
 }
 
 func waitForPane(
@@ -731,18 +1012,24 @@ func assertSearchViewport(
 	assertPaneCells(t, capture, width, height)
 	var rows []string
 	for _, line := range strings.Split(strings.TrimSuffix(capture, "\n"), "\n") {
-		if strings.HasPrefix(line, "Search:") {
+		if strings.HasPrefix(strings.TrimLeft(line, " "), "Search /") {
 			rows = append(rows, line)
 		}
 	}
 	if len(rows) != 1 {
 		t.Fatalf("Search row count = %d, want 1:\n%s", len(rows), capture)
 	}
-	row := rows[0]
-	if cropped && !strings.HasPrefix(row, "Search: …") {
+	fullRow := rows[0]
+	row := fullRow
+	if left, _, found := strings.Cut(row, "│"); found {
+		row = left
+	}
+	row = strings.TrimRight(row, " ")
+	trimmedRow := strings.TrimLeft(row, " ")
+	if cropped && !strings.HasPrefix(trimmedRow, "Search / …") {
 		t.Fatalf("cropped search row has no leading ellipsis: %q", row)
 	}
-	if !cropped && strings.HasPrefix(row, "Search: …") {
+	if !cropped && strings.HasPrefix(trimmedRow, "Search / …") {
 		t.Fatalf("uncropped search row has an ellipsis: %q", row)
 	}
 	if tail != "" && !strings.Contains(row, tail) {
@@ -754,8 +1041,8 @@ func assertSearchViewport(
 	if !editing && strings.Contains(row, "█") {
 		t.Fatalf("inventory search row retained editing cursor: %q", row)
 	}
-	if cells := ansi.StringWidth(row); cells > width {
-		t.Fatalf("search row uses %d cells, pane has %d: %q", cells, width, row)
+	if cells := ansi.StringWidth(fullRow); cells > width {
+		t.Fatalf("search row uses %d cells, pane has %d: %q", cells, width, fullRow)
 	}
 	return row
 }
@@ -764,11 +1051,11 @@ func assertSearchChrome(t *testing.T, capture string) {
 	t.Helper()
 	for _, expected := range []string{
 		"No matching sources.",
-		"0 matches | selected source unchanged",
-		"type to search",
+		"Focused: no matching sources",
+		"Focus: 0/0",
 		"Enter keep",
 		"Esc cancel",
-		"Ctrl+U clear",
+		"Ctrl+U",
 	} {
 		if !paneContains(capture, expected) {
 			t.Fatalf("search frame does not show %q:\n%s", expected, capture)
@@ -855,4 +1142,16 @@ func writeEvidence(t *testing.T, relative string, content []byte) {
 	if err := os.WriteFile(path, content, 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func runContainedTmux(t *testing.T, tmux string, fx fixture, socket string, args ...string) string {
+	t.Helper()
+	commandArgs := append([]string{"-S", fx.tmuxSocket(socket), "-f", "/dev/null"}, args...)
+	command := fx.recordedCommand(context.Background(), tmux, commandArgs...)
+	command.Dir, command.Env = fx.project, fx.environment()
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("contained tmux %s: %v\n%s", strings.Join(args, " "), err, output)
+	}
+	return string(output)
 }

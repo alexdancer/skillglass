@@ -119,10 +119,10 @@ func TestReviewBrowserProblemSearchFindsOriginalAlias(t *testing.T) {
 	runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 	runTmux(t, tmux, fx, socket, "set-option", "-w", "-t", "search:0", "remain-on-exit", "on")
 	runTmux(t, tmux, fx, socket, "resize-window", "-t", "search:0", "-x", "60", "-y", "30")
-	_ = waitForPaneAt(t, tmux, fx, socket, "search:0.0", false, "SKILLGLASS | Sources", "Enter read")
+	_ = waitForPaneAt(t, tmux, fx, socket, "search:0.0", false, "Sources", "? help", "q quit")
 	key := func(value string) { runTmux(t, tmux, fx, socket, "send-keys", "-t", "search:0.0", "-l", value) }
-	_ = actForPaneAt(t, tmux, fx, socket, "search:0.0", false, func() { key("\t") }, "SKILLGLASS | Problems", "malformed-manifest")
-	frame := actForPaneAt(t, tmux, fx, socket, "search:0.0", false, func() { key("/"); key("ORIGINAL-PROJECT-ALIAS") }, "Search: ORIGINAL-PROJECT-ALIAS█", "malformed-manifest", "Problem focus: 1/1")
+	_ = actForPaneAt(t, tmux, fx, socket, "search:0.0", false, func() { key("\t") }, "Problems", "malformed-manifest")
+	frame := actForPaneAt(t, tmux, fx, socket, "search:0.0", false, func() { key("/"); key("ORIGINAL-PROJECT-ALIAS") }, "Search / ORIGINAL-PROJECT-ALIAS█", "malformed-manifest", "Type to filter")
 	assertPaneCells(t, frame, 60, 30)
 	if strings.Contains(frame, "No matching problems.") {
 		t.Fatal("alias search did not match a problem")

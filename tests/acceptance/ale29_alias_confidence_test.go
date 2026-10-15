@@ -273,7 +273,7 @@ func TestALE29UnknownAliasBrowser(t *testing.T) {
 				runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser")
 				runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 				runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height))
-				frame := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "unknown (unknown)")
+				frame := waitForPane(t, tmux, fx, socket, false, "Skillglass", "unknown (unknown)")
 				prefix := fmt.Sprintf("tmux/alias-confidence/active-%t/%dx%d/", enabled, size.width, size.height)
 				writeEvidence(t, prefix+"unknown-filter.txt", []byte(frame))
 				send := func(key string, needles ...string) string {
@@ -283,8 +283,9 @@ func TestALE29UnknownAliasBrowser(t *testing.T) {
 					send("/", "Enter keep")
 					runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", search)
 					waitForPane(t, tmux, fx, socket, false, "Focus: 1/1")
-					send("Enter", "Enter read")
-					send("Enter", "Read lines")
+					send("Enter", "Enter open")
+					send("Enter", "Rendered instructions")
+					send("d", "Source ID:", "Read lines")
 				}
 				collect := func(label string, winner bool, needles ...string) {
 					frame := waitForPane(t, tmux, fx, socket, false, "Read lines 1-")
@@ -325,7 +326,7 @@ func TestALE29UnknownAliasBrowser(t *testing.T) {
 				}
 				selectRead("target")
 				collect("target", false, "Availability: unknown (unknown)", "Precedence: unknown (unknown)", "participation", "Related independent source: "+managed.ID, "Session: unknown", "unsupported")
-				send("Escape", "SKILLGLASS | Sources")
+				send("Escape", "Search /")
 				// Restart with the managed source alone selected through the same public search.
 				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "q")
 				runTmuxIgnoringError(tmux, fx, socket, "kill-server")
@@ -333,7 +334,7 @@ func TestALE29UnknownAliasBrowser(t *testing.T) {
 				runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser")
 				runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 				runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height))
-				waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources")
+				waitForPane(t, tmux, fx, socket, false, "Skillglass")
 				selectRead("demo")
 				rule, state := "plugin-disabled", "unknown"
 				if enabled {

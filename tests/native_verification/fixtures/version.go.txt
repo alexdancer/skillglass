@@ -1,0 +1,63 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"net"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"time"
+)
+
+const canary = "@CANARY@"
+const child = "@CHILD@"
+const outsideWrite = "@WRITE@"
+const address = "@ADDRESS@"
+
+func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--child" {
+		fmt.Print("INERT_CHILD_OK")
+		return
+	}
+	if len(os.Args) != 2 || os.Args[1] != "version" {
+		os.Exit(71)
+	}
+	content, readErr := os.ReadFile(canary)
+	childOut, childErr := exec.Command(child, "--child").Output()
+	self, _ := os.Executable()
+	selfOut, selfErr := exec.Command(self, "--child").Output()
+	_, statErr := os.Stat(canary)
+	_, listErr := os.ReadDir(filepath.Dir(canary))
+	wd, _ := os.Getwd()
+	link := filepath.Join(wd, "inert-outside-link")
+	linkErr := os.Symlink(canary, link)
+	_, linkReadErr := os.ReadFile(link)
+	fixtureFile := filepath.Join(wd, "allowed-read")
+	fixtureWriteErr := os.WriteFile(fixtureFile, []byte("allowed"), 0600)
+	fixtureBytes, fixtureReadErr := os.ReadFile(fixtureFile)
+	insideWrite := filepath.Join(filepath.Dir(wd), "tmp", "inert-inside-write")
+	insideErr := os.WriteFile(insideWrite, []byte("inert"), 0600)
+	outsideErr := os.WriteFile(outsideWrite, []byte("inert"), 0600)
+	connection, networkErr := net.DialTimeout("tcp", address, time.Second)
+	if connection != nil {
+		connection.Close()
+	}
+	json.NewEncoder(os.Stdout).Encode(map[string]any{
+		"outside_content_read":  readErr == nil && string(content) == "CONTROLLED_OUTSIDE_CANARY\n",
+		"outside_read_error":    fmt.Sprint(readErr),
+		"child_executed":        childErr == nil && string(childOut) == "INERT_CHILD_OK",
+		"child_error":           fmt.Sprint(childErr),
+		"same_executable_child": selfErr == nil && string(selfOut) == "INERT_CHILD_OK",
+		"outside_stat_denied":   statErr != nil,
+		"outside_list_denied":   listErr != nil,
+		"symlink_read_denied":   linkErr == nil && linkReadErr != nil,
+		"fixture_read_allowed":  fixtureWriteErr == nil && fixtureReadErr == nil && string(fixtureBytes) == "allowed",
+		"inside_write_allowed":  insideErr == nil,
+		"outside_write_denied":  outsideErr != nil,
+		"network_denied":        networkErr != nil,
+		"cwd":                   wd,
+	})
+	// Halt the helper before it can enter source-copy or source-build stages.
+	os.Exit(73)
+}

@@ -7,8 +7,8 @@ ALE-24 adds reference-aware source identity, custom and project provenance, sear
 - The accepted ALE-23 executable rejected `--project-root`, which reproduced the missing public capability before implementation.
 - Darwin can report a symlink cycle as a bare `EvalSymlinks: too many links` error. Cycle classification now recognizes typed `ELOOP` or that exact unwrapped sentinel instead of scanning arbitrary path text. Missing targets containing `too many links` or `too many levels of symbolic links` remain `broken-reference` problems.
 - An early query projection retained references only through resolved sources. Unresolved broken and cyclic references therefore disappeared while problems still named their IDs. Views now retain references selected through either visible sources or visible problem relationships, including their original path, status, filter match, and diagnostic.
-- A fixed filter row allowed a long selected root to hide context and problem values. The browser now renders complete bounded filter fields, combines them only when they fit, and puts the full root path in the scrollable scope view.
-- Adding selection identity to the header initially reduced the 80 by 24 detail body enough to hide the inherited final-instruction PTY evidence. Selection and filter fields now share rows only when complete, preserving the body, controls, selector, and filter dimensions.
+- A fixed filter row allowed a long selected root to hide context and problem values. ALE-24 repaired field allocation without moving the full root path out of Scope; [DESIGN.md](../../DESIGN.md#responsive-layout) owns the current ALE-43 chrome rules.
+- Adding selection identity to the header initially reduced the 80 by 24 detail body enough to hide the inherited final-instruction PTY evidence. The ALE-24 repair preserved the body, controls, selector, and filter dimensions; current instruction-first coverage is recorded in [ALE-43](ale-43.md#public-behavior-covered).
 - Terminal delta rendering could emit only the changed suffix of `Resources:` after an end jump. The end action requests a complete repaint, retaining the raw PTY proof as well as the current-cell proof.
 
 ## Public behavior covered
@@ -23,7 +23,7 @@ ALE-24 adds reference-aware source identity, custom and project provenance, sear
 
 `TestALE24FreshInvocationRetainsObjectIdentityAcrossReferenceChanges` proves that a new CLI invocation sees source insertion, manifest edits, broken references, and alias retargeting. A surviving alias retains the original source ID.
 
-`TestALE24BrowserModesAndReferencesAtRequiredWidths` drives real tmux panes at 48, 60, 80, 96, and 120 columns. It inspects Sources and Problems headings, complete active filter fields, both custom and project references through scrolling, body space, controls, and safe cell widths.
+`TestALE24BrowserModesAndReferencesAtRequiredWidths` drives real tmux panes at 48, 60, 80, 96, and 120 columns. It inspects Sources and Problems headings, active filter indicators, both custom and project references through scrolling, body space, controls, and safe cell widths.
 
 `TestALE24BrowserRefreshSelectionAndProblemPaste` selects a source by its public ID, then applies external rename, row insertion, manifest edit, one-alias retarget, final-alias retarget, and equal-byte path replacement changes. Refresh retains the same proven object through rename and a surviving alias, retains it while filters hide it, and visibly clears it after loss or replacement. The same journey searches Problems with bracketed-pasted shortcut letters and opens the related problem detail.
 
@@ -31,7 +31,7 @@ ALE-24 adds reference-aware source identity, custom and project provenance, sear
 
 The full inherited ALE-23 coverage continues to run; see the [ALE-23 record](ale-23.md#reproduce-the-acceptance-evidence) for its journeys. Terminal action synchronization was strengthened rather than left unchanged: [the shared action driver](../../tests/acceptance/terminal_action_test.go) captures pre-action cells and dimensions, rejects an already-satisfied postcondition, and waits for changed cells with the semantic postcondition on the current grid. Resize also requires the target dimensions. Ignored paste uses subsequent observable actions as barriers. The strict end-frame scope-restoration assertion remains in `TestBrowserManyRootsHasScrollableScopeAt60Columns`.
 
-`TestBrowserTmuxCellsAtRequiredWidths` compares description search with public CLI JSON and uses the guarded current-cell boundary to require the completed Search field, editing state, expected source, and `Focus: 1/1`, with the nonmatching row absent. Opening detail verifies that source's public selector. `TestBrowserPTYJourney` retains the minimal source/detail/end/no-match journey and terminal restoration; its raw waits inspect bytes after action-specific checkpoints. A description literal already displayed in inventory is not evidence that search completed, and incremental redraws need not re-emit the full Search prefix.
+`TestBrowserTmuxCellsAtRequiredWidths` compares description search with public CLI JSON and uses the guarded current-cell boundary to verify the query tail, editing state and matching source, with the nonmatching row absent. After committing search, it verifies `Focus: 1/1`; the instruction-first reader and Details coverage are described in [ALE-43](ale-43.md#public-behavior-covered). `TestBrowserPTYJourney` retains the minimal source/detail/end/no-match journey and terminal restoration; its raw waits inspect bytes after action-specific checkpoints. A description literal already displayed in inventory is not evidence that search completed, and incremental redraws need not re-emit the full Search prefix.
 
 Historical ALE-23 hostile inventory and purported detail captures were byte-identical and do not prove the intermediate detail transition. Keep that limitation with the historical evidence rather than relabeling those frames. Current hostile-detail capture uses the guarded action boundary in `TestBrowserHostileTerminalDataUsesSafeCells`.
 
@@ -47,23 +47,29 @@ evidence="$(pwd)/.agent-loop/ale-24-evidence-$(date +%Y%m%d-%H%M%S)"
 test ! -e "$evidence" && ./tests/acceptance/run.sh "$evidence"
 ```
 
-Inspect `cases.json`, raw PTY bytes, driven keys, pane dimensions, and current tmux cells. The acceptance driver builds the public executable and launches it with synthetic HOME, XDG, project, temporary, and current directories. Inspect fixture before/after manifests alongside command and browser receipts for source/settings immutability. The [inherited containment boundary](ale-23.md#runtime-containment-boundary) defines runtime restrictions, positive controls, and their limits.
+The runner uses a 20-minute Go package timeout for the combined application suite. `SKILLGLASS_TEST_RUN` optionally selects a quoted Go test-name regular expression; its default `.` runs the full suite. A filtered run records its selection and does not claim aggregate isolation-summary artifacts when the isolation test was not selected.
 
-Run repository checks after the last source or documentation change:
+Inspect `cases.json`, raw PTY bytes, driven keys, pane dimensions, and current tmux cells. The acceptance driver builds the public executable and launches it with synthetic HOME, XDG, project, temporary, and current directories. Inspect fixture before/after manifests alongside command and browser receipts: read-only journeys must preserve sources and settings; mutation journeys must show only their intended changes and preserve unrelated state. The [inherited containment boundary](ale-23.md#runtime-containment-boundary) defines runtime restrictions, positive controls, and their limits.
+
+Run repository checks after the last source or documentation change. The full Go suite now includes Codex snapshot and writer fault tests in `internal/collection`, which do not contain their own process. Set `SKILLGLASS_TEST_EXEC` to the absolute path of the coordinator-provided contained test launcher before running that suite. It must launch the collection test executable with disposable HOME/CODEX_HOME/CLAUDE_CONFIG_DIR/XDG paths, external TMPDIR/GOTMPDIR, controlled native-system-input absence, denied network and outside-content reads, and bounded fixture writes, while allowing the exact `/bin/ls` ACL helper. Prove its positive and negative controls and record finalized launch contexts using the [containment contract](ale-23.md#runtime-containment-boundary). Do not substitute an uncontained full-suite command if the launcher is unavailable.
 
 ```sh
-/opt/homebrew/bin/gofmt -l cmd internal tests/acceptance
+/opt/homebrew/bin/gofmt -l cmd internal tests/acceptance tests/launchrecord
 env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go vet ./...
-env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go test -count=1 -mod=readonly ./...
+: "${SKILLGLASS_TEST_EXEC:?Supply the proved contained collection-test launcher}"
+env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go test -count=1 -mod=readonly -timeout=20m -exec "$SKILLGLASS_TEST_EXEC" ./...
 python3 -m unittest discover -s tests/agent_loop -v
+python3 -m unittest discover -s tests/native -v
+python3 -m py_compile tools/verify_hermes.py tools/verify_hermes_policy.py tests/native/test_verify_hermes_retired.py
 python3 -m unittest discover -s tests/native_verification -v
-python3 -m py_compile tools/claude_containment.py tools/verify_claude.py tools/verify_claude_plugin_manifest.py tests/native_verification/test_verify_claude.py
+python3 -m py_compile tools/claude_containment.py tools/verify_claude.py tools/verify_claude_plugin_manifest.py tests/native_verification/test_verify_claude.py \
+  tools/codex_containment.py tools/codex_probe.py tools/verify_codex_control.py tests/native_verification/test_verify_codex_control.py
 shellcheck tests/acceptance/run.sh
 sh -n tests/acceptance/run.sh
 git diff --check
 ```
 
-The formatting check must print no files; use `gofmt -w` on any reported files and rerun. These are local checks, not a claim of green CI. Earlier verification does not cover later changes.
+The formatting check must print no files; use `gofmt -w` on any reported files and rerun. The native test suite verifies the retired Hermes entrypoint's refusal using owned fixtures, without importing installed Hermes or running native discovery. See [Hermes evidence and limits](ale-31.md#recorded-native-version-and-provenance) for the separate bounded policy helper and historical receipts. These are local checks, not a claim of green CI. Earlier verification does not cover later changes.
 
 ## Evidence limits
 

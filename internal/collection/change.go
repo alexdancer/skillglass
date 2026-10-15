@@ -1,0 +1,103 @@
+package collection
+
+import (
+	"context"
+	"sync"
+)
+
+type ControlScope string
+type ControlChoice string
+
+const (
+	ControlGlobal  ControlScope  = "global"
+	ControlProject ControlScope  = "project"
+	ControlEnable  ControlChoice = "enable"
+	ControlDisable ControlChoice = "disable"
+)
+
+type ChangeIntent struct {
+	Source      SourceID      `json:"source_id"`
+	Application string        `json:"application"`
+	Scope       ControlScope  `json:"scope"`
+	Choice      ControlChoice `json:"choice"`
+}
+type SettingChange struct {
+	Setting string `json:"setting"`
+	Before  string `json:"before"`
+	After   string `json:"after"`
+}
+type ChangeView struct {
+	State             string                  `json:"state"`
+	Reason            string                  `json:"reason"`
+	Intent            ChangeIntent            `json:"intent"`
+	SourcePath        string                  `json:"source_path,omitempty"`
+	ManifestPath      string                  `json:"manifest_path,omitempty"`
+	ConfigPath        string                  `json:"config_path,omitempty"`
+	InspectionProject ProjectContext          `json:"inspection_project"`
+	Changes           []SettingChange         `json:"changes,omitempty"`
+	KnownReferences   []Reference             `json:"known_references,omitempty"`
+	Before            AvailabilityExplanation `json:"before"`
+	Confirmation      string                  `json:"confirmation,omitempty"`
+	NoWriteNeeded     bool                    `json:"no_write_needed"`
+	CreateDirectory   string                  `json:"create_directory,omitempty"`
+	Notes             []string                `json:"notes,omitempty"`
+}
+type ChangeOutcome struct {
+	State               string                   `json:"state"`
+	Reason              string                   `json:"reason"`
+	Intent              ChangeIntent             `json:"intent"`
+	WriteState          string                   `json:"write_state"`
+	Persistence         string                   `json:"persistence"`
+	Achievement         string                   `json:"achievement"`
+	PersistedPermission PermissionState          `json:"persisted_permission,omitempty"`
+	Effective           *AvailabilityExplanation `json:"effective,omitempty"`
+	Reload              SessionExplanation       `json:"reload"`
+	Artifacts           []string                 `json:"artifacts,omitempty"`
+	Snapshot            *Snapshot                `json:"-"`
+}
+
+func (out ChangeOutcome) ExitCode() int {
+	if out.State == "applied" && out.Persistence == "verified" && out.Achievement == "achieved" {
+		return 0
+	}
+	return 1
+}
+
+type ChangePreview struct {
+	view ChangeView
+	plan *codexChangePlan
+	once sync.Mutex
+	used bool
+}
+
+func (p *ChangePreview) View() ChangeView {
+	if p == nil {
+		return ChangeView{State: "refused", Reason: "no preview"}
+	}
+	view := p.view
+	view.Changes = append([]SettingChange(nil), p.view.Changes...)
+	view.KnownReferences = append([]Reference(nil), p.view.KnownReferences...)
+	for index := range view.KnownReferences {
+		view.KnownReferences[index] = cloneReference(view.KnownReferences[index])
+	}
+	view.Before = cloneAvailability(p.view.Before)
+	view.Notes = append([]string(nil), p.view.Notes...)
+	return view
+}
+func (s *Snapshot) PreviewChange(ctx context.Context, intent ChangeIntent) *ChangePreview {
+	return previewCodexChange(ctx, s, intent)
+}
+func (p *ChangePreview) Apply(ctx context.Context, confirmation string) ChangeOutcome {
+	out := ChangeOutcome{State: "refused", Reason: "confirmation does not match this current preview; request a new preview", WriteState: "none", Persistence: "not-written", Achievement: "unmet"}
+	if p == nil {
+		return out
+	}
+	p.once.Lock()
+	defer p.once.Unlock()
+	out.Intent = p.view.Intent
+	if p.plan == nil || p.used || confirmation == "" || confirmation != p.plan.digest {
+		return out
+	}
+	p.used = true
+	return p.plan.apply(ctx)
+}

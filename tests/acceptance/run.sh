@@ -5,6 +5,8 @@ set -eu
 repository=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 go_binary=${GO_BIN:-/opt/homebrew/bin/go}
 evidence=${1:-}
+test_run=${SKILLGLASS_TEST_RUN:-.}
+test_timeout=20m
 artifact_dir=$(mktemp -d "${TMPDIR:-/tmp}/skillglass-acceptance.XXXXXX")
 trap 'rm -rf "$artifact_dir"' EXIT HUP INT TERM
 
@@ -33,7 +35,9 @@ if [ -n "$evidence" ]; then
 		printf 'worktree_clean=%s\n' "$worktree_clean"
 		printf 'binary_sha256=%s\n' "$binary_sha256"
 		printf 'runtime_network=GOPROXY=off GOSUMDB=off\n'
-		printf 'test=go test -mod=readonly ./tests/acceptance -count=1 -v\n'
+		printf 'test=go test -mod=readonly ./tests/acceptance -count=1 -v -timeout=%s -run %s\n' "$test_timeout" "$test_run"
+		printf 'test_timeout=%s\n' "$test_timeout"
+		printf 'test_run=%s\n' "$test_run"
 	} >"$evidence/build.txt"
 	cat >"$evidence/build.json" <<EOF
 {
@@ -50,7 +54,7 @@ EOF
 		SKILLGLASS_EVIDENCE="$evidence" \
 		GOPROXY=off \
 		GOSUMDB=off \
-		"$go_binary" test -mod=readonly ./tests/acceptance -count=1 -v \
+		"$go_binary" test -mod=readonly ./tests/acceptance -count=1 -v -timeout="$test_timeout" -run "$test_run" \
 		>"$evidence/go-test.txt" 2>&1; then
 		cat "$evidence/go-test.txt"
 	else
@@ -58,13 +62,17 @@ EOF
 		cat "$evidence/go-test.txt"
 		exit "$status"
 	fi
-	cp "$evidence/isolation/controls.json" "$evidence/containment.json"
-	cp "$evidence/isolation/tree-before.json" "$evidence/tree-before.json"
-	cp "$evidence/isolation/tree-after.json" "$evidence/tree-after.json"
-	{
-		shasum -a 256 "$evidence/tree-before.json"
-		shasum -a 256 "$evidence/tree-after.json"
-	} >"$evidence/tree-digests.txt"
+	if [ "$test_run" = "." ] || [ -f "$evidence/isolation/controls.json" ]; then
+		cp "$evidence/isolation/controls.json" "$evidence/containment.json"
+		cp "$evidence/isolation/tree-before.json" "$evidence/tree-before.json"
+		cp "$evidence/isolation/tree-after.json" "$evidence/tree-after.json"
+		{
+			shasum -a 256 "$evidence/tree-before.json"
+			shasum -a 256 "$evidence/tree-after.json"
+		} >"$evidence/tree-digests.txt"
+	else
+		printf 'isolation_summary=not selected by filtered run; per-launch policies and receipts retained\n' >>"$evidence/build.txt"
+	fi
 	exit 0
 fi
 
@@ -72,4 +80,4 @@ SKILLGLASS_BIN="$skillglass" \
 	SKILLGLASS_ISOLATION_PROBE="$probe" \
 	GOPROXY=off \
 	GOSUMDB=off \
-	"$go_binary" test -mod=readonly ./tests/acceptance -count=1 -v
+	"$go_binary" test -mod=readonly ./tests/acceptance -count=1 -v -timeout="$test_timeout" -run "$test_run"

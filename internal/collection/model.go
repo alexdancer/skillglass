@@ -67,20 +67,26 @@ type ProjectContext struct {
 }
 
 type DiscoveryRoot struct {
-	ID       RootID           `json:"id"`
-	Path     string           `json:"path"`
-	Context  ReferenceContext `json:"context"`
-	Origin   string           `json:"origin,omitempty"`
-	Optional bool             `json:"-"`
+	ID                  RootID           `json:"id"`
+	Path                string           `json:"path"`
+	Context             ReferenceContext `json:"context"`
+	Origin              string           `json:"origin,omitempty"`
+	Optional            bool             `json:"-"`
+	piMode              string
+	piFile              bool
+	childrenOnly        bool
+	inspectRootManifest bool
 }
 
 type Request struct {
-	Project    ProjectContext
-	Roots      []DiscoveryRoot
-	Agent      string
-	home       string
-	codexHome  string
-	claudeHome string
+	Project       ProjectContext
+	Roots         []DiscoveryRoot
+	Agent         string
+	home          string
+	codexHome     string
+	codeafProfile string
+	claudeHome    string
+	hermesHome    string
 }
 
 func NewRequest(rawRoots, rawProjectRoots []string, rawProject *string) (Request, error) {
@@ -88,8 +94,8 @@ func NewRequest(rawRoots, rawProjectRoots []string, rawProject *string) (Request
 }
 
 func NewRequestWithAgent(rawRoots, rawProjectRoots []string, rawProject *string, agent string) (Request, error) {
-	if agent != "" && agent != "codex" && agent != "claude-code" {
-		return Request{}, fmt.Errorf("unknown agent %q; use codex or claude-code", agent)
+	if agent != "" && agent != "codex" && agent != "claude-code" && agent != "pi" && agent != "opencode" && agent != "codeaf" && agent != "gemini" && agent != "hermes" {
+		return Request{}, fmt.Errorf("unknown agent %q; use codex, claude-code, pi, opencode, codeaf, gemini, or hermes", agent)
 	}
 	request := Request{Roots: make([]DiscoveryRoot, 0, len(rawRoots)+len(rawProjectRoots))}
 	if rawProject != nil {
@@ -132,14 +138,32 @@ func NewRequestWithAgent(rawRoots, rawProjectRoots []string, rawProject *string,
 		return Request{}, err
 	}
 	request.Agent = agent
-	if agent != "" {
+	if agent != "" && agent != "codeaf" {
 		var err error
-		request.home, err = nativeHome()
+		if agent == "gemini" {
+			request.home, err = geminiHome()
+		} else {
+			request.home, err = nativeHome()
+		}
 		if err != nil {
 			return Request{}, err
 		}
-		request.codexHome = codexHome(request.home)
-		request.claudeHome = claudeHome(request.home)
+		if agent == "codex" {
+			request.codexHome = codexHome(request.home)
+		}
+		if agent == "hermes" {
+			request.hermesHome = hermesBaseHome(request.home)
+		}
+		if agent == "claude-code" {
+			request.claudeHome = claudeHome(request.home)
+		}
+	}
+	if agent == "codeaf" {
+		var err error
+		request.home, request.codeafProfile, err = codeafEnvironment()
+		if err != nil {
+			return Request{}, err
+		}
 	}
 	return request, nil
 }
@@ -199,6 +223,7 @@ func ParseProblemCode(value string) (ProblemCode, error) {
 }
 
 type Problem struct {
+	nativeLocal    bool
 	ID             ProblemID     `json:"id"`
 	Code           ProblemCode   `json:"code"`
 	Path           string        `json:"path"`
@@ -356,10 +381,10 @@ type Snapshot struct {
 }
 
 func Build(ctx context.Context, request Request) (*Snapshot, error) {
-	if request.Agent != "" && request.Agent != "codex" && request.Agent != "claude-code" {
+	if request.Agent != "" && request.Agent != "codex" && request.Agent != "claude-code" && request.Agent != "pi" && request.Agent != "opencode" && request.Agent != "codeaf" && request.Agent != "gemini" && request.Agent != "hermes" {
 		return nil, fmt.Errorf("unknown agent %q", request.Agent)
 	}
-	if request.Agent != "" && request.home == "" {
+	if (request.Agent != "" && request.home == "") || (request.Agent == "codex" && request.codexHome == "") {
 		return nil, errors.New("native scope requires NewRequestWithAgent")
 	}
 	if len(request.Roots) == 0 && request.Agent == "" {
@@ -373,11 +398,29 @@ func Build(ctx context.Context, request Request) (*Snapshot, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if request.Agent == "opencode" {
+		return buildOpencode(ctx, request)
+	}
 	if request.Agent == "codex" {
 		return buildCodex(ctx, request)
 	}
+	if request.Agent == "codeaf" {
+		return buildCodeAF(ctx, request)
+	}
 	if request.Agent == "claude-code" {
 		return buildClaude(ctx, request)
+	}
+	if request.Agent == "pi" {
+		return buildPi(ctx, request)
+	}
+	if request.Agent == "gemini" {
+		return buildGemini(ctx, request)
+	}
+	if request.Agent == "hermes" {
+		if request.hermesHome == "" {
+			return nil, errors.New("native scope requires NewRequestWithAgent")
+		}
+		return buildHermes(ctx, request)
 	}
 	return discover(ctx, request)
 }
@@ -446,7 +489,7 @@ func (snapshot *Snapshot) Query(filters Filters, target QueryTarget) View {
 			!strings.Contains(strings.ToLower(source.Description), needle) {
 			continue
 		}
-		if filters.Problem != "" && !sourceHasProblem(source, filters.Problem) {
+		if filters.Problem != "" && !snapshot.sourceHasProblem(source, filters, matchingReferences) {
 			continue
 		}
 		sources = append(sources, cloneSource(source))
@@ -497,11 +540,15 @@ func (snapshot *Snapshot) Refresh(ctx context.Context, selected SourceID) (*Snap
 	}
 	previous, previousOK := snapshot.sources[selected]
 	current, currentOK := refreshed.sources[selected]
+	objectKind := "directory"
+	if previousOK && previous.Identity.Method == "darwin-file-object" {
+		objectKind = "file"
+	}
 	if previousOK && currentOK &&
 		previous.Identity.Certainty == "proven" && current.Identity.Certainty == "proven" {
-		return refreshed, SelectionChange{State: SelectionChangeRetained, Reason: "same proven directory object remains reachable"}, nil
+		return refreshed, SelectionChange{State: SelectionChangeRetained, Reason: "same proven " + objectKind + " object remains reachable"}, nil
 	}
-	return refreshed, SelectionChange{State: SelectionChangeCleared, Reason: "selected directory object is no longer provably reachable"}, nil
+	return refreshed, SelectionChange{State: SelectionChangeCleared, Reason: "selected " + objectKind + " object is no longer provably reachable"}, nil
 }
 
 func (snapshot *Snapshot) Source(id SourceID) (Source, bool) {
@@ -513,6 +560,10 @@ func (snapshot *Snapshot) Source(id SourceID) (Source, bool) {
 }
 
 func (snapshot *Snapshot) References(id SourceID) []Reference {
+	return snapshot.ReferencesMatchingFilters(id, Filters{Context: FilterAll})
+}
+
+func (snapshot *Snapshot) ReferencesMatchingFilters(id SourceID, filters Filters) []Reference {
 	source, ok := snapshot.sources[id]
 	if !ok {
 		return nil
@@ -520,7 +571,7 @@ func (snapshot *Snapshot) References(id SourceID) []Reference {
 	references := make([]Reference, 0, len(source.References))
 	for _, referenceID := range source.References {
 		reference := cloneReference(snapshot.references[referenceID])
-		reference.MatchesFilters = true
+		reference.MatchesFilters = snapshot.referenceMatches(reference, filters)
 		references = append(references, reference)
 	}
 	return references
@@ -619,9 +670,9 @@ func sourceHasMatchingReference(source Source, matching map[ReferenceID]bool) bo
 	return false
 }
 
-func sourceHasProblem(source Source, code ProblemCode) bool {
+func (snapshot *Snapshot) sourceHasProblem(source Source, filters Filters, matchingReferences map[ReferenceID]bool) bool {
 	for _, problem := range source.Problems {
-		if problem.Code == code {
+		if snapshot.problemMatches(problem, filters, matchingReferences) {
 			return true
 		}
 	}

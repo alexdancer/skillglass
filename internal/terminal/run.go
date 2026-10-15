@@ -17,10 +17,11 @@ const usage = `Usage:
   skillglass read [SCOPE] [--json] SOURCE_ID
   skillglass explain [SCOPE] [--json] SOURCE_ID
   skillglass compare [SCOPE] [--json] LEFT_SOURCE_ID RIGHT_SOURCE_ID
+  skillglass enable|disable --agent codex --scope global [SCOPE] [--confirm TOKEN] [--json] SOURCE_ID
   skillglass browse [SCOPE]
 
 Scope:
-  --agent APP          codex or claude-code native scope and configured availability
+  --agent APP          codex, claude-code, pi, opencode, codeaf, gemini or hermes
   --root ROOT          custom discovery root; repeatable
   --project PROJECT    selected project context
   --project-root ROOT  discovery root associated with --project; repeatable
@@ -31,7 +32,10 @@ Filters:
   --problem CODE       one documented problem code
   --availability STATE all, available, disabled, explicit-only, ask, shadowed, unavailable, unknown
 
-Without --agent, at least one explicit --root or --project-root is required. The selected agent adds native roots for the selected project only.
+Browser:
+  --theme VALUE        auto, dark, light, or none (default auto)
+
+Without --agent, at least one explicit --root or --project-root is required. Native rules are version-specific; the scope reports roots and remaining gaps.
 `
 
 type stringList []string
@@ -63,7 +67,7 @@ type commonOptions struct {
 }
 
 func (options *commonOptions) bind(flags *flag.FlagSet, includeFilters, includeJSON bool) {
-	flags.StringVar(&options.agent, "agent", "", "selected agent application (codex or claude-code)")
+	flags.StringVar(&options.agent, "agent", "", "selected agent application (codex, claude-code, pi, opencode, codeaf, gemini or hermes)")
 	flags.Var(&options.roots, "root", "explicit custom discovery root; repeatable")
 	flags.Var(&options.projectRoots, "project-root", "explicit project-associated discovery root; repeatable")
 	flags.Var(&options.project, "project", "selected project context")
@@ -107,6 +111,8 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return runSource(args[0], args[1:], stdout, stderr)
 	case "compare":
 		return runCompare(args[1:], stdout, stderr)
+	case "enable", "disable":
+		return runChange(args[0], args[1:], stdout, stderr)
 	case "browse":
 		return runBrowse(args[1:], stdin, stdout, stderr)
 	default:

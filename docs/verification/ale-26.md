@@ -1,6 +1,6 @@
 # ALE-26: browse and explain Codex skills
 
-This slice adds read-only Codex discovery and local configured-availability explanations to the existing immutable collection snapshot. It does not complete the wider Skillglass specification. All enable, disable, project-override and delete capabilities remain unsupported. Production commands never launch Codex, invoke a model, install plugins, execute skill content, or write agent configuration.
+This historical slice adds read-only Codex discovery and local configured-availability explanations to the existing immutable collection snapshot. It does not complete the wider Skillglass specification. The ALE-26 slice introduced no writers; [ALE-27](ale-27.md) owns the current global-control contract and its remaining scope limits. Production commands never launch Codex, invoke a model, install plugins or execute skill content. The [README](../../README.md#build-and-use) owns current read-only and confirmed browser-control behavior.
 
 ## Use
 
@@ -61,4 +61,4 @@ Acceptance evidence contains the built binary, candidate/build receipt, CLI argv
 
 ## Candidate verification outcome
 
-The implementation candidate passed formatting, go vet, the complete uncached Go suite, the standalone built-executable acceptance runner, all 20 scheduler tests, shellcheck, shell syntax and whitespace checks. Real terminal cells were inspected at 48x24, 48x30 and 80x30. Existing generic, identity, comparison, PTY, sandbox and tree-immutability acceptance remained green. The exact commit and external evidence paths are recorded in the local run's build report for the independent frozen-candidate reviews. Native evidence above is retained as reference-version validation; inference-session enforcement and every writer remain explicitly unverified/unsupported.
+The implementation candidate passed formatting, go vet, the complete uncached Go suite, the standalone built-executable acceptance runner, all 20 scheduler tests, shellcheck, shell syntax and whitespace checks. Real terminal cells were inspected at 48x24, 48x30 and 80x30. Existing generic, identity, comparison, PTY, sandbox and tree-immutability acceptance remained green. The exact commit and external evidence paths are recorded in the local run's build report for the independent frozen-candidate reviews. Native evidence above is retained as reference-version validation of this read-only slice, not writer validation or inference-session enforcement. See [ALE-27](ale-27.md#native-evidence) for subsequent global-writer evidence; inference-session enforcement remains unknown.

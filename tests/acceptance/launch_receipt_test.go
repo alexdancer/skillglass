@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -48,17 +49,26 @@ func recordLaunch(t *testing.T, command *exec.Cmd) *launchReceipt {
 		return canonicalPath(t, path)
 	}
 	receipt := &launchReceipt{ID: hex.EncodeToString(nonce[:]), Argv: append([]string(nil), command.Args...), Environment: command.Environ(), Cwd: cwd, Executable: command.Path}
-	if command.Path == "/usr/bin/sandbox-exec" && len(command.Args) >= 4 && command.Args[1] == "-f" {
-		profile, err := os.ReadFile(resolve(command.Args[2]))
-		if err != nil {
-			t.Fatal(err)
+	if command.Path == "/usr/bin/sandbox-exec" && len(command.Args) >= 4 && (command.Args[1] == "-f" || command.Args[1] == "-p") {
+		profile := []byte(command.Args[2])
+		if command.Args[1] == "-f" {
+			var err error
+			profile, err = os.ReadFile(resolve(command.Args[2]))
+			if err != nil {
+				t.Fatal(err)
+			}
 		}
 		digest := sha256.Sum256(profile)
 		receipt.Profile, receipt.ProfileSHA256 = string(profile), hex.EncodeToString(digest[:])
 		receipt.Executable = command.Args[3]
-		receipt.SystemInputs = "controlled absence, ENOENT; no live contents inspected"
-		receipt.ProductWrites = "denied"
-		receipt.TmuxControl = "separate utility with explicit private socket; product payload has no network allowance"
+		if command.Args[1] == "-f" {
+			receipt.SystemInputs = "controlled absence, ENOENT; no live contents inspected"
+			receipt.ProductWrites = "denied"
+			if strings.Contains(string(profile), "(deny file-write* (require-not (subpath ") && !strings.Contains(string(profile), "(deny file-write*)") {
+				receipt.ProductWrites = "allowed only beneath the canonical disposable fixture root"
+			}
+			receipt.TmuxControl = "separate utility with explicit private socket; product payload has no network allowance"
+		}
 	}
 	receipt.Executable = resolve(receipt.Executable)
 	raw, err := os.ReadFile(receipt.Executable)

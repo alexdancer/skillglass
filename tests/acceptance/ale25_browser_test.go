@@ -25,7 +25,7 @@ func TestALE25BrowserCompareCurrentBytesAndStaleSelection(t *testing.T) {
 			runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", strconv.Itoa(width), "-y", "30", "-s", "browser")
 			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(width), "-y", "30")
-			initial := waitForPane(t, tmux, fx, socket, false, "SKILLGLASS | Sources", "Focus: 1/2")
+			initial := waitForPane(t, tmux, fx, socket, false, "Skillglass", "Focus: 1/2")
 			assertPaneCells(t, initial, width, 30)
 			send := func(key string, needles ...string) string {
 				return actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", key) }, needles...)
@@ -48,12 +48,12 @@ func TestALE25BrowserCompareCurrentBytesAndStaleSelection(t *testing.T) {
 			end := send("G", "z-11.txt", "left resource", "right resource")
 			assertPaneCells(t, end, width, 30)
 			writeEvidence(t, fmt.Sprintf("tmux/ale25/%d/03-diff-end.txt", width), []byte(end))
-			send("Escape", "SKILLGLASS | Sources")
+			send("Escape", "Search /")
 			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 			// The marked directory is still selected through discovery identity, then replaced.
 			// Neither independent replacement is an acceptable substitute for its old ID.
 			for _, p := range []string{a, b} {
-				if err := os.Rename(p, filepath.Join(fx.base, filepath.Base(p)+"-old")); err != nil {
+				if err := os.Rename(p, filepath.Join(fx.base, "allowed", filepath.Base(p)+"-old")); err != nil {
 					t.Fatal(err)
 				}
 				writeFile(t, filepath.Join(p, "SKILL.md"), []byte("---\nname: replacement\n---\nREPLACEMENT_NOT_SELECTED\n"), 0600)
@@ -61,7 +61,7 @@ func TestALE25BrowserCompareCurrentBytesAndStaleSelection(t *testing.T) {
 			stale := send("v", "SKILLGLASS | Comparison", "indeterminate")
 			assertPaneCells(t, stale, width, 30)
 			writeEvidence(t, fmt.Sprintf("tmux/ale25/%d/04-stale.txt", width), []byte(stale))
-			send("Escape", "SKILLGLASS | Sources")
+			send("Escape", "Search /")
 			refreshed := send("r", "Refresh:")
 			if strings.Contains(refreshed, "Compare left:") {
 				t.Fatal("refresh retained removed marked source")
