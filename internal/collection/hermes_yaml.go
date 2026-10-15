@@ -257,21 +257,23 @@ func hermesYAMLKeyKnown(node *yaml.Node, active map[*yaml.Node]bool) bool {
 	return known
 }
 
-var hermesYAMLSexagesimalInt = regexp.MustCompile(`^[-+]?[1-9][0-9_]*(?::[0-5]?[0-9])+$`)
-var hermesYAMLSexagesimalFloat = regexp.MustCompile(`^[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\.[0-9_]*$`)
+var hermesYAMLImplicitInt = regexp.MustCompile(`^[-+]?(?:0b[0-1_]+|0[0-7_]+|0|[1-9][0-9_]*|0x[0-9a-fA-F_]+|[1-9][0-9_]*(?::[0-5]?[0-9])+)$`)
+var hermesYAMLImplicitFloat = regexp.MustCompile(`^(?:[-+]?[0-9][0-9_]*\.[0-9_]*(?:[eE][-+][0-9]+)?|\.[0-9_]+(?:[eE][-+][0-9]+)?|[-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\.[0-9_]*|[-+]?\.(?:inf|Inf|INF)|\.(?:nan|NaN|NAN))$`)
 
 func hermesYAMLNativeTag(node *yaml.Node) string {
 	tag := node.ShortTag()
-	if tag == "!!str" && node.Style == 0 {
+	if node.Kind == yaml.ScalarNode && node.Style == 0 {
 		switch {
 		case node.Value == "=":
 			return "!!value"
 		case hermesYAMLImplicitBoolean(node.Value):
 			return "!!bool"
-		case hermesYAMLSexagesimalInt.MatchString(node.Value):
+		case hermesYAMLImplicitInt.MatchString(node.Value):
 			return "!!int"
-		case hermesYAMLSexagesimalFloat.MatchString(node.Value):
+		case hermesYAMLImplicitFloat.MatchString(node.Value):
 			return "!!float"
+		case tag == "!!int" || tag == "!!float":
+			return "!!str"
 		}
 	}
 	return tag

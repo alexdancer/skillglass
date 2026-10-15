@@ -132,15 +132,18 @@ func discoverHermesPlugins(request *Request, inputs *hermesInputs) {
 						plugin.reason = "declarative portable plugin registration; native namespace derived from registry key"
 					}
 				}
-				plugin.admitted = plugin.admitted && !inputs.envEnabled("HERMES_SAFE_MODE") && (!project || inputs.envEnabled("HERMES_ENABLE_PROJECT_PLUGINS"))
+				safe, safeKnown := inputs.envEnabled("HERMES_SAFE_MODE")
+				projectEnabled, projectKnown := inputs.envEnabled("HERMES_ENABLE_PROJECT_PLUGINS")
+				flagsKnown := safeKnown && (!project || projectKnown)
+				plugin.admitted = plugin.admitted && flagsKnown && !safe && (!project || projectEnabled)
 				enabled, disabled := inputs.pluginPolicy["enabled"], inputs.pluginPolicy["disabled"]
 				policyPath, policySetting := plugin.path, ""
 				switch {
-				case inputs.envEnabled("HERMES_SAFE_MODE"):
+				case safeKnown && safe:
 					plugin.state = ParticipationExcluded
 					plugin.reason = "HERMES_SAFE_MODE skips plugin discovery"
 					policyPath, policySetting = "", "HERMES_SAFE_MODE"
-				case project && !inputs.envEnabled("HERMES_ENABLE_PROJECT_PLUGINS"):
+				case project && projectKnown && !projectEnabled:
 					plugin.state = ParticipationExcluded
 					plugin.reason = "project plugins require HERMES_ENABLE_PROJECT_PLUGINS opt-in; selected project has no ancestor inheritance"
 					policyPath, policySetting = "", "HERMES_ENABLE_PROJECT_PLUGINS"
@@ -171,6 +174,10 @@ func discoverHermesPlugins(request *Request, inputs *hermesInputs) {
 					plugin.state = ParticipationExcluded
 					plugin.reason = "plugins are opt-in; registry key/name is absent from plugins.enabled"
 					policyPath, policySetting = enabled.path, "plugins.enabled"
+				case !flagsKnown:
+					plugin.state = ParticipationUnknown
+					plugin.reason = "effective plugin discovery environment flags cannot be reliably interpreted"
+					policyPath = ""
 				default:
 					if plugin.state == ParticipationEligible {
 						policyPath, policySetting = enabled.path, "plugins.enabled"

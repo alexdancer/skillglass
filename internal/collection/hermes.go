@@ -24,6 +24,7 @@ type hermesInputs struct {
 	pluginFailure          *Evidence
 	managedYAML            hermesYAMLObservation
 	policyEnv              map[string]string
+	policyEnvUnknown       map[string]bool
 	policyDeclared         map[string]bool
 	uncertain              bool
 	problems               []Problem
@@ -269,7 +270,7 @@ func buildHermes(ctx context.Context, request Request) (*Snapshot, error) {
 	applyHermesPrecedence(snapshot, request.Roots, indexMetadata)
 	applyHermesExplicitLookup(snapshot, roots, &inputs)
 	// Missing/unreadable discovery can hide a same-name candidate or a higher-priority definition.
-	uncertain := inputs.uncertain || !snapshot.Complete()
+	uncertain := inputs.uncertain || inputs.policyEnvUnknown["HERMES_SAFE_MODE"] || (request.Project.Selected && inputs.policyEnvUnknown["HERMES_ENABLE_PROJECT_PLUGINS"]) || !snapshot.Complete()
 	if uncertain {
 		for _, id := range snapshot.order {
 			source := snapshot.sources[id]

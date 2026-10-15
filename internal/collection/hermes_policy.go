@@ -16,12 +16,30 @@ var hermesPolicyKeys = map[string]bool{
 	"HERMES_MANAGED_DIR": true,
 }
 
-func (inputs *hermesInputs) envEnabled(key string) bool {
+func (inputs *hermesInputs) envEnabled(key string) (bool, bool) {
+	if inputs.policyEnvUnknown[key] {
+		return false, false
+	}
 	switch strings.ToLower(strings.TrimSpace(inputs.policyEnv[key])) {
 	case "1", "true", "yes", "on":
-		return true
+		return true, true
 	}
-	return false
+	return false, true
+}
+func (inputs *hermesInputs) policyEnvProblem(path, key, reason string) {
+	if key == "" {
+		for _, flag := range []string{"HERMES_SAFE_MODE", "HERMES_ENABLE_PROJECT_PLUGINS"} {
+			inputs.policyEnvUnknown[flag] = true
+			delete(inputs.policyEnv, flag)
+		}
+	}
+	if key == "HERMES_SAFE_MODE" || key == "HERMES_ENABLE_PROJECT_PLUGINS" {
+		inputs.policyEnvUnknown[key] = true
+		delete(inputs.policyEnv, key)
+		inputs.problems = append(inputs.problems, makeProblem(ProblemNativeInput, path, reason, nil, true))
+		return
+	}
+	inputs.problem(path, reason)
 }
 func (inputs *hermesInputs) policyLayer(path, scope, state, reason string) {
 	inputs.scope.ConfigLayers = append(inputs.scope.ConfigLayers, PermissionLayer{Path: path, Scope: scope, State: state, Reason: reason, Evidence: hermesEvidence(EvidenceObserved, scope, path, "Hermes behavioral policy", reason)})
@@ -40,6 +58,7 @@ func (inputs *hermesInputs) pluginProblem(path, reason string) {
 }
 func (inputs *hermesInputs) readPolicy(request Request) {
 	inputs.policyEnv = make(map[string]string)
+	inputs.policyEnvUnknown = make(map[string]bool)
 	inputs.policyDeclared = make(map[string]bool)
 	for key := range hermesPolicyKeys {
 		if value, ok := os.LookupEnv(key); ok {
@@ -51,7 +70,7 @@ func (inputs *hermesInputs) readPolicy(request Request) {
 	// External secret backends may inject environment policy. They are never started here.
 	if value := inputs.configData["secrets"]; value != nil {
 		if fields, ok := value.(map[string]any); !ok || len(fields) > 0 {
-			inputs.problem(inputs.config, "configured external secret sources are not evaluated; startup environment policy is unknown")
+			inputs.policyEnvProblem(inputs.config, "", "configured external secret sources are not evaluated; startup environment policy is unknown")
 		}
 	}
 	managed := strings.TrimSpace(inputs.policyEnv["HERMES_MANAGED_DIR"])
@@ -68,7 +87,7 @@ func (inputs *hermesInputs) readPolicy(request Request) {
 		case os.IsNotExist(err):
 			inputs.policyLayer(managed, "managed-directory", "absent", "selected managed directory is absent; no fallback from an explicit override")
 		case err != nil:
-			inputs.problem(managed, "managed directory cannot be inspected; persisted environment policy is unknown")
+			inputs.policyEnvProblem(managed, "", "managed directory cannot be inspected; persisted environment policy is unknown")
 			inputs.policyLayer(managed, "managed-directory", "unknown", "managed policy cannot be established")
 		case !info.IsDir():
 			inputs.policyLayer(managed, "managed-directory", "absent", "selected managed path is not a directory")
@@ -117,7 +136,7 @@ func (inputs *hermesInputs) readPolicyEnv(path string, managed bool) {
 		return
 	}
 	if err != nil {
-		inputs.problem(path, "environment policy cannot be read")
+		inputs.policyEnvProblem(path, "", "environment policy cannot be read")
 		inputs.policyLayer(path, scope, "unknown", "environment policy cannot be read")
 		return
 	}
@@ -126,7 +145,7 @@ func (inputs *hermesInputs) readPolicyEnv(path string, managed bool) {
 		text = strings.TrimPrefix(text, "\ufeff")
 	}
 	if !utf8.ValidString(text) || strings.ContainsRune(text, 0) {
-		inputs.problem(path, "environment policy requires unsupported native encoding or normalization")
+		inputs.policyEnvProblem(path, "", "environment policy requires unsupported native encoding or normalization")
 		inputs.policyLayer(path, scope, "unknown", "unsupported environment encoding or normalization")
 		return
 	}
@@ -150,12 +169,12 @@ func (inputs *hermesInputs) readPolicyEnv(path string, managed bool) {
 		}
 		if !managed && !hermesDotenvQuoteClosed(value) {
 			uncertain = true
-			inputs.problem(path, "multiline or unclosed environment binding is outside the bounded inert parser")
+			inputs.policyEnvProblem(path, "", "multiline or unclosed environment binding is outside the bounded inert parser")
 			break // A later line may be part of this value rather than another assignment.
 		}
 		if !managed && key != strings.Trim(key, `"'`) && hermesPolicyKeys[strings.Trim(key, `"'`)] {
 			uncertain = true
-			inputs.problem(path, "quoted behavioral policy key is outside the supported syntax")
+			inputs.policyEnvProblem(path, strings.Trim(key, `"'`), "quoted behavioral policy key is outside the supported syntax")
 			continue
 		}
 		if !hermesPolicyKeys[key] {
@@ -168,11 +187,12 @@ func (inputs *hermesInputs) readPolicyEnv(path string, managed bool) {
 			value, ok = hermesDotenvLiteral(value)
 			if !ok {
 				uncertain = true
-				inputs.problem(path, "unsupported interpolation or syntax for behavioral policy key "+key)
+				inputs.policyEnvProblem(path, key, "unsupported interpolation or syntax for behavioral policy key "+key)
 				continue
 			}
 		}
 		inputs.policyEnv[key] = value
+		delete(inputs.policyEnvUnknown, key)
 	}
 	state, reason := "read", "only literal behavioral policy is read; other environment values are omitted"
 	if uncertain {
