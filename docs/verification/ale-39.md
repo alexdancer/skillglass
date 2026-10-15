@@ -38,10 +38,9 @@ Use the pinned source revision and cached Go dependencies. The helper executes t
 
 ```sh
 python3 tools/verify_codeaf.py --source /absolute/path/to/codeaf/source --binary /absolute/path/to/approved-version-executable --output /private/tmp/codeaf-evidence
-mkdir -p /private/tmp/ale-39-fixtures
-env TMPDIR=/private/tmp/ale-39-fixtures GOTMPDIR=/private/tmp/ale-39-fixtures GOPROXY=off GOSUMDB=off go test -count=1 -mod=readonly ./tests/acceptance -run ALE39
-env TMPDIR=/private/tmp/ale-39-fixtures GOTMPDIR=/private/tmp/ale-39-fixtures GOPROXY=off GOSUMDB=off sh tests/acceptance/run.sh /private/tmp/ale-39-acceptance
 ```
+
+For public-product acceptance, follow the [combined-suite verification procedure](ale-24.md#reproduce-the-acceptance-evidence), which owns fresh fixture/evidence directories, package timeout and recorded test selection. Use `SKILLGLASS_TEST_RUN=ALE39` for a focused CodeAF run; it is not full-suite evidence.
 
 The native utility clears inherited environments, including Git system/global configuration and Go environment configuration. It bounds every home/profile/XDG path and working directory under `/private/tmp`. Before supplied-binary execution, it builds a trusted inert control and proves allowed fixture reads/writes plus denied outside content reads, stat, listing, symlink traversal, writes, loopback connections, separate child execution and spawning its own executable. An unavailable sandbox or failed positive/denial control stops validation. The executable is copied to private storage; its bytes and the profile digest are checked at invocation, and runtime cannot rewrite either.
 
