@@ -197,6 +197,12 @@ def main(controls=False):
             ("local-on", {"skillOverrides": {"collision": "off"}}, {"skillOverrides": {"collision": "off"}}, {"skillOverrides": {"collision": "on"}}),
             ("local-off", {"skillOverrides": {"collision": "on"}}, {"skillOverrides": {"collision": "on"}}, {"skillOverrides": {"collision": "off"}}),
             ("ordinary-plugin-collision", {"enabledPlugins": {"demo@market": True}, "skillOverrides": {"action": "off"}}, {}, {}),
+            ("renamed-user-command-off", {"skillOverrides": {"display-name": "off"}}, {}, {}),
+            ("renamed-user-directory-off", {"skillOverrides": {"renamed": "off"}}, {}, {}),
+            ("renamed-project-command-off", {}, {"skillOverrides": {"display-name": "off"}}, {}),
+            ("renamed-project-directory-off", {}, {"skillOverrides": {"renamed": "off"}}, {}),
+            ("renamed-local-command-off", {}, {}, {"skillOverrides": {"display-name": "off"}}),
+            ("renamed-local-directory-off", {}, {}, {"skillOverrides": {"renamed": "off"}}),
         ])
     areas = [home / ".claude/skills", repo / ".claude", cwd / ".claude",
              plugin, configured / "skills", market / "demo", root_plugin, marketplace_path,
@@ -251,6 +257,9 @@ def main(controls=False):
             assert any(c["name"] == "collision" for c in commands[case]) == expected, case
         assert not any(c["name"] == "action" for c in commands["ordinary-plugin-collision"])
         assert any(c["name"] == "demo:action" for c in commands["ordinary-plugin-collision"])
+        for scope in ["user", "project", "local"]:
+            assert any(c["name"] == "display-name" for c in commands[f"renamed-{scope}-command-off"]), scope
+            assert not any(c["name"] == "display-name" for c in commands[f"renamed-{scope}-directory-off"]), scope
 
     assert any(c["name"] == "nested-collision" and "CHILD" in c["description"]
                for c in commands["baseline"])

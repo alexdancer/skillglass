@@ -25,7 +25,7 @@ func claudeChange(t *testing.T, fx fixture, choice, scope, id, token string, wan
 }
 func claudeTarget(t *testing.T, fx fixture) (string, string) {
 	t.Helper()
-	target := claudeSkill(t, filepath.Join(fx.home, ".claude/skills"), "target", "ale30-target", "")
+	target := claudeSkill(t, filepath.Join(fx.home, ".claude/skills"), "ale30-target", "ale30-target", "")
 	source := claudeAt(t, claudeListResult(t, fx, 0), filepath.Dir(target))
 	return source.ID, target
 }
@@ -195,7 +195,7 @@ func TestALE30JSONInsertionAndRemoval(t *testing.T) {
 
 func TestALE30SavedChoiceCanLeaveNoInvoker(t *testing.T) {
 	fx, _ := codexFixture(t)
-	target := claudeSkill(t, filepath.Join(fx.home, ".claude/skills"), "hidden", "ale30-hidden", "disable-model-invocation: true\nuser-invocable: false\n")
+	target := claudeSkill(t, filepath.Join(fx.home, ".claude/skills"), "ale30-hidden", "ale30-hidden", "disable-model-invocation: true\nuser-invocable: false\n")
 	config := filepath.Join(fx.home, ".claude/settings.json")
 	writeFile(t, config, []byte("{\"skillOverrides\":{\"ale30-hidden\":\"off\"}}"), 0600)
 	id := claudeAt(t, claudeListResult(t, fx, 0), filepath.Dir(target)).ID

@@ -32,6 +32,10 @@ func claudeControlName(s *Snapshot, source Source) (string, string) {
 			return "", "plugin settings govern whole plugins; isolated skill controls are unsupported"
 		}
 		if ref.NativeName != "" {
+			// Native settings select the discovered directory, not the displayed command.
+			if filepath.Base(s.references[ref.Reference].DiscoveredPath) != ref.NativeName {
+				return "", "native settings selector differs from the command name; controls are unsupported"
+			}
 			if name != "" && name != ref.NativeName {
 				return "", "shared references have different native names"
 			}
@@ -46,8 +50,8 @@ func claudeControlName(s *Snapshot, source Source) (string, string) {
 			continue
 		}
 		for _, ref := range other.Availability.References {
-			if ref.NativeName == name {
-				return "", "name-based setting would affect an independent same-name source"
+			if ref.NativeName == name || (ref.NativeName != "" && ref.Provenance.Kind != "plugin" && filepath.Base(s.references[ref.Reference].DiscoveredPath) == name) {
+				return "", "settings selector or command name would affect an independent source"
 			}
 		}
 	}

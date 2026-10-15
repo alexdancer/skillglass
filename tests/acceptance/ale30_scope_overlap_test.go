@@ -46,7 +46,7 @@ func TestALE30ProjectGlobalSettingsOverlap(t *testing.T) {
 				if layout == "missing-directory" || layout == "disjoint-missing-directories" {
 					skills = filepath.Join(repo, ".claude", "skills")
 				}
-				target := claudeSkill(t, skills, "target", "ale30-target", "")
+				target := claudeSkill(t, skills, "ale30-target", "ale30-target", "")
 				config := filepath.Join(global, "settings.json")
 				if saved != "absent" {
 					writeFile(t, config, []byte("{\"skillOverrides\":{\"ale30-target\":\""+saved+"\"},\"keep\":true}\n"), 0600)

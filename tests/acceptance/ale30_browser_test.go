@@ -20,7 +20,14 @@ func TestALE30BrowserCancelConfirmStaleAndExit(t *testing.T) {
 	for _, width := range []int{48, 120} {
 		t.Run(strconv.Itoa(width), func(t *testing.T) {
 			fx, _ := codexFixture(t)
-			target := claudeSkill(t, filepath.Join(fx.home, ".claude/skills"), strings.Repeat("long-source-path-", 4), "ale30-browser", "")
+			target := claudeSkill(t, filepath.Join(fx.base, "allowed"), strings.Repeat("long-source-path-", 4), "ale30-browser", "")
+			skills := filepath.Join(fx.home, ".claude/skills")
+			if err := os.MkdirAll(skills, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(filepath.Dir(target), filepath.Join(skills, "ale30-browser")); err != nil {
+				t.Fatal(err)
+			}
 			config := filepath.Join(fx.home, ".claude/settings.json")
 			writeFile(t, config, []byte("{\"preserved\":true}\n"), 0600)
 			before := treeManifest(t, fx.base)
