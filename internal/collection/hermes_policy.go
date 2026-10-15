@@ -28,12 +28,12 @@ func (inputs *hermesInputs) envEnabled(key string) (bool, bool) {
 }
 func (inputs *hermesInputs) policyEnvProblem(path, key, reason string) {
 	if key == "" {
-		for _, flag := range []string{"HERMES_SAFE_MODE", "HERMES_ENABLE_PROJECT_PLUGINS"} {
-			inputs.policyEnvUnknown[flag] = true
-			delete(inputs.policyEnv, flag)
+		for name := range hermesPolicyKeys {
+			inputs.policyEnvUnknown[name] = true
+			delete(inputs.policyEnv, name)
 		}
 	}
-	if key == "HERMES_SAFE_MODE" || key == "HERMES_ENABLE_PROJECT_PLUGINS" {
+	if key == "HERMES_SAFE_MODE" || key == "HERMES_ENABLE_PROJECT_PLUGINS" || key == "HERMES_MANAGED_DIR" {
 		inputs.policyEnvUnknown[key] = true
 		delete(inputs.policyEnv, key)
 		inputs.problems = append(inputs.problems, makeProblem(ProblemNativeInput, path, reason, nil, true))
@@ -74,10 +74,13 @@ func (inputs *hermesInputs) readPolicy(request Request) {
 		}
 	}
 	managed := strings.TrimSpace(inputs.policyEnv["HERMES_MANAGED_DIR"])
-	if managed == "" && os.Getenv("PYTEST_CURRENT_TEST") == "" {
+	if managed == "" && !inputs.policyEnvUnknown["HERMES_MANAGED_DIR"] && os.Getenv("PYTEST_CURRENT_TEST") == "" {
 		managed = "/etc/hermes"
 	}
-	if managed != "" {
+	if inputs.policyEnvUnknown["HERMES_MANAGED_DIR"] {
+		inputs.policyEnvProblem(filepath.Join(inputs.home, ".env"), "", "managed directory selection is unresolved; dependent environment and plugin policy are unknown")
+		inputs.policyLayer("", "managed-directory", "unknown", "unresolved selection; no candidate directory is inspected")
+	} else if managed != "" {
 		if !filepath.IsAbs(managed) {
 			managed = filepath.Join(request.Project.Path, managed)
 		}
@@ -94,10 +97,11 @@ func (inputs *hermesInputs) readPolicy(request Request) {
 		default:
 			beforeDir := inputs.policyEnv["HERMES_MANAGED_DIR"]
 			inputs.readPolicyEnv(filepath.Join(managed, ".env"), true)
-			if inputs.policyEnv["HERMES_MANAGED_DIR"] != beforeDir {
-				inputs.pluginProblem(filepath.Join(managed, ".env"), "managed environment redirects its own directory; plugin policy resolution is unsupported")
+			if inputs.policyEnvUnknown["HERMES_MANAGED_DIR"] || inputs.policyEnv["HERMES_MANAGED_DIR"] != beforeDir {
+				inputs.pluginProblem(filepath.Join(managed, ".env"), "managed environment redirects or obscures its own directory; plugin policy resolution is unsupported")
+			} else {
+				inputs.readManagedPlugins(filepath.Join(managed, "config.yaml"))
 			}
-			inputs.readManagedPlugins(filepath.Join(managed, "config.yaml"))
 		}
 	}
 	inputs.platform = inputs.policyEnv["HERMES_PLATFORM"]
@@ -107,7 +111,11 @@ func (inputs *hermesInputs) readPolicy(request Request) {
 	if !regexp.MustCompile(`^[a-zA-Z0-9_-]{0,64}$`).MatchString(inputs.platform) {
 		inputs.problem(filepath.Join(inputs.home, ".env"), "messaging platform policy is outside the supported literal shape")
 	}
-	inputs.policyLayer(filepath.Join(inputs.home, ".env"), "session-platform", "read", "profile environment overrides shell policy; managed environment wins last; HERMES_PLATFORM precedes HERMES_SESSION_PLATFORM")
+	platformState := "read"
+	if inputs.policyEnvUnknown["HERMES_PLATFORM"] || inputs.policyEnvUnknown["HERMES_SESSION_PLATFORM"] {
+		platformState = "unknown"
+	}
+	inputs.policyLayer(filepath.Join(inputs.home, ".env"), "session-platform", platformState, "profile environment overrides shell policy; managed environment wins last; HERMES_PLATFORM precedes HERMES_SESSION_PLATFORM")
 	user := hermesMap(inputs.configData, "plugins")
 	inputs.pluginPolicy = make(map[string]hermesPolicyLeaf)
 	for _, key := range []string{"enabled", "disabled"} {
@@ -116,7 +124,7 @@ func (inputs *hermesInputs) readPolicy(request Request) {
 			value, path, observation = managed, inputs.managedConfigPath, inputs.managedYAML
 		}
 		leaf := inputs.expandPluginPolicy(value, path, key)
-		leaf.known = leaf.known && observation.known("plugins."+key)
+		leaf.known = leaf.known && !inputs.policyEnvUnknown["HERMES_MANAGED_DIR"] && observation.known("plugins."+key)
 		inputs.pluginPolicy[key] = leaf
 		state := "read"
 		if !leaf.known {

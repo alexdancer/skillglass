@@ -191,7 +191,12 @@ func (inputs *hermesInputs) roots(request *Request) {
 			continue
 		}
 		// Python expandvars leaves unknown variables intact. Never replace them with empty text.
+		unresolved := false
 		value = os.Expand(value, func(key string) string {
+			if inputs.policyEnvUnknown["HERMES_MANAGED_DIR"] || inputs.policyEnvUnknown[key] {
+				unresolved = true
+				return ""
+			}
 			if hermesPolicyKeys[key] {
 				if value, exists := inputs.policyEnv[key]; exists {
 					return value
@@ -207,6 +212,10 @@ func (inputs *hermesInputs) roots(request *Request) {
 			}
 			return "${" + key + "}"
 		})
+		if unresolved {
+			inputs.problem(inputs.config, "external directory depends on unresolved environment policy; no candidate root is inspected")
+			continue
+		}
 		if value == "~" {
 			value = request.home
 		} else if strings.HasPrefix(value, "~/") {
