@@ -434,21 +434,14 @@ func TestFixtureLauncherContainmentControls(t *testing.T) {
 					cmd := exec.Command(argv[0], argv[1:]...)
 					cmd.Env, cmd.Dir = fx.environment(), fx.project
 					runTmuxProduct(t, tmux, fx, socket, cmd, "respawn-pane", "-k", "-t", "browser:0.0")
-					deadline := time.Now().Add(3 * time.Second)
-					var pane string
-					for time.Now().Before(deadline) {
-						status := strings.TrimSpace(runTmux(t, tmux, fx, socket, "display-message", "-p", "-t", "browser:0.0", "#{pane_dead}:#{pane_dead_status}"))
-						if strings.HasPrefix(status, "1:") {
-							pane = runTmux(t, tmux, fx, socket, "capture-pane", "-p", "-J", "-S", "-", "-t", "browser:0.0")
-							if status != "1:0" {
-								t.Fatalf("tmux control exited %s: %s", status, pane)
-							}
-							break
-						}
-						time.Sleep(20 * time.Millisecond)
+					status, exitErr := waitForTmuxExit(t, tmux, fx, socket, "browser:0.0", 0, 3*time.Second)
+					writeEvidence(t, fmt.Sprintf("isolation/ordinary/%s-writer-%t-exit.txt", route, writer), []byte(status+"\n"))
+					pane := runTmux(t, tmux, fx, socket, "capture-pane", "-p", "-J", "-S", "-", "-t", "browser:0.0")
+					if exitErr != nil {
+						t.Fatalf("tmux control: %v\n%s", exitErr, pane)
 					}
 					if pane == "" {
-						t.Fatal("tmux control timed out")
+						t.Fatal("tmux control produced no output")
 					}
 					raw = []byte(strings.Split(strings.TrimSpace(pane), "\n")[0])
 				}

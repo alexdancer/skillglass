@@ -27,26 +27,12 @@ func TestBrowserHelpQQuitsOutsideSearch(t *testing.T) {
 	writeEvidence(t, "ale43-review/help-q/01-help.txt", []byte(help))
 	runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "-l", "q")
 
-	deadline := time.Now().Add(time.Second)
-	status := ""
-	for time.Now().Before(deadline) {
-		status = strings.TrimSpace(runTmux(
-			t,
-			tmux,
-			fx,
-			socket,
-			"display-message", "-p", "-t", target, "#{pane_dead}:#{pane_dead_status}",
-		))
-		if strings.HasPrefix(status, "1:") {
-			break
-		}
-		time.Sleep(25 * time.Millisecond)
-	}
+	status, err := waitForTmuxExit(t, tmux, fx, socket, target, 0, time.Second)
 	writeEvidence(t, "ale43-review/help-q/02-pane-status.txt", []byte(status+"\n"))
-	if status != "1:0" {
+	if err != nil {
 		frame := capturePaneAt(t, tmux, fx, socket, target, false)
 		writeEvidence(t, "ale43-review/help-q/03-after-q.txt", []byte(frame))
-		t.Fatalf("q from Help left pane status %q, want literal exited status 1:0:\n%s", status, frame)
+		t.Fatalf("q from Help: %v\n%s", err, frame)
 	}
 }
 

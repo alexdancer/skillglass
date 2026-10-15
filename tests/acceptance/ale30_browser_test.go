@@ -98,20 +98,11 @@ func TestALE30BrowserCancelConfirmStaleAndExit(t *testing.T) {
 			send("Escape", "Cancelled. No settings changed.")
 			assertTreeUnchanged(t, edited, treeManifest(t, fx.base))
 			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "q")
-			deadline := time.Now().Add(5 * time.Second)
-			status := ""
-			for time.Now().Before(deadline) {
-				raw := runTmux(t, tmux, fx, socket, "display-message", "-p", "-t", "browser:0.0", "#{pane_dead}:#{pane_dead_status}")
-				status = strings.TrimSpace(string(raw))
-				if strings.HasPrefix(status, "1:") {
-					break
-				}
-				time.Sleep(20 * time.Millisecond)
-			}
-			if status != "1:1" {
-				t.Fatalf("unsuccessful confirmed mutation hidden by cancel/quit: %q", status)
-			}
+			status, err := waitForTmuxExit(t, tmux, fx, socket, "browser:0.0", 1, 5*time.Second)
 			writeEvidence(t, fmt.Sprintf("tmux/ale30/%d/exit.txt", width), []byte(status))
+			if err != nil {
+				t.Fatalf("unsuccessful confirmed mutation hidden by cancel/quit: %v", err)
+			}
 			if !bytes.Equal(targetBefore, readBytes(t, target)) {
 				t.Fatal("source altered")
 			}
