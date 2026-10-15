@@ -75,7 +75,7 @@ bin/skillglass enable --agent codex --scope global SOURCE_ID
 
 Preview changes no settings. Add `--project /path/to/repository` to inspect the effective result in that project while explicitly saving a global choice. See [global Codex control behavior and limits](docs/verification/ale-27.md) for contextual blockers, persistence outcomes and unsupported scopes.
 
-In browser source detail, press `D` to disable or `e` to enable, then `g` to select global scope. Press `p` instead to inspect the versioned unsupported project-control explanation, or `i` to request removal of a project override and inheritance. Both project requests refuse without changing settings on the validated Codex version. Inspect the paged preview. Press `y` to apply a ready global choice, or Enter or Escape to cancel. Long paths remain accessible with arrows, Page Up/Down and Home/End; on the scope selection page, `g` selects global scope rather than scrolling.
+In Codex browser source detail, press `D` to disable or `e` to enable, then `g` to select global scope. Press `p` instead to inspect the versioned unsupported project-control explanation, or `i` to request removal of a project override and inheritance. Both project requests refuse without changing settings on the validated Codex version. Inspect the paged preview. Press `y` to apply a ready global choice, or Enter or Escape to cancel. Long paths remain accessible with arrows, Page Up/Down and Home/End; on the scope selection page, `g` selects global scope rather than scrolling.
 
 For a unique ordinary Claude Code source, `--agent claude-code` supports global and exact selected-project enable/disable plus project inheritance:
 

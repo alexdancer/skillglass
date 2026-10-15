@@ -135,7 +135,7 @@ func TestALE29ParticipationConfidenceControls(t *testing.T) {
 				possible = filepath.Dir(claudeSkill(t, filepath.Join(fx.base, "allowed/viewer"), "work", "work", ""))
 				extra = []string{"--root", filepath.Dir(possible)}
 				targetName, state = "unrelated", "available"
-				target = filepath.Dir(claudeSkill(t, personal, "target", targetName, ""))
+				target = filepath.Dir(claudeSkill(t, personal, targetName, targetName, ""))
 			default:
 				name := "work"
 				if mode == "N4-matching-rank" {

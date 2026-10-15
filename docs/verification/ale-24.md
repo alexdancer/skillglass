@@ -51,7 +51,7 @@ The runner uses a 20-minute Go package timeout for the combined application suit
 
 Inspect `cases.json`, raw PTY bytes, driven keys, pane dimensions, and current tmux cells. The acceptance driver builds the public executable and launches it with synthetic HOME, XDG, project, temporary, and current directories. Inspect fixture before/after manifests alongside command and browser receipts: read-only journeys must preserve sources and settings; mutation journeys must show only their intended changes and preserve unrelated state. The [inherited containment boundary](ale-23.md#runtime-containment-boundary) defines runtime restrictions, positive controls, and their limits.
 
-Run repository checks after the last source or documentation change. The full Go suite now includes Codex snapshot and writer fault tests in `internal/collection`, which do not contain their own process. Set `SKILLGLASS_TEST_EXEC` to the absolute path of the coordinator-provided contained test launcher before running that suite. It must launch the collection test executable with disposable HOME/CODEX_HOME/CLAUDE_CONFIG_DIR/XDG paths, external TMPDIR/GOTMPDIR, controlled native-system-input absence, denied network and outside-content reads, and bounded fixture writes, while allowing the exact `/bin/ls` ACL helper. Prove its positive and negative controls and record finalized launch contexts using the [containment contract](ale-23.md#runtime-containment-boundary). Do not substitute an uncontained full-suite command if the launcher is unavailable.
+Run repository checks after the last source or documentation change. The full Go suite now includes Codex snapshot and writer fault tests in `internal/collection`, which do not contain their own process. Set `SKILLGLASS_TEST_EXEC` to the absolute path of the coordinator-provided contained test launcher before running that suite. It must launch the collection test executable with disposable HOME/CODEX_HOME/CLAUDE_CONFIG_DIR/XDG paths, external TMPDIR/GOTMPDIR, controlled native-system-input absence, denied network and outside-content reads, and bounded fixture writes, using the shared policy's executable allowances. Prove its positive and negative controls and record finalized launch contexts using the [containment contract](ale-23.md#runtime-containment-boundary). Do not substitute an uncontained full-suite command if the launcher is unavailable.
 
 ```sh
 /opt/homebrew/bin/gofmt -l cmd internal tests/acceptance tests/launchrecord
@@ -62,7 +62,8 @@ python3 -m unittest discover -s tests/agent_loop -v
 python3 -m unittest discover -s tests/native -v
 python3 -m py_compile tools/verify_hermes.py tools/verify_hermes_policy.py tests/native/test_verify_hermes_retired.py
 python3 -m unittest discover -s tests/native_verification -v
-python3 -m py_compile tools/claude_containment.py tools/verify_claude.py tools/verify_claude_plugin_manifest.py tests/native_verification/test_verify_claude.py \
+python3 -m py_compile tools/claude_containment.py tools/verify_claude.py tools/verify_claude_controls.py tools/verify_claude_plugin_manifest.py \
+  tests/native_verification/test_verify_claude.py tests/native_verification/test_claude_controls_containment.py tests/native/test_opencode_containment.py \
   tools/codex_containment.py tools/codex_probe.py tools/verify_codex_control.py tools/verify_codex_project.py tests/native_verification/test_verify_codex_control.py
 shellcheck tests/acceptance/run.sh
 sh -n tests/acceptance/run.sh
