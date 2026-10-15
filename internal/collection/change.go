@@ -13,6 +13,7 @@ const (
 	ControlProject ControlScope  = "project"
 	ControlEnable  ControlChoice = "enable"
 	ControlDisable ControlChoice = "disable"
+	ControlInherit ControlChoice = "inherit"
 )
 
 type ChangeIntent struct {

@@ -63,7 +63,7 @@ python3 -m unittest discover -s tests/native -v
 python3 -m py_compile tools/verify_hermes.py tools/verify_hermes_policy.py tests/native/test_verify_hermes_retired.py
 python3 -m unittest discover -s tests/native_verification -v
 python3 -m py_compile tools/claude_containment.py tools/verify_claude.py tools/verify_claude_plugin_manifest.py tests/native_verification/test_verify_claude.py \
-  tools/codex_containment.py tools/codex_probe.py tools/verify_codex_control.py tests/native_verification/test_verify_codex_control.py
+  tools/codex_containment.py tools/codex_probe.py tools/verify_codex_control.py tools/verify_codex_project.py tests/native_verification/test_verify_codex_control.py
 shellcheck tests/acceptance/run.sh
 sh -n tests/acceptance/run.sh
 git diff --check

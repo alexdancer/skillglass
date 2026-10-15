@@ -207,6 +207,12 @@ func explainCodexSource(snapshot *Snapshot, id SourceID, roots map[RootID]Discov
 			explanation.State = AvailabilityExplicitOnly
 			explanation.Reason = "allowed by local configuration; invocation policy requires explicit selection"
 		}
+		for _, layer := range permission.Layers {
+			if layer.Scope == "project" && layer.State == "effective" {
+				explanation.Reason += "; project configuration inference only, native skills/list retains startup/user choices and inference-session enforcement is unverified"
+				break
+			}
+		}
 		*explanation.Evidence = codexEvidence(EvidenceInferred, "configured-availability", permission.Evidence.InputPath, permission.Evidence.Setting, explanation.Reason)
 		if explanation.State == AvailabilityUnknown {
 			explanation.Evidence.Kind = EvidenceUnknown
@@ -257,6 +263,11 @@ func explainCodexSource(snapshot *Snapshot, id SourceID, roots map[RootID]Discov
 		reason := "this operation or scope has no validated writer"
 		evidenceKind := EvidenceUnknown
 		rule := "unsupported-control"
+		if operation == "project-override" {
+			reason = codexProjectControlReason
+			evidenceKind = EvidenceObserved
+			rule = "native-project-control-unavailable"
+		}
 		if operation == "enable" || operation == "disable" {
 			scope = "global"
 			source.Availability = explanation

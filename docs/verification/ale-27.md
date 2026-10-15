@@ -32,7 +32,7 @@ Sealed read-only and writer profiles restrict content reads to the fixture, sele
 
 Positive controls and fixture Git initialization are controller operations outside the payload profiles. These profiles start from `allow default`: ambient metadata and other non-content operations remain allowed except at modeled system inputs. This is content isolation, not a complete capability sandbox. Native inspection sends initialize, skills/list and config/read. Plugin setup installs only a fixture local plugin. No inference thread, turn or skill workload starts.
 
-The pinned [Codex skill configuration source](https://raw.githubusercontent.com/openai/codex/rust-v0.155.1/codex-rs/config/src/skills_config.rs) defines canonical path selectors and ordered native rules. This writer emits only the independently proved manifest-path representation. Changing native versions requires fresh evidence. Existing inference-session adoption remains unobserved. Native inspect-list behavior and the local configured project-array explanation are distinct, as documented in [ALE-26](ale-26.md).
+The pinned [Codex skill configuration source](https://raw.githubusercontent.com/openai/codex/rust-v0.155.1/codex-rs/config/src/skills_config.rs) defines canonical path selectors and ordered native rules. This writer emits only the independently proved manifest-path representation. Changing native versions requires fresh evidence. Existing inference-session adoption remains unobserved. See [ALE-28](ale-28.md#native-evidence) for project-control evidence and the distinction between local configured permission and native loading.
 
 ## Verification coverage
 

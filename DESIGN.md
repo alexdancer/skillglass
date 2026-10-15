@@ -57,7 +57,7 @@ Details contains, in order:
 - raw frontmatter and malformed raw manifest text when applicable;
 - the full supporting-resource inventory.
 
-`d` opens Details and `i` returns to Instructions. Uppercase `D` starts Codex disable, while `e` starts enable; scope selection and preview confirmation are separate required steps. These letters remain query text in search. Arrow keys, `j`/`k`, `PgUp`/`PgDn`, `Home`/`End`, and `g`/`G` scroll the active reader.
+`d` opens Details and `i` returns to Instructions. Uppercase `D` starts Codex disable, while `e` starts enable; scope selection and preview confirmation are separate required steps. The [README's control instructions](README.md#build-and-use) own scope-selection keys and unsupported project requests. These letters remain query text in search. Arrow keys, `j`/`k`, `PgUp`/`PgDn`, `Home`/`End`, and `g`/`G` scroll the active reader.
 
 ## Problems, scope, and help
 

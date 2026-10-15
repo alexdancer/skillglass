@@ -10,6 +10,8 @@ import (
 
 const codexValidatedVersion = "codex-cli 0.155.1"
 
+const codexProjectControlReason = "Codex 0.155.1 project per-skill enforcement is not validated: trusted project skills.config appears in config/read, but fresh skills/list and forceReload retain startup/user choices. Project enable, disable and override removal cannot promise the requested native scope; project controls do not fall back to global. No settings changed."
+
 type codexChoice struct {
 	Path    string `toml:"path"`
 	Enabled *bool  `toml:"enabled"`
@@ -124,7 +126,7 @@ func (inputs *codexInputs) loadConfig(path, scope string, trusted bool) codexCon
 }
 func readCodexInputs(request Request, ancestors []string, boundary string) codexInputs {
 	inputs := codexInputs{scope: AgentScope{Evidence: codexEvidence(EvidenceObserved, "recorded-native-verification", "tools/verify_codex.py", "", "disposable app-server verification recorded native outcomes, including independent cache-alias discovery; this is reference-version evidence"), Application: "codex", ValidatedVersion: codexValidatedVersion, VersionEvidence: "recorded disposable native verification; installed executable and active session are not inspected", Gaps: []string{
-		"configured permission is a local inference; project enforcement in an inference session is unverified",
+		"configured permission is a local inference; trusted project arrays appear in config/read but skills/list retains startup/user choices; inference-session project enforcement is unverified",
 		"CLI overrides, runtime extra roots, selected profiles, cloud policy and active-session state are not supplied",
 		"native recursion is verified; exact depth and metadata limits remain unverified; hidden folders and file manifest links are omitted",
 		"remote and workspace-managed plugin activation is unverified",
