@@ -34,7 +34,9 @@ func previewCodexChange(ctx context.Context, s *Snapshot, intent ChangeIntent) *
 		return rejectedChange(intent, "unsupported", "explicit --agent codex is required for this validated writer")
 	}
 	if intent.Scope == ControlProject {
-		return rejectedChange(intent, "unsupported", codexProjectControlReason)
+		preview := rejectedChange(intent, "unsupported", codexProjectControlReason)
+		preview.view.InspectionProject = s.request.Project
+		return preview
 	}
 	if intent.Scope != ControlGlobal {
 		return rejectedChange(intent, "unsupported", "choose explicit global or project scope; no settings changed")

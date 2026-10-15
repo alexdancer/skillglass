@@ -75,6 +75,9 @@ func runChange(operation string, args []string, stdout, stderr io.Writer) int {
 func changePreviewLines(view collection.ChangeView) []string {
 	lines := []string{fmt.Sprintf("Codex %s %s | %s", view.Intent.Scope, view.Intent.Choice, view.State), "Source ID: " + string(view.Intent.Source), "Reason: " + view.Reason}
 	if view.State != "ready" {
+		if view.Intent.Scope == collection.ControlProject {
+			lines = append(lines, inspectionProjectLine(view.InspectionProject))
+		}
 		return safeChangeLines(lines)
 	}
 	for _, change := range view.Changes {
@@ -86,11 +89,7 @@ func changePreviewLines(view collection.ChangeView) []string {
 	if view.CreateDirectory != "" {
 		lines = append(lines, "Create directory: "+view.CreateDirectory+" (0700)")
 	}
-	project := "none selected"
-	if view.InspectionProject.Selected {
-		project = view.InspectionProject.Path
-	}
-	lines = append(lines, "Inspection project: "+project)
+	lines = append(lines, inspectionProjectLine(view.InspectionProject))
 	for _, change := range view.Changes {
 		lines = append(lines, "Setting: "+change.Setting)
 	}
@@ -105,6 +104,13 @@ func changePreviewLines(view collection.ChangeView) []string {
 	lines = append(lines, "Preview only. No settings changed.", "Confirm with --confirm "+view.Confirmation)
 	return safeChangeLines(lines)
 }
+func inspectionProjectLine(project collection.ProjectContext) string {
+	if !project.Selected {
+		return "Inspection project: none selected"
+	}
+	return "Inspection project: " + project.Path
+}
+
 func changeOutcomeLines(out collection.ChangeOutcome) []string {
 	lines := []string{fmt.Sprintf("Codex %s %s | %s", out.Intent.Scope, out.Intent.Choice, out.State), "Source ID: " + string(out.Intent.Source), "Write: " + out.WriteState, "Persistence: " + out.Persistence, "Effective result: " + out.Achievement, "Reason: " + out.Reason}
 	if out.PersistedPermission != "" {

@@ -35,6 +35,23 @@ func (model browserModel) updateChange(key tea.KeyPressMsg) (tea.Model, tea.Cmd)
 		case "esc", "enter":
 			model.mode = browserSourceDetail
 			model.feedback = "Cancelled. No settings changed."
+		case "j", "down", "k", "up", "pgdown", "pgup", "home", "end":
+			layout := model.changePage().layout()
+			switch key.String() {
+			case "j", "down":
+				model.changeScroll++
+			case "k", "up":
+				model.changeScroll--
+			case "pgdown":
+				model.changeScroll += layout.pageSize
+			case "pgup":
+				model.changeScroll -= layout.pageSize
+			case "home":
+				model.changeScroll = 0
+			case "end":
+				model.changeScroll = layout.maxScroll
+			}
+			model.changeScroll = min(max(model.changeScroll, 0), layout.maxScroll)
 		case "g", "p", "i":
 			scope := collection.ControlGlobal
 			choice := model.changeChoice
@@ -104,8 +121,8 @@ func (model browserModel) changePage() pagedView {
 	if model.snapshot.Scope().Project.Selected {
 		header = append(header, fitLine("Inspection: selected project (details below)", model.width))
 	}
-	body := []string{"Select the setting scope explicitly.", "g Global user configuration", "p Project control: unavailable", "i Remove project override / inherit: unavailable", "Enter or Esc cancel"}
-	help := []string{"g Global | p Project | i Inherit", "Enter/Esc Cancel | q quit"}
+	body := []string{"Select the setting scope explicitly.", "g Global user configuration", "p Project control: unavailable", "i Remove project override / inherit: unavailable", "Enter or Esc cancel", inspectionProjectLine(model.snapshot.Scope().Project)}
+	help := wrapGroups([]string{"g Global", "p Project", "i Inherit", "↑↓ scroll", "PgUp/PgDn", "Home/End", "Enter/Esc Cancel", "q quit"}, model.width)
 	if model.mode == browserChangePreview {
 		body = changePreviewLines(model.changePreview.View())
 		help = wrapGroups([]string{"j/k scroll", "PgUp/PgDn", "g/G top/end", "y Apply global " + string(model.changeChoice), "Enter/Esc Cancel", "? help", "q quit"}, model.width)
@@ -113,7 +130,7 @@ func (model browserModel) changePage() pagedView {
 			help = wrapGroups([]string{"j/k scroll", "PgUp/PgDn", "Enter/Esc Back", "? help", "q quit"}, model.width)
 		}
 	} else if model.mode == browserChangeResult {
-		body = changeOutcomeLines(model.changeOutcome)
+		body = append(changeOutcomeLines(model.changeOutcome), inspectionProjectLine(model.snapshot.Scope().Project))
 		help = wrapGroups([]string{"j/k scroll", "PgUp/PgDn", "g/G top/end", "Enter/Esc Back", "r reinspect", "? help", "q quit"}, model.width)
 	}
 	lines := []string{}
