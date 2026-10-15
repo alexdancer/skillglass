@@ -40,12 +40,8 @@ func runChange(operation string, args []string, stdout, stderr io.Writer) int {
 	var data []byte
 	var err error
 	exit := 0
-	if confirmation.set {
+	if confirmation.set && view.State == "ready" {
 		out := preview.Apply(context.Background(), confirmation.value)
-		if view.State != "ready" {
-			out.State = view.State
-			out.Reason = view.Reason
-		}
 		exit = out.ExitCode()
 		if options.jsonOutput {
 			data, err = encodeJSON(out)
