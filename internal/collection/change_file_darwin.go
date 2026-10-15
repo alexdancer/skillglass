@@ -212,7 +212,7 @@ func sameChangeFacts(left, right any) bool {
 func (p *changePlan) apply(ctx context.Context) (out ChangeOutcome) {
 	out = ChangeOutcome{State: "failed", Reason: "configuration write failed", Intent: p.intent, WriteState: "none", Persistence: "not-written", Achievement: "unknown", Reload: changeReload()}
 	if p.intent.Application == "claude-code" {
-		out.Reload = SessionExplanation{State: "restart-required", Evidence: claudeEvidence(EvidenceUnknown, "session-reload", "", "", "restart Claude Code to load the saved choice; existing session adoption was not verified")}
+		out.Reload = SessionExplanation{State: "unknown", Evidence: claudeEvidence(EvidenceUnknown, "session-reload", "", "", "a fresh Claude Code launch is a conservative way to load the saved choice; existing session adoption was not verified; whether restart is necessary is unknown")}
 	}
 	dest := p.destination
 	parentFD, err := unix.Open(dest.Parent.Resolved, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)

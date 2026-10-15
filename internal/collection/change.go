@@ -93,7 +93,7 @@ func (s *Snapshot) PreviewChange(ctx context.Context, intent ChangeIntent) *Chan
 	return previewCodexChange(ctx, s, intent)
 }
 func (p *ChangePreview) Apply(ctx context.Context, confirmation string) ChangeOutcome {
-	out := ChangeOutcome{State: "refused", Reason: "confirmation does not match this current preview; request a new preview", WriteState: "none", Persistence: "not-written", Achievement: "unmet"}
+	out := ChangeOutcome{State: "refused", Reason: "confirmation does not match this current preview; request a new preview", WriteState: "none", Persistence: "not-written", Achievement: "unmet", Reload: SessionExplanation{State: "unknown", Evidence: Evidence{Kind: EvidenceUnknown, Rule: "session-not-observed", Reason: "existing session adoption was not verified; a fresh launch is a conservative way to load any saved settings"}}}
 	if p == nil {
 		return out
 	}
