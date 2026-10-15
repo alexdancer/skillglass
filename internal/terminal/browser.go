@@ -191,7 +191,8 @@ func (model browserModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		model.feedback = ""
 		return model, nil
 	case comparisonReady:
-		if message.generation != model.comparisonGeneration || model.mode != browserComparison {
+		comparisonVisible := model.mode == browserComparison || model.mode == browserHelp && model.helpReturn == browserComparison
+		if message.generation != model.comparisonGeneration || !comparisonVisible {
 			return model, nil
 		}
 		model.comparing = false

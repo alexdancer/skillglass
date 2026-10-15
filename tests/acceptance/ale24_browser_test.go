@@ -64,7 +64,7 @@ func TestALE24BrowserModesAndReferencesAtRequiredWidths(t *testing.T) {
 			}
 			searchHint := "Type to filter"
 			if width < 60 {
-				searchHint = "Type  Enter keep"
+				searchHint = "Enter keep Esc cancel"
 			}
 			_ = act(func() {
 				runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "/")
@@ -279,9 +279,11 @@ func TestALE24BrowserRefreshSelectionAndProblemPaste(t *testing.T) {
 
 	_ = act(func() { key("Tab") }, "Problems", "0 matching problems")
 	problemSearch := act(func() { key("/"); key("C-u"); paste("qrcfo") },
-		"Problems", "Search / qrcfo█", "problem-qrcfo-marker", "Ctrl+U clear",
+		"Problems", "Search / qrcfo█", "problem-qrcfo-marker", "Enter keep", "Esc cancel",
 	)
 	writeEvidence(t, "tmux/ale24-refresh/06-problem-paste.txt", []byte(problemSearch))
+	_ = act(func() { key("C-u") }, "Search / █", "Filters: context custom", "Enter keep")
+	_ = act(func() { paste("qrcfo") }, "Search / qrcfo█", "problem-qrcfo-marker", "Problem focus: 1/1")
 	_ = act(func() { key("Enter") }, "Enter problem", "Problem focus: 1/1")
 	problemDetail := act(func() { key("Enter") },
 		"Selected problem:", "Code: broken-reference", "problem-qrcfo-marker", "Limits coverage: true",

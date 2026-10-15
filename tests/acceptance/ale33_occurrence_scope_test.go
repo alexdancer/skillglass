@@ -294,7 +294,7 @@ func TestALE33RetainedScopeBrowser(t *testing.T) {
 			if state == "unknown" {
 				permission, kind = "unknown", "unknown"
 			}
-			if !strings.Contains(frame, "Configured permission: "+permission+" ("+kind+")") || !strings.Contains(frame, "Selector: "+string(source.ID)) {
+			if !strings.Contains(frame, "Configured permission: "+permission+" ("+kind+")") || !strings.Contains(frame, "Source ID: "+string(source.ID)) {
 				t.Errorf("permission or selected identity disagrees: %s", frame)
 			}
 			assertPaneCells(t, frame, 80, 30)

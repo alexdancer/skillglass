@@ -422,13 +422,18 @@ func TestBrowserHelpListsPagingAndTopEndAliases(t *testing.T) {
 	)
 
 	runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "?")
-	help := waitForPaneAt(t, tmux, fx, socket, target, false, "Keys", "Themes:", "q", "Quit")
+	help := waitForPaneAt(t, tmux, fx, socket, target, false, "Keys", "Ctrl+U", "Clear search while editing", "q", "Quit")
 	writeEvidence(t, "ale43-review/help-keys/help.txt", []byte(help))
 	for _, expected := range []string{"PgUp / PgDn", "Home / End"} {
 		if !paneContains(help, expected) {
 			t.Errorf("complete Help does not contain literal key guidance %q:\n%s", expected, help)
 		}
 	}
+	themes := actForPaneAt(t, tmux, fx, socket, target, false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "End")
+	}, "Themes:", "NO_COLOR")
+	assertPaneCells(t, themes, 80, 30)
+	writeEvidence(t, "ale43-review/help-keys/themes.txt", []byte(themes))
 }
 
 func startALE43ReviewBrowser(

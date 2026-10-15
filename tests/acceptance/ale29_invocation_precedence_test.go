@@ -221,7 +221,7 @@ func TestALE29UncertainWinnerKeepsInvocationExclusionBrowser(t *testing.T) {
 			}
 			collect := func(label string, needles ...string) {
 				send("Enter", "Rendered instructions")
-				frame := send("d", "Read lines")
+				frame := send("d", "Source ID:", "Read lines")
 				rows := map[int]string{}
 				for page := 0; page < 60; page++ {
 					assertPaneCells(t, frame, size.width, size.height)

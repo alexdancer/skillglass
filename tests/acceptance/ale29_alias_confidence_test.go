@@ -283,9 +283,9 @@ func TestALE29UnknownAliasBrowser(t *testing.T) {
 					send("/", "Enter keep")
 					runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", search)
 					waitForPane(t, tmux, fx, socket, false, "Focus: 1/1")
-					send("Enter", "Enter read")
+					send("Enter", "Enter open")
 					send("Enter", "Rendered instructions")
-					send("d", "Read lines")
+					send("d", "Source ID:", "Read lines")
 				}
 				collect := func(label string, winner bool, needles ...string) {
 					frame := waitForPane(t, tmux, fx, socket, false, "Read lines 1-")

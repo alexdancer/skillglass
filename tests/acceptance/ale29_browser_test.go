@@ -32,7 +32,11 @@ func TestALE29ClaudeBrowserExplainsFiltersAndRefreshesWithoutWrites(t *testing.T
 			runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height), "-s", "browser")
 			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(size.width), "-y", strconv.Itoa(size.height))
-			first := waitForPane(t, tmux, fx, socket, false, "Skillglass", "Agent: claude-code", "browser-claude", "explicit-only (inferred)")
+			agentLabel := "Agent: claude-code"
+			if size.width == 48 {
+				agentLabel = "Agent: claude-co…"
+			}
+			first := waitForPane(t, tmux, fx, socket, false, "Skillglass", agentLabel, "browser-claude", "explicit-only (inferred)")
 			assertPaneCells(t, first, size.width, size.height)
 			writeEvidence(t, fmt.Sprintf("tmux/ale29/%dx%d/01-sources.txt", size.width, size.height), []byte(first))
 			send := func(key string, needles ...string) string {

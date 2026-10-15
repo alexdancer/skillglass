@@ -743,7 +743,7 @@ func TestBrowserLongSearchUsesSingleRowTailViewport(t *testing.T) {
 			runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "-l", longQuery)
 		},
 		asciiTail+"█", "No matching sources.", "Focused: no matching sources",
-		"Type to filter", "Enter keep", "Esc cancel", "Ctrl+U clear",
+		"Type to filter", "Enter keep", "Esc cancel", "Ctrl+U",
 	)
 	writeEvidence(t, "tmux/long-search/01-long-editing-60x30.txt", []byte(longEditing))
 	longRow := assertSearchViewport(t, longEditing, 60, 30, asciiTail, true, true)
@@ -752,7 +752,7 @@ func TestBrowserLongSearchUsesSingleRowTailViewport(t *testing.T) {
 	narrow := resizePaneAt(
 		t, tmux, fx, socket, "long:0.0", 48, 20,
 		asciiTail+"█", "No matching sources.", "Focused: no matching sources",
-		"Type  Enter keep", "Esc cancel", "Ctrl+U clear",
+		"Enter keep", "Esc cancel", "Ctrl+U clear",
 	)
 	writeEvidence(t, "tmux/long-search/02-long-editing-48x20.txt", []byte(narrow))
 	narrowRow := assertSearchViewport(t, narrow, 48, 20, asciiTail, true, true)
@@ -764,7 +764,7 @@ func TestBrowserLongSearchUsesSingleRowTailViewport(t *testing.T) {
 	restored := resizePaneAt(
 		t, tmux, fx, socket, "long:0.0", 60, 30,
 		longRow, "No matching sources.", "Focused: no matching sources",
-		"Type to filter", "Enter keep", "Esc cancel", "Ctrl+U clear",
+		"Type to filter", "Enter keep", "Esc cancel", "Ctrl+U",
 	)
 	writeEvidence(t, "tmux/long-search/03-long-editing-restored.txt", []byte(restored))
 	if restoredRow := assertSearchViewport(t, restored, 60, 30, asciiTail, true, true); restoredRow != longRow {
@@ -804,7 +804,7 @@ func TestBrowserLongSearchUsesSingleRowTailViewport(t *testing.T) {
 	cleared := actForPaneAt(
 		t, tmux, fx, socket, "long:0.0", false,
 		func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "C-u") },
-		"Search / █", "tail-only-source", "other-source", "Ctrl+U clear",
+		"Search / █", "tail-only-source", "other-source", "Ctrl+U",
 	)
 	writeEvidence(t, "tmux/long-search/06-cleared.txt", []byte(cleared))
 	assertSearchViewport(t, cleared, 60, 30, "", true, false)
@@ -814,7 +814,7 @@ func TestBrowserLongSearchUsesSingleRowTailViewport(t *testing.T) {
 	wide := actForPaneAt(
 		t, tmux, fx, socket, "long:0.0", false,
 		func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "long:0.0", "-l", wideQuery) },
-		wideTail+"█", "No matching sources.", "Focused: no matching sources", "Ctrl+U clear",
+		wideTail+"█", "No matching sources.", "Focused: no matching sources", "Ctrl+U",
 	)
 	writeEvidence(t, "tmux/long-search/07-wide-editing.txt", []byte(wide))
 	assertSearchViewport(t, wide, 60, 30, wideTail, true, true)
@@ -1049,10 +1049,10 @@ func assertSearchChrome(t *testing.T, capture string) {
 	for _, expected := range []string{
 		"No matching sources.",
 		"Focused: no matching sources",
-		"Type",
+		"Focus: 0/0",
 		"Enter keep",
 		"Esc cancel",
-		"Ctrl+U clear",
+		"Ctrl+U",
 	} {
 		if !paneContains(capture, expected) {
 			t.Fatalf("search frame does not show %q:\n%s", expected, capture)

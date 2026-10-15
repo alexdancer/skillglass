@@ -57,7 +57,7 @@ func TestBrowserBracketedPasteIsSearchData(t *testing.T) {
 	kept := act(func() { key("Enter") }, "Search / normal-skill", "? help", "q quit")
 	assertSearchViewport(t, kept, 60, 30, "normal-skill", false, false)
 	_ = act(func() { key("/") }, "Search / normal-skill█", "Enter keep")
-	controls := act(func() { paste("q\r\n\x03\x15\x1b[2J\a") }, `normal-skillq\r\n\x03\x15\a`, "No matching sources.", "Ctrl+U clear")
+	controls := act(func() { paste("q\r\n\x03\x15\x1b[2J\a") }, `normal-skillq\r\n\x03\x15\a`, "No matching sources.", "Ctrl+U")
 	writeEvidence(t, "tmux/paste/02-controls.txt", []byte(controls))
 	assertSearchViewport(t, controls, 60, 30, `q\r\n\x03\x15\a`, true, false)
 	assertSearchChrome(t, controls)

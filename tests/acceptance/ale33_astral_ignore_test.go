@@ -310,7 +310,7 @@ func TestALE33AstralIgnoreBrowser(t *testing.T) {
 			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 			waitForPane(t, tmux, fx, socket, false, "Skillglass", name)
 			frame := actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "Enter", "d") }, "Read lines", "Availability: unknown")
-			for _, line := range []string{"Availability: unknown (unknown)", "Configured permission: unknown (unknown)", "Coverage: incomplete"} {
+			for _, line := range []string{"Availability: unknown (unknown)", "Configured permission: unknown (unknown)", "coverage incomplete"} {
 				if !strings.Contains(frame, line) {
 					t.Errorf("uncertainty missing %s: %s", line, frame)
 				}
