@@ -28,7 +28,7 @@ func runChange(operation string, args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if flags.NArg() != 1 || options.agent != "codex" || *scope == "" {
-		writeError(stderr, errors.New("enable/disable requires explicit --agent codex, --scope global and exactly one SOURCE_ID after the flags"))
+		writeError(stderr, errors.New("enable/disable/inherit requires explicit --agent codex, --scope global or project and exactly one SOURCE_ID after the flags"))
 		return 2
 	}
 	snapshot, code := buildSnapshot(options, stderr)

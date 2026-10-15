@@ -33,8 +33,14 @@ func previewCodexChange(ctx context.Context, s *Snapshot, intent ChangeIntent) *
 	if s == nil || intent.Application != "codex" || s.request.Agent != "codex" {
 		return rejectedChange(intent, "unsupported", "explicit --agent codex is required for this validated writer")
 	}
+	if intent.Scope == ControlProject {
+		return rejectedChange(intent, "unsupported", codexProjectControlReason)
+	}
 	if intent.Scope != ControlGlobal {
-		return rejectedChange(intent, "unsupported", "only explicit global user configuration is supported; project controls do not fall back to global")
+		return rejectedChange(intent, "unsupported", "choose explicit global or project scope; no settings changed")
+	}
+	if intent.Choice == ControlInherit {
+		return rejectedChange(intent, "unsupported", "inherit removes a project override; global scope has no project override to remove; no settings changed")
 	}
 	if intent.Choice != ControlEnable && intent.Choice != ControlDisable {
 		return rejectedChange(intent, "refused", "choose enable or disable")

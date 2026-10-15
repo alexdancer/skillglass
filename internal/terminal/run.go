@@ -17,7 +17,7 @@ const usage = `Usage:
   skillglass read [SCOPE] [--json] SOURCE_ID
   skillglass explain [SCOPE] [--json] SOURCE_ID
   skillglass compare [SCOPE] [--json] LEFT_SOURCE_ID RIGHT_SOURCE_ID
-  skillglass enable|disable --agent codex --scope global [SCOPE] [--confirm TOKEN] [--json] SOURCE_ID
+  skillglass enable|disable|inherit --agent codex --scope global|project [SCOPE] [--confirm TOKEN] [--json] SOURCE_ID
   skillglass browse [SCOPE]
 
 Scope:
@@ -111,7 +111,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return runSource(args[0], args[1:], stdout, stderr)
 	case "compare":
 		return runCompare(args[1:], stdout, stderr)
-	case "enable", "disable":
+	case "enable", "disable", "inherit":
 		return runChange(args[0], args[1:], stdout, stderr)
 	case "browse":
 		return runBrowse(args[1:], stdin, stdout, stderr)
