@@ -31,7 +31,7 @@ ALE-24 adds reference-aware source identity, custom and project provenance, sear
 
 The full inherited ALE-23 coverage continues to run; see the [ALE-23 record](ale-23.md#reproduce-the-acceptance-evidence) for its journeys. Terminal action synchronization was strengthened rather than left unchanged: [the shared action driver](../../tests/acceptance/terminal_action_test.go) captures pre-action cells and dimensions, rejects an already-satisfied postcondition, and waits for changed cells with the semantic postcondition on the current grid. Resize also requires the target dimensions. Ignored paste uses subsequent observable actions as barriers. The strict end-frame scope-restoration assertion remains in `TestBrowserManyRootsHasScrollableScopeAt60Columns`.
 
-`TestBrowserTmuxCellsAtRequiredWidths` compares description search with public CLI JSON and uses the guarded current-cell boundary to require the completed Search field, editing state, expected source, and `Focus: 1/1`, with the nonmatching row absent. Opening detail verifies that source's public selector. `TestBrowserPTYJourney` retains the minimal source/detail/end/no-match journey and terminal restoration; its raw waits inspect bytes after action-specific checkpoints. A description literal already displayed in inventory is not evidence that search completed, and incremental redraws need not re-emit the full Search prefix.
+`TestBrowserTmuxCellsAtRequiredWidths` compares description search with public CLI JSON and uses the guarded current-cell boundary to verify the query tail, editing state and matching source, with the nonmatching row absent. After committing search, it verifies `Focus: 1/1`; the instruction-first reader and Details coverage are described in [ALE-43](ale-43.md#public-behavior-covered). `TestBrowserPTYJourney` retains the minimal source/detail/end/no-match journey and terminal restoration; its raw waits inspect bytes after action-specific checkpoints. A description literal already displayed in inventory is not evidence that search completed, and incremental redraws need not re-emit the full Search prefix.
 
 Historical ALE-23 hostile inventory and purported detail captures were byte-identical and do not prove the intermediate detail transition. Keep that limitation with the historical evidence rather than relabeling those frames. Current hostile-detail capture uses the guarded action boundary in `TestBrowserHostileTerminalDataUsesSafeCells`.
 
@@ -57,7 +57,7 @@ Run repository checks after the last source or documentation change. The full Go
 /opt/homebrew/bin/gofmt -l cmd internal tests/acceptance tests/launchrecord
 env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go vet ./...
 : "${SKILLGLASS_TEST_EXEC:?Supply the proved contained collection-test launcher}"
-env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go test -count=1 -mod=readonly -exec "$SKILLGLASS_TEST_EXEC" ./...
+env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go test -count=1 -mod=readonly -timeout=20m -exec "$SKILLGLASS_TEST_EXEC" ./...
 python3 -m unittest discover -s tests/agent_loop -v
 python3 -m unittest discover -s tests/native -v
 python3 -m py_compile tools/verify_hermes.py tools/verify_hermes_policy.py tests/native/test_verify_hermes_retired.py

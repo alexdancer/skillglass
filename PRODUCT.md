@@ -30,7 +30,7 @@ Independent sources must remain distinguishable before Details, even when names 
 
 ### Scope and coverage are never implicit
 
-The browser always shows coverage, source/problem mode, selected root count, active filters, and the focused or selected item. The Scope view contains the full project and root paths. Filtering changes the view, not the meaning of coverage or the selected snapshot.
+Scope, coverage, filters, and target identity must remain understandable without inferring them from truncated paths. [Terminal design](DESIGN.md#information-hierarchy) owns their per-view presentation, and the [README](README.md#build-and-use) explains full scope inspection. Filtering changes the view, not the meaning of coverage or the selected snapshot.
 
 ### Read-only behavior earns trust
 

@@ -10,7 +10,7 @@ Each observation pass is bounded to 10,000 entries per side (including the bundl
 
 Regular reads use nonblocking, no-follow descriptor-relative traversal anchored from `/`; FIFOs, sockets and devices are never read or executed. Access times are excluded from consistency stamps because reading may update them. Directory membership, object identity, modes, sizes, modification/change times and byte hashes are observed across two passes, with per-open and per-read checks. Detected changes produce coverage issues. This is best-effort stable observation, not an atomic snapshot; changes that restore all observable evidence between checks can evade detection.
 
-Comparison completion carries a generation token, and a canceled or superseded request cannot replace the current browser view.
+Comparison completion carries a generation token, and a canceled or superseded request cannot replace the current browser view. Opening Help does not cancel the comparison: completion updates the underlying result without closing Help, and returning reveals the completed comparison. The deterministic regression in `internal/terminal/verify_compare_help_test.go` and terminal journey in `tests/acceptance/verify_compare_help_test.go` cover this boundary.
 
 An unknown missing-counterpart membership makes comparison coverage incomplete with a side/path explanation, even when an internal link target is inventoried elsewhere; identical internal links alone do not force incomplete coverage.
 

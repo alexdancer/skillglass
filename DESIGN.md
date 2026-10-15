@@ -10,8 +10,8 @@ The collection snapshot and stable `SourceID` remain the domain authority. Brows
 
 Every frame has three regions:
 
-1. **Chrome** shows `Skillglass`, coverage, Sources and Problems, root count, active filters, and focused or selected identity.
-2. **Content** shows the current inventory, reader, problem, scope, or help view.
+1. **Chrome** in inventory and source/problem readers shows `Skillglass`, coverage, Sources and Problems, root count, active filters, and focused or selected identity. Comparison and Codex control pages instead use task-specific headers for the pair or selected source and action.
+2. **Content** shows the current inventory, reader, problem, scope, help, comparison, or control view.
 3. **Footer** shows the shortest useful controls for that context, with `? help` and `q quit` retained in ordinary views at narrow widths.
 
 Help and Scope keep the underlying inventory or reader's mode and focused or selected identity in chrome, including hidden selections and Help opened from Scope.
@@ -112,7 +112,7 @@ Dark uses navigation accent `#F9A8D4`, source-name accent `#BBF7D0`, content acc
 
 The Markdown renderer uses the content accent for headings, links, and inline code. Details uses bold content accent for field prefixes (including their colons), section labels, and parser-identified YAML mapping keys over the preserved raw text. Values, colons within values, and literal or folded block-scalar bodies stay neutral. Malformed raw metadata, or metadata whose key spans cannot be safely identified, remains escaped plain text. Key highlighting supports LF and CRLF; metadata containing standalone CR, NEL (U+0085), line separator (U+2028), or paragraph separator (U+2029) falls back to escaped plain text for the entire metadata block without changing manifest validity. The renderer does not load ambient Glamour configuration or a separate syntax-color theme. No-color mode emits structural text without SGR styling.
 
-`browse --theme auto|dark|light|none` selects presentation deterministically. `NO_COLOR` overrides dark or light to none. Auto selects light only from a light `COLORFGBG` background and otherwise uses dark. Theme selection reads environment values but writes no settings.
+The [README's theme controls](README.md#build-and-use) own theme selection, auto detection, and `NO_COLOR` precedence. Theme selection reads environment values but writes no settings.
 
 ## Terminal safety
 
