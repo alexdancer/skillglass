@@ -47,6 +47,7 @@ func buildClaude(ctx context.Context, request Request) (*Snapshot, error) {
 	}
 	applyClaudePrecedence(snapshot, roots, ancestors)
 	applyNativeProblems(snapshot, inputs.problems, roots)
+	applyClaudeCapabilities(snapshot)
 	return snapshot, nil
 }
 func explainClaudeSource(snapshot *Snapshot, id SourceID, roots map[RootID]DiscoveryRoot, plugins map[RootID][]claudePluginFact, inputs *claudeInputs) Source {

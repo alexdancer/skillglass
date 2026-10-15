@@ -6,16 +6,17 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
@@ -126,7 +127,11 @@ func observeChangePath(path string) (changeFact, error) {
 	return fact, nil
 }
 func inspectChangeDestination(codexHome string) (changeDestination, error) {
-	result := changeDestination{Path: filepath.Join(codexHome, "config.toml")}
+	return inspectChangeDestinationPath(filepath.Join(codexHome, "config.toml"))
+}
+func inspectChangeDestinationPath(path string) (changeDestination, error) {
+	codexHome := filepath.Dir(path)
+	result := changeDestination{Path: path}
 	root, err := observeChangePath(codexHome)
 	if err != nil {
 		return result, errors.New("configuration directory cannot be resolved safely")
@@ -134,7 +139,7 @@ func inspectChangeDestination(codexHome string) (changeDestination, error) {
 	if !root.Exists {
 		parent, err := observeChangePath(filepath.Dir(codexHome))
 		if err != nil || !parent.Directory {
-			return result, errors.New("missing CODEX_HOME requires an existing immediate parent; recursive creation is unsupported")
+			return result, errors.New("missing configuration directory requires an existing immediate parent; recursive creation is unsupported")
 		}
 		result.Parent = parent
 		result.CreateDirectory = codexHome
@@ -145,7 +150,7 @@ func inspectChangeDestination(codexHome string) (changeDestination, error) {
 		}
 		parent, err := observeChangePath(resolved)
 		if err != nil || !parent.Directory {
-			return result, errors.New("CODEX_HOME must resolve to a stable directory")
+			return result, errors.New("configuration directory must resolve to a stable directory")
 		}
 		result.Parent = parent
 	}
@@ -162,7 +167,7 @@ func inspectChangeDestination(codexHome string) (changeDestination, error) {
 	if result.Config.Exists {
 		fact := result.Config
 		if fact.Symlink != "" || fact.Directory || fact.Identity.Mode&unix.S_IFMT != unix.S_IFREG || fact.Links != 1 {
-			return result, errors.New("config.toml must be a regular single-link file; config symlinks and hardlinks are refused")
+			return result, errors.New("configuration must be a regular single-link file; config symlinks and hardlinks are refused")
 		}
 		if fact.Identity.UID != uint32(os.Geteuid()) || fact.Flags != 0 || fact.Identity.Mode&07000 != 0 {
 			return result, errors.New("configuration ownership or file flags cannot be preserved safely")
@@ -173,7 +178,7 @@ func inspectChangeDestination(codexHome string) (changeDestination, error) {
 	}
 	return result, nil
 }
-func (p *codexChangePlan) checkpoint(name string) error {
+func (p *changePlan) checkpoint(name string) error {
 	if p.fault != nil {
 		return p.fault(name)
 	}
@@ -204,8 +209,11 @@ func sameChangeFacts(left, right any) bool {
 	b, _ := json.Marshal(right)
 	return bytes.Equal(a, b)
 }
-func (p *codexChangePlan) apply(ctx context.Context) (out ChangeOutcome) {
+func (p *changePlan) apply(ctx context.Context) (out ChangeOutcome) {
 	out = ChangeOutcome{State: "failed", Reason: "configuration write failed", Intent: p.intent, WriteState: "none", Persistence: "not-written", Achievement: "unknown", Reload: changeReload()}
+	if p.intent.Application == "claude-code" {
+		out.Reload = SessionExplanation{State: "restart-required", Evidence: claudeEvidence(EvidenceUnknown, "session-reload", "", "", "restart Claude Code to load the saved choice; existing session adoption was not verified")}
+	}
 	dest := p.destination
 	parentFD, err := unix.Open(dest.Parent.Resolved, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {
@@ -230,7 +238,7 @@ func (p *codexChangePlan) apply(ctx context.Context) (out ChangeOutcome) {
 	}
 	if bytes.Equal(dest.Config.Bytes, p.postimage) {
 		out.State = "applied"
-		out.Reason = "global choice already saved; no rewrite needed"
+		out.Reason = "choice already saved; no rewrite needed"
 		return p.inspectResult(out, dest.Parent.Identity)
 	}
 	writeFD := parentFD
@@ -295,7 +303,7 @@ func (p *codexChangePlan) apply(ctx context.Context) (out ChangeOutcome) {
 	}
 	tempName = ".skillglass-" + hex.EncodeToString(random) + ".tmp"
 	if dest.Config.Exists {
-		err = unix.Clonefileat(writeFD, "config.toml", writeFD, tempName, unix.CLONE_NOFOLLOW)
+		err = unix.Clonefileat(writeFD, filepath.Base(dest.Path), writeFD, tempName, unix.CLONE_NOFOLLOW)
 		if err != nil {
 			out.Reason = "same-directory metadata-preserving clone failed"
 			return
@@ -398,7 +406,7 @@ func (p *codexChangePlan) apply(ctx context.Context) (out ChangeOutcome) {
 		if !dest.Config.Exists {
 			flags = unix.RENAME_EXCL
 		}
-		err = unix.RenameatxNp(writeFD, tempName, writeFD, "config.toml", flags)
+		err = unix.RenameatxNp(writeFD, tempName, writeFD, filepath.Base(dest.Path), flags)
 	}
 	if err != nil {
 		out.Reason = "atomic configuration installation failed"
@@ -408,7 +416,7 @@ func (p *codexChangePlan) apply(ctx context.Context) (out ChangeOutcome) {
 	out.WriteState = "committed"
 	out.Persistence = "unverified"
 	out.State = "applied"
-	out.Reason = "global choice saved"
+	out.Reason = "choice saved"
 	syncErr := p.checkpoint("directory-sync")
 	if syncErr == nil {
 		syncErr = unix.Fsync(writeFD)
@@ -436,7 +444,7 @@ func (p *codexChangePlan) apply(ctx context.Context) (out ChangeOutcome) {
 	}
 	return
 }
-func (p *codexChangePlan) recheckCreated(ctx context.Context, created changeFact, tempName string) error {
+func (p *changePlan) recheckCreated(ctx context.Context, created changeFact, tempName string) error {
 	current, err := observeChangePath(created.Path)
 	if err != nil || current.Identity != created.Identity {
 		return errors.New("created configuration directory changed before commit")
@@ -445,7 +453,7 @@ func (p *codexChangePlan) recheckCreated(ctx context.Context, created changeFact
 	if err != nil || len(entries) != 1 || entries[0].Name() != tempName {
 		return errors.New("unexpected entry appeared in new configuration directory")
 	}
-	next := previewCodexChange(ctx, &Snapshot{request: p.request}, p.intent)
+	next := (&Snapshot{request: p.request}).PreviewChange(ctx, p.intent)
 	if next.plan == nil {
 		return errors.New("preview is stale after directory creation")
 	}
@@ -534,7 +542,7 @@ func readChangeRegular(path string, expected changeIdentity) ([]byte, error) {
 	return raw, err
 }
 func verifyHeldConfig(parentFD int, expected changeFact) error {
-	fd, err := unix.Openat(parentFD, "config.toml", unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	fd, err := unix.Openat(parentFD, filepath.Base(expected.Path), unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
 	if !expected.Exists {
 		if errors.Is(err, unix.ENOENT) {
 			return nil
@@ -559,9 +567,20 @@ func verifyHeldConfig(parentFD int, expected changeFact) error {
 	return nil
 }
 
+// Darwin getattrlist returns an empty extended-security reference when no ACL
+// is attached. A twelve-byte buffer fits only that empty result; real ACLs or
+// unsupported/unreadable metadata fail closed. This reads metadata directly so
+// read-only inventory capability checks do not launch a subprocess.
 func changeACLAbsent(path string) bool {
-	command := exec.Command("/bin/ls", "-lde", path)
-	command.Env = []string{"PATH=/usr/bin:/bin", "LC_ALL=C"}
-	raw, err := command.Output()
-	return err == nil && bytes.Count(bytes.TrimSpace(raw), []byte("\n")) == 0
+	pointer, err := syscall.BytePtrFromString(path)
+	if err != nil {
+		return false
+	}
+	attributes := struct {
+		Count, Reserved                       uint16
+		Common, Volume, Directory, File, Fork uint32
+	}{Count: 5, Common: 0x00400000}
+	var result [12]byte
+	_, _, errno := syscall.Syscall6(syscall.SYS_GETATTRLIST, uintptr(unsafe.Pointer(pointer)), uintptr(unsafe.Pointer(&attributes)), uintptr(unsafe.Pointer(&result[0])), uintptr(len(result)), 0, 0)
+	return errno == 0 && binary.LittleEndian.Uint32(result[:4]) == 12 && binary.LittleEndian.Uint32(result[8:]) == 0
 }

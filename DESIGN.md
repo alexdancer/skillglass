@@ -10,7 +10,7 @@ The collection snapshot and stable `SourceID` remain the domain authority. Brows
 
 Every frame has three regions:
 
-1. **Chrome** in inventory and source/problem readers shows `Skillglass`, coverage, Sources and Problems, root count, active filters, and focused or selected identity. Comparison and Codex control pages instead use task-specific headers for the pair or selected source and action.
+1. **Chrome** in inventory and source/problem readers shows `Skillglass`, coverage, Sources and Problems, root count, active filters, and focused or selected identity. Comparison and agent control pages instead use task-specific headers for the pair or selected source and action.
 2. **Content** shows the current inventory, reader, problem, scope, help, comparison, or control view.
 3. **Footer** shows the shortest useful controls for that context, with `? help` and `q quit` retained in ordinary views at narrow widths.
 
@@ -57,7 +57,7 @@ Details contains, in order:
 - raw frontmatter and malformed raw manifest text when applicable;
 - the full supporting-resource inventory.
 
-`d` opens Details and `i` returns to Instructions. Uppercase `D` starts Codex disable, while `e` starts enable; scope selection and preview confirmation are separate required steps. The [README's control instructions](README.md#build-and-use) own scope-selection keys and unsupported project requests. These letters remain query text in search. Arrow keys, `j`/`k`, `PgUp`/`PgDn`, `Home`/`End`, and `g`/`G` scroll the active reader.
+`d` opens Details and `i` returns to Instructions. Uppercase `D` starts disable for the selected Codex or Claude Code scope, while `e` starts enable; scope selection and preview confirmation are separate required steps. The [README's control instructions](README.md#build-and-use) own scope-selection keys and unsupported project requests. These letters remain query text in search. Arrow keys, `j`/`k`, `PgUp`/`PgDn`, `Home`/`End`, and `g`/`G` scroll the active reader.
 
 ## Problems, scope, and help
 
@@ -81,7 +81,7 @@ Help is a scrollable view. It documents movement, open and return, Sources and P
 | `d` / `i` | Show source Details or Instructions |
 | `v` | In reader, toggle rendered and raw instructions; in Sources, compare against the marked source |
 | `m` | In Sources, mark the focused source as comparison left |
-| `D` / `e` | In Codex reader, start disable or enable; choose scope and explicitly confirm preview |
+| `D` / `e` | In Codex or Claude Code reader, start disable or enable; choose scope and explicitly confirm preview |
 | `a` | Cycle native configured availability |
 | `c` | Cycle all supported discovery contexts |
 | `o` | Cycle selected roots |

@@ -5,14 +5,46 @@ import os
 from pathlib import Path
 import shutil
 import socket
+import secrets
 import sys
 import tempfile
+import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT/'tools'))
 from native_containment import native_profile
 from native_receipts import recorded_run
+
+
+def receive_connections(listener, deadline, stop=None, connection_cap=64):
+    """Read complete bounded payloads; unrelated host probes may arrive first."""
+    received = []
+    while time.monotonic() < deadline:
+        listener.settimeout(min(.2, max(.001, deadline - time.monotonic())))
+        try:
+            connection, peer = listener.accept()
+        except socket.timeout:
+            if stop is None:
+                return received
+            continue
+        with connection:
+            payload = b''
+            while len(payload) < 65536 and time.monotonic() < deadline:
+                connection.settimeout(min(.2, max(.001, deadline - time.monotonic())))
+                try:
+                    chunk = connection.recv(min(4096, 65536 - len(payload)))
+                except (socket.timeout, ConnectionResetError):
+                    break
+                if not chunk:
+                    break
+                payload += chunk
+        received.append((peer, payload))
+        if stop is not None and stop(payload):
+            return received
+        if len(received) >= connection_cap:
+            raise AssertionError('listener connection cap reached; result is inconclusive')
+    return received
 
 
 class NativeContainment(unittest.TestCase):
@@ -36,10 +68,20 @@ class NativeContainment(unittest.TestCase):
         listener.bind(('127.0.0.1', 0))
         listener.listen()
         address = '%s:%s' % listener.getsockname()
-        positive = socket.create_connection(listener.getsockname(), timeout=1)
-        accepted, _ = listener.accept()
-        positive.close()
-        accepted.close()
+        network_canary = ('ALE35_' + secrets.token_hex(32)).encode()
+        positive_scanner = b'inert unrelated positive-control peer'
+        with socket.create_connection(listener.getsockname(), timeout=1) as unrelated:
+            unrelated.sendall(positive_scanner)
+            unrelated.shutdown(socket.SHUT_WR)
+        with socket.create_connection(listener.getsockname(), timeout=1) as positive:
+            positive.sendall(network_canary)
+            positive.shutdown(socket.SHUT_WR)
+        positives = receive_connections(listener, time.monotonic() + 3,
+                                        stop=lambda payload: payload == network_canary)
+        self.assertTrue(any(payload == network_canary for _, payload in positives),
+                        'allowed connection must deliver its complete canary')
+        self.assertTrue(any(payload == positive_scanner for _, payload in positives),
+                        'positive receiver must tolerate the earlier unrelated peer')
         source = base/'probe.go'
         program = r'''package main
 import("encoding/json";"net";"os";"os/exec";"path/filepath";"time")
@@ -60,7 +102,7 @@ func main(){
  linkErr:=os.Symlink(EXTERNAL,link)
  escapeErr:=os.WriteFile(filepath.Join(link,"escaped"),[]byte("escape"),0600)
  _,statErr:=os.Stat(CANARY)
- c,networkErr:=net.DialTimeout("tcp",ADDRESS,time.Second);if c!=nil{c.Close()}
+ c,networkErr:=net.DialTimeout("tcp",ADDRESS,time.Second);if c!=nil{c.Write([]byte(PAYLOAD));c.Close()}
  null, nullErr:=os.OpenFile("/dev/null",os.O_RDWR,0)
  nullDiscard:=false
  if nullErr==nil {_,writeNullErr:=null.Write([]byte("nonpersistent"));buf:=make([]byte,1);n,_:=null.Read(buf);nullDiscard=writeNullErr==nil&&n==0;null.Close()}
@@ -68,7 +110,7 @@ func main(){
  json.NewEncoder(os.Stdout).Encode(map[string]bool{"null_rw_discard":nullDiscard,"fixture_write":writeErr==nil,"fixture_read":readErr==nil&&string(read)=="fixture-positive","excluded_read_denied":excludedErr!=nil,"outside_write_denied":outsideErr!=nil,"symlink_created":linkErr==nil,"symlink_escape_denied":escapeErr!=nil,"network_denied":networkErr!=nil,"inherited_child_denied":childErr!=nil,"protected_stat_absent":os.IsNotExist(statErr)})
 }
 '''
-        for key, value in [('OUTSIDE', outside), ('CANARY', canary), ('EXTERNAL', external), ('ADDRESS', address)]:
+        for key, value in [('OUTSIDE', outside), ('CANARY', canary), ('EXTERNAL', external), ('ADDRESS', address), ('PAYLOAD', network_canary.decode())]:
             program = program.replace(key, json.dumps(str(value)))
         source.write_text(program)
         binary = base/'probe'
@@ -121,8 +163,21 @@ func main(){
         self.assertEqual((evidence/'invalid-helper/git-init.stdout').read_bytes(),b'')
         (evidence/'invalid-helper.stdout').write_bytes(invalid_result.stdout)
         (evidence/'invalid-helper.stderr').write_bytes(invalid_result.stderr)
-        listener.settimeout(.2)
-        with self.assertRaises(socket.timeout): listener.accept()
+        # Local service discovery may connect independently of the sandboxed probe.
+        # This positive control ensures unrelated traffic cannot mask probe payloads.
+        scanner_payload = b'GET / HTTP/1.1\r\nuser-agent: inert-scanner\r\n\r\n'
+        with socket.create_connection(listener.getsockname(), timeout=1) as scanner:
+            scanner.sendall(scanner_payload)
+            scanner.shutdown(socket.SHUT_WR)
+        received = receive_connections(listener, time.monotonic() + 3)
+        unrelated_connections = []
+        for peer, payload in received:
+            self.assertNotIn(network_canary, payload, 'sandboxed probe delivered its network canary')
+            unrelated_connections.append({'peer': list(peer), 'bytes': len(payload),
+                                          'sha256': hashlib.sha256(payload).hexdigest()})
+        (evidence/'unrelated-connections.json').write_text(json.dumps(unrelated_connections, indent=2)+'\n')
+        self.assertTrue(any(payload == scanner_payload for _, payload in received),
+                        'deterministic scanner positive control must reach listener')
         listener.close()
         receipt={'invocation_records':[build_record,helper_launch,direct_record,failed_record,invalid_launch],'native_applications_started':0,'git':'inert compiled stand-in; no native Git startup','checks':checks,'helper_argv':argv,'helper_exit':result.returncode,'policy':policy,'wrapped_argv':wrapped,'cwd':str(base),'environment':runenv,'binary_sha256':hashlib.sha256(binary.read_bytes()).hexdigest(),'fail_closed_exit':failed.returncode,'public_helper_fail_closed_argv':invalid_argv,'public_helper_fail_closed_exit':invalid_result.returncode,'positive_controls':{'outside_read_write':True,'loopback':True},'build_argv':['/opt/homebrew/bin/go','build','-o',str(binary),str(source)],'build_environment':env,'source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),'owned_processes':'all recorded launches completed and owned children reaped; no native application launched'}
         (evidence/'receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')

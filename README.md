@@ -6,14 +6,14 @@ Skillglass is a Go terminal tool for browsing, reading, comparing, and controlli
 
 ## Status
 
-The production inventory, identity, comparison, and application discovery slices are implemented. Skillglass discovers explicit custom and project roots, groups references only when they resolve to the same proven source object, reports collection problems without discarding healthy sources, and exposes the same immutable snapshot through the CLI and keyboard browser. Codex, Claude Code, Pi, OpenCode, CodeAF, Gemini CLI, and Hermes integrations add native scope and local configured-availability explanations. Validated global Codex enable and disable controls use source-bound preview and explicit confirmation. Other write controls remain unsupported, and running-session enforcement remains unknown. Generic explicit-root inventory keeps unknown ownership and availability.
+The production inventory, identity, comparison, and application discovery slices are implemented. Skillglass discovers explicit custom and project roots, groups references only when they resolve to the same proven source object, reports collection problems without discarding healthy sources, and exposes the same immutable snapshot through the CLI and keyboard browser. Codex, Claude Code, Pi, OpenCode, CodeAF, Gemini CLI, and Hermes integrations add native scope and local configured-availability explanations. Validated global Codex and global/project Claude Code controls use source-bound preview and explicit confirmation. Other write controls remain unsupported, and running-session enforcement remains unknown. Generic explicit-root inventory keeps unknown ownership and availability.
 
 The project was planned as **Skill Viewer**. Existing Linear titles and historical planning documents retain that name; **Skillglass** is the product and repository name.
 
 ## Planned capabilities
 
 - Extend version-specific availability evidence and remaining validation coverage.
-- Extend validated enable/disable controls beyond global Codex, and add permanent deletion of explicitly selected content after confirmation.
+- Extend validated enable/disable controls to remaining agents, and add permanent deletion of explicitly selected content after confirmation.
 - Work offline, with the first release targeting macOS.
 
 Native integrations cover Codex, Claude Code, Hermes, Pi, OpenCode, Gemini CLI, and CodeAF. Capabilities must be validated per application, version, and scope. CodeAF browsing with explicit persistent-control limitations is an accepted first-release exception.
@@ -33,6 +33,7 @@ Native integrations cover Codex, Claude Code, Hermes, Pi, OpenCode, Gemini CLI, 
 - [ALE-25 verification](docs/verification/ale-25.md)
 - [ALE-26 Codex verification](docs/verification/ale-26.md)
 - [ALE-27 global Codex control verification](docs/verification/ale-27.md)
+- [ALE-30 Claude Code control verification](docs/verification/ale-30.md)
 - [ALE-29 Claude Code verification](docs/verification/ale-29.md)
 - [ALE-43 verification](docs/verification/ale-43.md)
 
@@ -75,6 +76,16 @@ bin/skillglass enable --agent codex --scope global SOURCE_ID
 Preview changes no settings. Add `--project /path/to/repository` to inspect the effective result in that project while explicitly saving a global choice. See [global Codex control behavior and limits](docs/verification/ale-27.md) for contextual blockers, persistence outcomes and unsupported scopes.
 
 In browser source detail, press `D` to disable or `e` to enable, then `g` to select global scope. Press `p` instead to inspect the versioned unsupported project-control explanation, or `i` to request removal of a project override and inheritance. Both project requests refuse without changing settings on the validated Codex version. Inspect the paged preview. Press `y` to apply a ready global choice, or Enter or Escape to cancel. Long paths remain accessible with arrows, Page Up/Down and Home/End; on the scope selection page, `g` selects global scope rather than scrolling.
+
+For a unique ordinary Claude Code source, `--agent claude-code` supports global and exact selected-project enable/disable plus project inheritance:
+
+```sh
+bin/skillglass disable --agent claude-code --scope global --json SOURCE_ID
+bin/skillglass enable --agent claude-code --scope project --project /path/to/repository SOURCE_ID
+bin/skillglass inherit --agent claude-code --scope project --project /path/to/repository SOURCE_ID
+```
+
+Repeat the exact preview request with `--confirm cl1:PREVIEW_TOKEN` to apply. In the Claude Code browser, `D`/`e` opens scope selection, `g`/`p` selects global/project, and `i` removes the project override. Inspect the preview, then `y` confirms; Enter or Escape cancels. Inheritance can succeed while the inherited result remains disabled. Higher-priority project/local choices refuse broader on/off changes; plugins and independent same-name copies cannot be toggled as isolated ordinary skills. [Claude control evidence and limits](docs/verification/ale-30.md) records versions, filesystem guarantees and restart requirements.
 
 `bin/skillglass inherit --agent codex --scope project --project /path/to/repository SOURCE_ID` requests removal of the selected source's project override and restoration of applicable inheritance. Project enable, disable and inheritance requests return `unsupported` without a confirmation token or filesystem changes on Codex 0.155.1. They never fall back to a global change. Global `inherit` is also unsupported because there is no project override to remove at that scope. See [project control evidence and limits](docs/verification/ale-28.md) for the native limitation and the distinction between local configuration inference and session enforcement.
 

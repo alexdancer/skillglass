@@ -1,0 +1,21 @@
+# Claude Code ordinary skill controls
+
+The writer contract is validated for Claude Code **2.1.282 and 2.1.300** on macOS. Skillglass does not launch Claude during use or infer an installed binary version. The adapter applies this recorded contract; other native versions have no enforcement guarantee until separately validated. Native startup catalog experiments establish ordinary `skillOverrides[name]` on/off, user < exact launch project < project-local precedence, and removal restoring inheritance. Existing-session adoption and model workloads were not tested. Restart Claude Code to load saved settings. Frontmatter and Skill permission rules continue to constrain invocation even with `on`.
+
+Global choices write only `CLAUDE_CONFIG_DIR/settings.json` (default `~/.claude/settings.json`). Project choices write only the explicitly selected launch project's `.claude/settings.json`. Project `inherit` removes just the selected key and succeeds when inheritance is restored, including an inherited disabled result. Absent inheritance creates no file or directory. A higher-priority selected-project/local override refuses an on/off request without a broader fallback. Managed policy is unverified and refuses controls.
+
+The name selector is not source identity. Controls require one ordinary, proven native source with one established native name, no independent matching-name contender, and safe manifest/settings identities. Plugin sources, managed aliases, ambiguous names, malformed or duplicate JSON, unsafe symlinks/hardlinks/metadata, unknown policy, and inspection-only sources refuse without changes. Individual plugin skills do not respond to `skillOverrides`; Skillglass never falls back to `enabledPlugins` or edits a managed cache.
+
+Preview and apply share the Codex transaction: bounded observations and identity-pinned consent; two freshness checks; descriptor-pinned parent and lock; metadata-preserving same-directory staging; readback, sync and atomic installation; persisted and contextual result verification. Unrelated JSON bytes, settings keys, application settings and skill content are preserved. Uncooperative writers can still race the final entry check and rename; committed failures report the committed state instead of claiming rollback. No active agent is automatically restarted. ACL absence is checked directly through Darwin getattrlist using ATTR_CMN_EXTENDED_SECURITY (platform sys/attr.h); a 12-byte result must contain an empty security reference. Nonempty ACLs, errors and unexpected buffer lengths fail closed. Native fixture probes compare ordinary and chmod +a files/directories, and public tests assert both refusal and no writes.
+
+## Reproduce native evidence
+
+Run from the repository with an explicit native executable and a fresh evidence directory:
+
+```sh
+python3 tools/verify_claude_controls.py /private/tmp/claude-controls-v300 --claude /Users/alex/.local/share/claude/versions/2.1.300
+```
+
+The helper requires macOS sandbox-exec and both recorded versions are explicitly allowlisted. It creates a disposable `/private/tmp` home/project/marketplace, denies network access, live homes and managed settings, proves positive/negative isolation including inherited children, then sends only an SDK initialize control request. It records full argv/environment, binary/helper/policy hashes, settings and manifests before/after, raw catalog responses, stderr and intentional child termination separately from helper success. No model prompt, skill workload, real credential or real user settings are used. Failed containment prevents native launch. Twenty-four catalog cases cover ordinary toggles, inheritance, local precedence, independent collisions, configured home, plugin isolation and frontmatter visibility.
+
+Public executable acceptance tests cover global/project/inherit, exact JSON preservation and actual filesystem effects, unsafe settings and stale consent, collisions, plugins, write failure, and PTY confirmation/cancellation at narrow and wide widths. The developer helper additionally has an inert containment regression.

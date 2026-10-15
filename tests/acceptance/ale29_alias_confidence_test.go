@@ -215,13 +215,28 @@ func TestALE29ParticipationConfidenceControls(t *testing.T) {
 			if mode == "N7-malformed" && maybe.Availability.Evidence.Rule != "manifest-eligibility" {
 				t.Error("manifest uncertainty lost")
 			}
+			before := treeManifest(t, fx.base)
+			args := []string{"disable", "--agent", "claude-code", "--scope", "global", "--project", fx.project, "--json"}
+			args = append(args, extra...)
+			args = append(args, definite.ID)
+			previewResult := changeCommand(t, fx, "", args...)
+			wantExit := 1
+			if mode == "N12-unrelated-inspection" {
+				wantExit = 0
+			}
+			assertExit(t, previewResult, wantExit)
+			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 			for _, source := range []codexSource{definite, maybe} {
 				if source.Availability.Session.State != "unknown" || source.Availability.Reload.State != "unknown" {
 					t.Error("session facts changed")
 				}
 				for _, cap := range source.Availability.Capabilities {
-					if cap.State != "unsupported" {
-						t.Error("writer promoted")
+					wantCapability := "unsupported"
+					if mode == "N12-unrelated-inspection" && source.ID == definite.ID && cap.Operation != "delete" {
+						wantCapability = "supported"
+					}
+					if cap.State != wantCapability {
+						t.Errorf("capability %s/%s = %s, want %s", cap.Operation, cap.Scope, cap.State, wantCapability)
 					}
 				}
 			}

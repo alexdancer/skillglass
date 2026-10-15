@@ -50,6 +50,7 @@ type ChangeOutcome struct {
 	WriteState          string                   `json:"write_state"`
 	Persistence         string                   `json:"persistence"`
 	Achievement         string                   `json:"achievement"`
+	PersistedChoice     ControlChoice            `json:"persisted_choice,omitempty"`
 	PersistedPermission PermissionState          `json:"persisted_permission,omitempty"`
 	Effective           *AvailabilityExplanation `json:"effective,omitempty"`
 	Reload              SessionExplanation       `json:"reload"`
@@ -66,7 +67,7 @@ func (out ChangeOutcome) ExitCode() int {
 
 type ChangePreview struct {
 	view ChangeView
-	plan *codexChangePlan
+	plan *changePlan
 	once sync.Mutex
 	used bool
 }
@@ -86,6 +87,9 @@ func (p *ChangePreview) View() ChangeView {
 	return view
 }
 func (s *Snapshot) PreviewChange(ctx context.Context, intent ChangeIntent) *ChangePreview {
+	if intent.Application == "claude-code" {
+		return previewClaudeChange(ctx, s, intent)
+	}
 	return previewCodexChange(ctx, s, intent)
 }
 func (p *ChangePreview) Apply(ctx context.Context, confirmation string) ChangeOutcome {

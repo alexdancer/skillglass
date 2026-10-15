@@ -48,12 +48,13 @@ func TestALE29ClaudeBrowserExplainsFiltersAndRefreshesWithoutWrites(t *testing.T
 				if key == "D" {
 					send("r", "Refresh: selected directory object retained")
 				}
-				controls := send(key, "Selected:", "Read lines", "Controls are unsupported")
+				controls := send(key, "Selected:", "Select the setting scope explicitly")
+				send("Escape", "Read lines", "Cancelled. No settings changed.")
 				assertPaneCells(t, controls, size.width, size.height)
 				if paneContains(controls, "Codex control") || paneContains(controls, "Apply global") {
 					t.Fatalf("Claude inspection exposed Codex controls: %s", controls)
 				}
-				writeEvidence(t, fmt.Sprintf("tmux/ale29/%dx%d/unsupported-control-%s.txt", size.width, size.height, key), []byte(controls))
+				writeEvidence(t, fmt.Sprintf("tmux/ale29/%dx%d/cancelled-control-%s.txt", size.width, size.height, key), []byte(controls))
 				assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 			}
 			collect := func(label string, needles ...string) {
