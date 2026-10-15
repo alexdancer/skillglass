@@ -130,10 +130,11 @@ func TestOrdinaryLaunchReadWriteNetworkChildControls(t *testing.T) {
 			t.Fatalf("positive %s failed", key)
 		}
 	}
+	networkCanary := allowedProbeNetworkCanary(t, fx, listener)
 	before := treeManifest(t, fx.base)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	command := fx.fixtureCommand(t, ctx, isolationProbeBinary, allowed, excluded, blocked, listener.Addr().String())
+	command := fx.fixtureCommand(t, ctx, isolationProbeBinary, "--network-canary", networkCanary, allowed, excluded, blocked, listener.Addr().String())
 	command.Env = fx.environment()
 	command.Dir = fx.project
 	launch := recordLaunch(t, command)
@@ -149,6 +150,6 @@ func TestOrdinaryLaunchReadWriteNetworkChildControls(t *testing.T) {
 		t.Fatalf("controls: %v %s", err, raw)
 	}
 	writeEvidence(t, "ordinary-isolation/full-controls.json", raw)
-	assertNoSandboxedConnection(t, listener)
+	assertNoSandboxedConnection(t, listener, networkCanary)
 	assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 }

@@ -43,6 +43,7 @@ func TestRuntimeContentIsolation(t *testing.T) {
 	defer listener.Close()
 	positive := runPositiveControls(t, allowedSentinel, liveHomeSentinel, blockedWrite, listener)
 
+	networkCanary := allowedProbeNetworkCanary(t, fx, listener)
 	canonicalAllowed := canonicalPath(t, filepath.Join(fx.base, "allowed"))
 	canonicalProduct := canonicalPath(t, skillglassExecutable)
 	canonicalProbe := canonicalPath(t, isolationProbeBinary)
@@ -60,7 +61,7 @@ func TestRuntimeContentIsolation(t *testing.T) {
 	writeEvidence(t, "isolation/positive-controls.json", append(positiveJSON, '\n'))
 
 	before := treeManifest(t, fx.base)
-	probe := runSandboxCommand(t, fx, probeProfile, canonicalProbe, allowedSentinel, liveHomeSentinel, blockedWrite, listener.Addr().String())
+	probe := runSandboxCommand(t, fx, probeProfile, canonicalProbe, "--network-canary", networkCanary, allowedSentinel, liveHomeSentinel, blockedWrite, listener.Addr().String())
 	assertExit(t, probe, 0)
 	var controls struct {
 		Passed bool            `json:"passed"`
@@ -76,7 +77,7 @@ func TestRuntimeContentIsolation(t *testing.T) {
 		}
 	}
 	writeEvidence(t, "isolation/controls.json", probe.stdout)
-	assertNoSandboxedConnection(t, listener)
+	assertNoSandboxedConnection(t, listener, networkCanary)
 	list := runSandboxCommand(
 		t,
 		fx,
@@ -321,18 +322,9 @@ func canonicalPath(t *testing.T, path string) string {
 	return canonical
 }
 
-func assertNoSandboxedConnection(t *testing.T, listener net.Listener) {
+func assertNoSandboxedConnection(t *testing.T, listener net.Listener, networkCanary string) {
 	t.Helper()
-	setListenerDeadline(t, listener, time.Now().Add(200*time.Millisecond))
-	connection, err := listener.Accept()
-	if err == nil {
-		_ = connection.Close()
-		t.Fatal("sandboxed network probe reached the loopback listener")
-	}
-	var networkError net.Error
-	if !errors.As(err, &networkError) || !networkError.Timeout() {
-		t.Fatalf("accept after sandboxed probe: %v", err)
-	}
+	assertFixtureNetworkCanaryAbsent(t, listener, networkCanary)
 }
 
 func setListenerDeadline(t *testing.T, listener net.Listener, deadline time.Time) {

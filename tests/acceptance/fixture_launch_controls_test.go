@@ -35,8 +35,9 @@ func TestOrdinaryLaunchContainmentCLIAndPTYAndTmux(t *testing.T) {
 	if data, err := os.ReadFile(system); err != nil || string(data) != "MODELED_SYSTEM_POLICY" {
 		t.Fatalf("system positive: %s %v", data, err)
 	}
+	networkCanary := allowedProbeNetworkCanary(t, fx, listener)
 	before := treeManifest(t, fx.base)
-	args := []string{"--system-policy", allowed, excluded, blocked, listener.Addr().String(), system}
+	args := []string{"--network-canary", networkCanary, "--system-policy", allowed, excluded, blocked, listener.Addr().String(), system}
 	check := func(raw []byte) {
 		var result struct {
 			Passed bool
@@ -109,7 +110,7 @@ func TestOrdinaryLaunchContainmentCLIAndPTYAndTmux(t *testing.T) {
 	}
 	check([]byte(frame[start : start+end]))
 	writeEvidence(t, "fixture-launch/tmux.txt", []byte(frame))
-	assertNoSandboxedConnection(t, listener)
+	assertNoSandboxedConnection(t, listener, networkCanary)
 	assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 	// Inspect the actual product's native system routes under this same launch profile.
 	fx, _ = codexFixture(t)
