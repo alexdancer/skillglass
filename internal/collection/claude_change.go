@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
 )
 
 func claudeControlName(s *Snapshot, source Source) (string, string) {
@@ -134,6 +135,15 @@ func previewClaudeSnapshot(fresh *Snapshot, intent ChangeIntent, pin bool) *Chan
 	dest, err := inspectChangeDestinationPath(path)
 	if err != nil {
 		return rejectedChange(intent, "refused", err.Error())
+	}
+	if intent.Scope == ControlProject {
+		global, err := inspectChangeDestinationPath(filepath.Join(fresh.request.claudeHome, "settings.json"))
+		if err != nil {
+			return rejectedChange(intent, "refused", "global settings cannot be separated safely: "+err.Error())
+		}
+		if dest.Parent.Identity.Device == global.Parent.Identity.Device && dest.Parent.Identity.Inode == global.Parent.Identity.Inode && strings.EqualFold(filepath.Base(dest.CreateDirectory), filepath.Base(global.CreateDirectory)) {
+			return rejectedChange(intent, "refused", "project destination aliases global settings; isolated project controls are unsupported")
+		}
 	}
 	post, change, write, err := patchClaudeChoice(dest.Config.Bytes, name, intent.Choice)
 	if err != nil {
