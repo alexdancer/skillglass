@@ -36,12 +36,13 @@ func run() int {
 		fmt.Fprintln(os.Stderr, err)
 		return 125
 	}
+	if len(raw) == 0 {
+		fmt.Fprintln(os.Stderr, "missing containment profile")
+		return 125
+	}
 	profile := &launchrecord.Profile{Bytes: raw, SHA256: launchrecord.Digest(raw), InheritedFrom: launchrecord.Digest(raw)}
 	if *deferred {
 		profile.InheritedFrom = ""
-	}
-	if len(raw) == 0 {
-		profile = nil
 	}
 	command := exec.Command(args[0], args[1:]...)
 	command.Env = os.Environ()

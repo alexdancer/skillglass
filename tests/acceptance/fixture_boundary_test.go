@@ -36,7 +36,9 @@ func (fx fixture) recordedCommand(ctx context.Context, executable string, args .
 (deny file-read* (with errno ENOENT) (subpath "/etc/codex") (subpath "/private/etc/codex") (subpath %s))
 `, sandboxString(fx.tmuxTemporary), sandboxString(tmuxSocketDirectory), sandboxString(fx.base), sandboxString(fx.tmuxTemporary), sandboxString(tmuxSocketDirectory), sandboxString(account.HomeDir), sandboxString(filepath.Join(fx.base, "excluded", "live-home")), sandboxString(skillglassBinary), sandboxString(isolationProbeBinary), sandboxString(fixtureLaunchBinary), sandboxString(filepath.Join(fx.base, "excluded", "system-codex")))
 	argv := append([]string{"-p", profile, executable}, args...)
-	return fx.wrap(exec.CommandContext(ctx, "/usr/bin/sandbox-exec", argv...))
+	command := exec.CommandContext(ctx, "/usr/bin/sandbox-exec", argv...)
+	command.Dir, command.Env = fx.project, fx.environment()
+	return fx.wrap(command)
 }
 
 func TestOrdinaryFixtureBoundary(t *testing.T) {

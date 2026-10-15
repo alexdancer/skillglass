@@ -57,6 +57,9 @@ func (command *fixtureCommand) begin() error {
 			if i == len(command.Args)-1 {
 				return errors.New("tmux payload missing")
 			}
+			if len(profile) == 0 {
+				return errors.New("uncontained tmux payload")
+			}
 			last := len(command.Args) - 1
 			payload := command.Args[last]
 			profileMode := ""

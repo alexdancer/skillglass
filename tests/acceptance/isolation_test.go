@@ -115,7 +115,7 @@ func TestRuntimeContentIsolation(t *testing.T) {
 	writeEvidence(t, "isolation/list.json", list.stdout)
 	writeEvidence(t, "isolation/read.json", read.stdout)
 
-	browseRaw := runSandboxBrowser(t, fx, productProfile, canonicalProduct)
+	browseRaw := runSandboxBrowser(t, fx, productProfile, canonicalProduct, "normal-skill")
 	if !bytes.Contains(browseRaw, []byte("normal-skill")) ||
 		!bytes.Contains(browseRaw, []byte("coverage complete")) {
 		t.Fatalf("sandboxed browser output is incomplete: %q", browseRaw)
@@ -236,7 +236,7 @@ func runSandboxCommand(
 	return result
 }
 
-func runSandboxBrowser(t *testing.T, fx fixture, profile, executable string, browserArgs ...string) []byte {
+func runSandboxBrowser(t *testing.T, fx fixture, profile, executable, focusedSource string, browserArgs ...string) []byte {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -263,7 +263,7 @@ func runSandboxBrowser(t *testing.T, fx fixture, profile, executable string, bro
 		_, _ = io.Copy(&raw, terminal)
 		close(copyDone)
 	}()
-	raw.wait(t, 0, "Focused: normal-skill", "? help")
+	raw.wait(t, 0, "Focused: "+focusedSource, "? help")
 	if _, err := io.WriteString(terminal, "q"); err != nil {
 		t.Fatal(err)
 	}
@@ -437,7 +437,7 @@ func TestFixtureLauncherContainmentControls(t *testing.T) {
 				case "tmux":
 					socket := fmt.Sprintf("ale27-controls-%d-%t", os.Getpid(), writer)
 					defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-					runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", "80", "-y", "24", "-s", "browser", "exec /bin/cat")
+					runTmuxProduct(t, tmux, fx, socket, fx.recordedCommand(context.Background(), "/bin/sleep", "30").Cmd, "new-session", "-d", "-x", "80", "-y", "24", "-s", "browser")
 					runTmux(t, tmux, fx, socket, "set-option", "-g", "remain-on-exit", "on")
 					cmd := exec.Command(argv[0], argv[1:]...)
 					cmd.Env, cmd.Dir = fx.environment(), fx.project

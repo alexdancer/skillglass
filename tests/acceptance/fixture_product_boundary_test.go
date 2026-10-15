@@ -77,7 +77,7 @@ func TestFixtureBrowserLaunchBoundaries(t *testing.T) {
 	var raw terminalTranscript
 	done := make(chan struct{})
 	go func() { _, _ = io.Copy(&raw, terminal); close(done) }()
-	raw.wait(t, 0, "normal-skill", "Coverage: incomplete", "Enter read")
+	raw.wait(t, 0, "normal-skill", "coverage incomplete", "Enter open")
 	_, _ = io.WriteString(terminal, "q")
 	err = command.Wait()
 	<-done
@@ -95,7 +95,7 @@ func TestFixtureBrowserLaunchBoundaries(t *testing.T) {
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
 	runTmuxProduct(t, tmux, fx, socket, fx.productCommand(t, args...), "new-session", "-d", "-x", "80", "-y", "30", "-s", "browser")
 	runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
-	frame := waitForPane(t, tmux, fx, socket, false, "normal-skill", "Coverage: incomplete", "Enter read")
+	frame := waitForPane(t, tmux, fx, socket, false, "normal-skill", "coverage incomplete", "Enter open")
 	if strings.Contains(frame, "EXCLUDED_SYSTEM_SENTINEL") {
 		t.Fatalf("tmux boundary: %s", frame)
 	}

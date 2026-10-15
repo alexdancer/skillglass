@@ -264,7 +264,7 @@ func TestALE37OfflineReadOnlyExecutableContainment(t *testing.T) {
 		assertExit(t, result, 0)
 		writeEvidence(t, "ale37/isolation/"+operation+".json", result.stdout)
 	}
-	raw := runSandboxBrowser(t, fx, profile, executable, "browse", "--agent", "gemini", "--project", fx.project)
+	raw := runSandboxBrowser(t, fx, profile, executable, source.Name, "browse", "--agent", "gemini", "--project", fx.project)
 	if !bytes.Contains(raw, []byte("contained-gemini")) {
 		t.Fatal("contained native browser lacks source")
 	}

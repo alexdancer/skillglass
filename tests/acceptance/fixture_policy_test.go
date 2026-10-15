@@ -158,7 +158,7 @@ func TestALE29OrdinaryPolicyControlsAndTmuxInheritance(t *testing.T) {
 	}
 	socket := "fixture-policy-control"
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-	runTmux(t, tmux, fx, socket, "new-session", "-d", "-x", "80", "-y", "30", "-s", "browser", "exec /bin/sleep 30")
+	runTmuxProduct(t, tmux, fx, socket, fx.recordedCommand(context.Background(), "/bin/sleep", "30").Cmd, "new-session", "-d", "-x", "80", "-y", "30", "-s", "browser")
 	runTmux(t, tmux, fx, socket, "set-option", "-w", "-t", "browser:0", "remain-on-exit", "on")
 	runTmuxProduct(t, tmux, fx, socket, fx.productCommand(t, args...), "respawn-pane", "-k", "-t", "browser:0.0")
 	frame := ""

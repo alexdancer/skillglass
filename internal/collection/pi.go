@@ -390,6 +390,10 @@ func applyPiPrecedence(snapshot *Snapshot, ranks map[SourceID]int) {
 				}
 			} else {
 				s.Availability.Precedence.Winner = winner
+				s.Availability.Precedence.State = PrecedenceShadowed
+				if id == winner {
+					s.Availability.Precedence.State = PrecedenceWinning
+				}
 				if id != winner && enabled {
 					s.Availability.State = AvailabilityShadowed
 					s.Availability.Reason = "higher-priority enabled Pi resource wins the native name"

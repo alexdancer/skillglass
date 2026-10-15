@@ -888,8 +888,8 @@ func TestBrowserHostileTerminalDataUsesSafeCells(t *testing.T) {
 	writeEvidence(t, "tmux/hostile/dimensions.txt", []byte("80x24\n"))
 	writeEvidence(t, "tmux/hostile/keys.txt", []byte("Enter\nq\n"))
 	controlCommand := "printf '\\033]0;HOSTILE_TITLE\\007'; exec /bin/sleep 2"
-	runTmux(t, tmux, fx, socket,
-		"new-session", "-d", "-x", "80", "-y", "24", "-s", "control", controlCommand,
+	runTmuxProduct(t, tmux, fx, socket, fx.recordedCommand(context.Background(), "/bin/sh", "-c", controlCommand).Cmd,
+		"new-session", "-d", "-x", "80", "-y", "24", "-s", "control",
 	)
 	controlTitle := waitForPaneTitle(t, tmux, fx, socket, "control:0.0", "HOSTILE_TITLE")
 	writeEvidence(t, "tmux/hostile/negative-control-title.txt", []byte(controlTitle+"\n"))
@@ -900,6 +900,9 @@ func TestBrowserHostileTerminalDataUsesSafeCells(t *testing.T) {
 func runTmuxProduct(t *testing.T, tmux string, fx fixture, socket string, payload *exec.Cmd, options ...string) *launchReceipt {
 	t.Helper()
 	payloadLaunch := recordLaunch(t, payload)
+	if payloadLaunch.Profile == "" {
+		t.Fatal("uncontained tmux payload")
+	}
 	parts := []string{"exec", "/usr/bin/env", "-i"}
 	for _, arg := range append(append([]string(nil), payloadLaunch.Environment...), payloadLaunch.Argv...) {
 		parts = append(parts, shellQuote(arg))

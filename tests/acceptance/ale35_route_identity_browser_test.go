@@ -42,7 +42,11 @@ func TestALE35RouteIdentityTerminal(t *testing.T) {
 				if disabled {
 					state = "unavailable"
 				}
-				frame := waitForPane(t, tmux, fx, socket, false, "context global", "agents-route", "Focus: 1/1", state+" (inferred)")
+				contextLabel := "context global"
+				if size.width < 60 {
+					contextLabel = "c:global"
+				}
+				frame := waitForPane(t, tmux, fx, socket, false, contextLabel, "agents-route", "Focus: 1/1", state+" (inferred)")
 				prefix := "tmux/route-identity/" + t.Name() + "/"
 				assertPaneCells(t, frame, size.width, size.height)
 				writeEvidence(t, prefix+"sources.txt", []byte(frame))

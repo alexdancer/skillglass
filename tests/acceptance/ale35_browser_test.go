@@ -138,7 +138,8 @@ func ale35UnknownConfigTerminalEvidence(t *testing.T, configText, evidenceName, 
 			send := func(key string, needles ...string) string {
 				return actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", key) }, needles...)
 			}
-			detail := send("Enter", "Availability: unknown", "Configured permission: unknown", "Session: unknown")
+			send("Enter", "Rendered instructions")
+			detail := send("d", "Availability: unknown", "Configured permission: unknown", "Session: unknown")
 			capture("02-explanation", detail)
 			var explained strings.Builder
 			for page := 0; page < 40; page++ {
@@ -158,15 +159,15 @@ func ale35UnknownConfigTerminalEvidence(t *testing.T, configText, evidenceName, 
 				}
 			}
 			send("Escape", "Search /")
-			problems := send("Tab", "Problems", "native-input")
+			problems := send("Tab", "Enter problem", "native-input")
 			capture("03-problems", problems)
 			problem := send("Enter", "Selected problem:", "Code: native-input")
 			capture("04-problem", problem)
-			send("Escape", "Problems")
+			send("Escape", "Enter problem")
 			scope := send("s", "Scope and filters", "Agent: opencode", "Validated rules: OpenCode 1.17.15")
 			capture("06-scope", scope)
-			send("Escape", "Problems")
-			send("Tab", "Skillglass")
+			send("Escape", "Enter problem")
+			send("Tab", "Focused: invalid-input-source", "Enter open")
 			filtered := send("a", "Availability filter: all", "invalid-input-source")
 			capture("07-filter", filtered)
 			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "q")

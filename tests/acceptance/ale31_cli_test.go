@@ -265,7 +265,7 @@ func TestALE31HermesReadOnlyOfflinePublicExecutableAndPTY(t *testing.T) {
 	if !strings.Contains(string(read.stdout), "Inert instructions.") {
 		t.Fatalf("full read %s", read.stdout)
 	}
-	raw := runSandboxBrowser(t, fx, sandbox, binary, "--agent", "hermes", "--project", fx.project)
+	raw := runSandboxBrowser(t, fx, sandbox, binary, selected.Name, "--agent", "hermes", "--project", fx.project)
 	if !bytes.Contains(raw, []byte("offline-hermes")) || !bytes.Contains(raw, []byte("Agent: hermes")) {
 		t.Fatalf("sandboxed Hermes PTY %q", raw)
 	}

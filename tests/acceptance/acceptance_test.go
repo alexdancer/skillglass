@@ -704,7 +704,7 @@ func TestDirectoryObjectIdentitySurvivesRename(t *testing.T) {
 
 func newFixture(t *testing.T) fixture {
 	t.Helper()
-	base := t.TempDir()
+	base := canonicalPath(t, t.TempDir())
 	tmuxTemporary, err := os.MkdirTemp("/private/tmp", "sgmux-")
 	if err != nil {
 		t.Fatal(err)
