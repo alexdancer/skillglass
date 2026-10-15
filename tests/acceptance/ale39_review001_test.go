@@ -75,6 +75,30 @@ func TestALE39Review001UnknownPluginPrecedence(t *testing.T) {
 				if lowerSource.Availability.State != want {
 					t.Errorf("lower availability=%q, want literal %q; source=%+v", lowerSource.Availability.State, want, lowerSource)
 				}
+				if want == "available" {
+					controlling := ""
+					for _, fact := range lowerSource.Availability.References {
+						if fact.Participation == "eligible" {
+							controlling = fact.ReferenceID
+						}
+						if topology == "same-source-alias-control" && fact.Provenance.Kind == "plugin" {
+							permission := map[string]string{"enabled": "allowed", "disabled": "denied", "unknown": "unknown"}[mode]
+							if fact.Permission.State != permission {
+								t.Errorf("plugin permission=%q, want %q", fact.Permission.State, permission)
+							}
+						}
+					}
+					if controlling == "" || lowerSource.Availability.ReferenceID != controlling {
+						t.Errorf("controlling reference=%q, want eligible reference %q", lowerSource.Availability.ReferenceID, controlling)
+					}
+					for _, verb := range []string{"read", "explain"} {
+						result := fx.run(t, verb, "--agent", "codeaf", "--project", fx.project, lowerSource.ID)
+						assertExit(t, result, exit)
+						if !strings.Contains(string(result.stdout), "Configured permission: allowed") {
+							t.Errorf("%s must summarize winning permission: %s", verb, result.stdout)
+						}
+					}
+				}
 				if want == "unknown" && (lowerSource.Availability.Precedence.State != "unknown" || lowerSource.Availability.Precedence.Winner != "") {
 					t.Errorf("lower precedence state=%q winner=%q, want literal state=unknown winner=empty", lowerSource.Availability.Precedence.State, lowerSource.Availability.Precedence.Winner)
 				}
@@ -114,6 +138,19 @@ func TestALE39Review001UnknownPluginPrecedence(t *testing.T) {
 				}
 				if mode == "unknown" && list.Scope.Completeness != "incomplete" {
 					t.Errorf("uncertain settings should report incomplete coverage: %s", list.Scope.Completeness)
+				}
+				if topology == "same-source-alias-control" {
+					tmux, socket, target := startALE43ReviewBrowser(t, fx, 120, 40, "--agent", "codeaf", "--project", fx.project)
+					runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "/")
+					waitForPaneAt(t, tmux, fx, socket, target, false, "Enter keep")
+					runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "-l", "collision")
+					waitForPaneAt(t, tmux, fx, socket, target, false, "Focus: 1/1")
+					frame := actForPaneAt(t, tmux, fx, socket, target, false, func() {
+						runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "Enter", "Enter", "d")
+					}, "Source ID: "+lowerSource.ID, "Availability: available", "Configured permission: allowed")
+					assertPaneCells(t, frame, 120, 40)
+					writeEvidence(t, "codeaf-controlling-reference/"+mode+".txt", []byte(frame))
+					runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "q")
 				}
 				assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 			})

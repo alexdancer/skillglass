@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -87,8 +86,7 @@ func TestFixtureLaunchContainment(t *testing.T) {
 	}
 	socket := fmt.Sprintf("fixture-control-%d", os.Getpid())
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-	runTmuxProduct(t, tmux, fx, socket, fx.containedSleeper(t), "new-session", "-d", "-x", strconv.Itoa(160), "-y", "80", "-s", "browser")
-	time.Sleep(500 * time.Millisecond)
+	runTmuxBootstrap(t, tmux, fx, socket, "browser", 160, 80)
 	runTmux(t, tmux, fx, socket, "set-option", "-w", "-t", "browser:0", "remain-on-exit", "on")
 	runTmuxProduct(t, tmux, fx, socket, fx.productCommand(t, args...), "respawn-pane", "-k", "-t", "browser:0.0")
 	var pane string

@@ -221,6 +221,7 @@ func buildCodeAF(ctx context.Context, request Request) (*Snapshot, error) {
 						reason = "an earlier plugin's uncertain enablement prevents resolving this native name"
 					} else if winner.ref == rid {
 						fact.Participation = ParticipationEligible
+						value.ReferenceID = rid
 						eligible = true
 						reason = "first loaded definition owns the native name"
 					} else {

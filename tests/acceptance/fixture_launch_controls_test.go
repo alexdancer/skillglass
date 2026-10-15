@@ -91,7 +91,7 @@ func TestOrdinaryLaunchContainmentCLIAndPTYAndTmux(t *testing.T) {
 	socket := fmt.Sprintf("fixture-controls-%d", os.Getpid())
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
 	command = fx.containedCommand(t, ctx, isolationProbeBinary, args...)
-	runTmuxProduct(t, tmux, fx, socket, fx.recordedCommand(context.Background(), "/bin/sleep", "30").Cmd, "new-session", "-d", "-x", "220", "-y", "24", "-s", "control")
+	runTmuxBootstrap(t, tmux, fx, socket, "control", 220, 24)
 	runTmux(t, tmux, fx, socket, "set-option", "-w", "-t", "control:0", "remain-on-exit", "on")
 	runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 	runTmux(t, tmux, fx, socket, "resize-window", "-t", "control:0", "-x", "220", "-y", "24")

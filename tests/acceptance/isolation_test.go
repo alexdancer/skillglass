@@ -437,7 +437,7 @@ func TestFixtureLauncherContainmentControls(t *testing.T) {
 				case "tmux":
 					socket := fmt.Sprintf("ale27-controls-%d-%t", os.Getpid(), writer)
 					defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-					runTmuxProduct(t, tmux, fx, socket, fx.recordedCommand(context.Background(), "/bin/sleep", "30").Cmd, "new-session", "-d", "-x", "80", "-y", "24", "-s", "browser")
+					runTmuxBootstrap(t, tmux, fx, socket, "browser", 80, 24)
 					runTmux(t, tmux, fx, socket, "set-option", "-g", "remain-on-exit", "on")
 					cmd := exec.Command(argv[0], argv[1:]...)
 					cmd.Env, cmd.Dir = fx.environment(), fx.project

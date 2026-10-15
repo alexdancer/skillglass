@@ -91,7 +91,8 @@ func TestOrdinaryFixtureBoundary(t *testing.T) {
 	}
 	socket := "fixture-boundary-" + filepath.Base(fx.base)
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-	runContainedTmux(t, tmux, fx, socket, "new-session", "-d", "-x", "80", "-y", "24", "-s", "boundary", "/bin/sleep 30")
+	runContainedTmux(t, tmux, fx, socket, "new-session", "-d", "-x", "80", "-y", "24", "-s", "boundary", "exec /bin/bash -c "+shellQuote(tmuxBootstrapCommand))
+	waitForPaneTitle(t, tmux, fx, socket, "boundary:0.0", tmuxBootstrapTitle)
 	runContainedTmux(t, tmux, fx, socket, "set-option", "-g", "remain-on-exit", "on")
 	runContainedTmux(t, tmux, fx, socket, "new-window", "-t", "boundary", "-n", "probe", "exec /bin/sh -c "+shellQuote("/bin/cat "+shellQuote(allowed)+" "+shellQuote(excluded)+"; printf 'BOUNDARY_FINISHED\\n'; /bin/sleep 1"))
 	_ = waitForPaneAt(t, tmux, fx, socket, "boundary:probe.0", false, "BOUNDARY_FINISHED")

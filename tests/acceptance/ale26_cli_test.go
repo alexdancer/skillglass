@@ -19,6 +19,7 @@ type codexEvidence struct {
 	Setting            string `json:"setting"`
 }
 type codexAvailability struct {
+	ReferenceID        string        `json:"reference_id"`
 	NativeNameEvidence codexEvidence `json:"native_name_evidence"`
 	NativeName         string        `json:"native_name"`
 

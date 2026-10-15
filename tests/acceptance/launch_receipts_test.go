@@ -149,7 +149,8 @@ func TestALE33FindingTmuxReceipts(t *testing.T) {
 	}
 	socket := "receipts-" + filepath.Base(fx.base)
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-	runContainedTmux(t, tmux, fx, socket, "new-session", "-d", "-x", "48", "-y", "24", "-s", "receipt", "exec /bin/sleep 30")
+	runContainedTmux(t, tmux, fx, socket, "new-session", "-d", "-x", "48", "-y", "24", "-s", "receipt", "exec /bin/bash -c "+shellQuote(tmuxBootstrapCommand))
+	waitForPaneTitle(t, tmux, fx, socket, "receipt:0.0", tmuxBootstrapTitle)
 	runContainedTmux(t, tmux, fx, socket, "set-option", "-g", "remain-on-exit", "on")
 	runContainedTmux(t, tmux, fx, socket, "new-window", "-t", "receipt", "-n", "probe", "exec /usr/bin/printf 'tmux-receipt\\n'")
 	directory := filepath.Join(fx.tmuxTemporary, "invocations")

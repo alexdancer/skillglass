@@ -451,16 +451,8 @@ func startALE43ReviewBrowser(
 	socket := fmt.Sprintf("a43f-%x-%x", os.Getpid(), time.Now().UnixNano()&0xffffff)
 	target := "browser:0.0"
 	command := fx.productCommand(t, append([]string{"browse"}, args...)...)
-	runTmuxProduct(
-		t,
-		tmux,
-		fx,
-		socket,
-		fx.containedSleeper(t),
-		"new-session", "-d", "-x", fmt.Sprint(width), "-y", fmt.Sprint(height),
-		"-s", "browser",
-	)
 	t.Cleanup(func() { runTmuxIgnoringError(tmux, fx, socket, "kill-server") })
+	runTmuxBootstrap(t, tmux, fx, socket, "browser", width, height)
 	runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 	runTmux(t, tmux, fx, socket, "set-option", "-w", "-t", "browser:0", "remain-on-exit", "on")
 	runTmux(
