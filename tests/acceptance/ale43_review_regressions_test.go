@@ -2,7 +2,6 @@ package acceptance_test
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -452,16 +451,12 @@ func startALE43ReviewBrowser(
 	socket := fmt.Sprintf("a43f-%x-%x", os.Getpid(), time.Now().UnixNano()&0xffffff)
 	target := "browser:0.0"
 	command := fx.productCommand(t, append([]string{"browse"}, args...)...)
-	bootstrap := fx
-	bootstrap.policy = filepath.Join(fx.tmuxTemporary, "bootstrap.sb")
-	sleep := canonicalPath(t, "/bin/sleep")
-	writeFile(t, bootstrap.policy, []byte(runtimeProfile(sleep, filepath.Join(fx.base, "allowed"))), 0600)
 	runTmuxProduct(
 		t,
 		tmux,
 		fx,
 		socket,
-		bootstrap.containedCommand(t, context.Background(), sleep, "60"),
+		fx.containedSleeper(t),
 		"new-session", "-d", "-x", fmt.Sprint(width), "-y", fmt.Sprint(height),
 		"-s", "browser",
 	)

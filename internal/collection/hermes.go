@@ -25,7 +25,7 @@ type hermesInputs struct {
 	managedYAML            hermesYAMLObservation
 	policyEnv              map[string]string
 	policyEnvUnknown       map[string]bool
-	policyDeclared         map[string]bool
+	platformKnown          bool
 	uncertain              bool
 	problems               []Problem
 	plugins                map[RootID]hermesPlugin
@@ -203,17 +203,13 @@ func (inputs *hermesInputs) roots(request *Request) {
 				}
 				return "${" + key + "}"
 			}
-			if inputs.policyDeclared[key] {
-				inputs.problem(inputs.config, "external directory references unsupported persisted environment policy; credential values are not evaluated")
-				return "${" + key + "}"
-			}
 			if value, exists := os.LookupEnv(key); exists {
 				return value
 			}
 			return "${" + key + "}"
 		})
 		if unresolved {
-			inputs.problem(inputs.config, "external directory depends on unresolved environment policy; no candidate root is inspected")
+			inputs.problem(inputs.config, "external directory references unsupported persisted environment policy; no candidate root is inspected")
 			continue
 		}
 		if value == "~" {
@@ -508,7 +504,7 @@ func hermesPermission(name string, inputs *hermesInputs) PermissionExplanation {
 	platforms := hermesMap(skills, "platform_disabled")
 	selected, selectedOK := hermesRawSkillStrings(platforms[inputs.platform])
 	globalKnown := ok && inputs.configYAML.known("skills.disabled")
-	selectedKnown := inputs.platform == "" || (selectedOK && inputs.configYAML.known("skills.platform_disabled."+inputs.platform))
+	selectedKnown := inputs.platformKnown && (inputs.platform == "" || (selectedOK && inputs.configYAML.known("skills.platform_disabled."+inputs.platform)))
 	if inputs.uncertain {
 		state, reason = PermissionUnknown, "profile config native string semantics cannot be reliably interpreted"
 	} else if (globalKnown && hermesHas(global, name)) || (inputs.platform != "" && selectedKnown && hermesHas(selected, name)) {

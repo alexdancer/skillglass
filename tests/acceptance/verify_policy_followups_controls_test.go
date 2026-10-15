@@ -11,7 +11,7 @@ import (
 )
 
 func TestVerifyPolicyFollowupsSiblingControls(t *testing.T) {
-	for _, mode := range []string{"enable-expansion-denied", "enable-type-denied", "category-key-denied", "category-name-denied", "qualified-platform-denied", "raw-type-denied", "denied-collision", "genuine-profile-parse", "genuine-environment", "yaml-unreadable-target"} {
+	for _, mode := range []string{"enable-expansion-denied", "enable-type-denied", "category-key-denied", "category-name-denied", "qualified-platform-denied", "raw-type-denied", "denied-collision", "genuine-profile-parse", "genuine-environment", "unresolved-platform-independent-denial", "yaml-unreadable-target"} {
 		t.Run(mode, func(t *testing.T) {
 			fx, p := hermesFixture(t)
 			file := g2Plugin(t, p)
@@ -54,6 +54,9 @@ func TestVerifyPolicyFollowupsSiblingControls(t *testing.T) {
 				env = append(env, "HERMES_MANAGED_DIR="+managed)
 			case "genuine-environment":
 				state, exit = "unknown", 1
+				writeFile(t, filepath.Join(p, ".env"), []byte{0xff}, 0600)
+			case "unresolved-platform-independent-denial":
+				exit = 1
 				writeFile(t, filepath.Join(p, ".env"), []byte("HERMES_PLATFORM=${PRIVATE_POLICY}\n"), 0600)
 			case "yaml-unreadable-target":
 				config, state, exit = "plugins:\n  enabled: [portable]\n", "unknown", 1

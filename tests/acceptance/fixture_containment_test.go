@@ -87,8 +87,10 @@ func TestFixtureLaunchContainment(t *testing.T) {
 	}
 	socket := fmt.Sprintf("fixture-control-%d", os.Getpid())
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-	runTmuxProduct(t, tmux, fx, socket, fx.productCommand(t, args...), "new-session", "-d", "-x", strconv.Itoa(160), "-y", "80", "-s", "browser")
+	runTmuxProduct(t, tmux, fx, socket, fx.containedSleeper(t), "new-session", "-d", "-x", strconv.Itoa(160), "-y", "80", "-s", "browser")
+	time.Sleep(500 * time.Millisecond)
 	runTmux(t, tmux, fx, socket, "set-option", "-w", "-t", "browser:0", "remain-on-exit", "on")
+	runTmuxProduct(t, tmux, fx, socket, fx.productCommand(t, args...), "respawn-pane", "-k", "-t", "browser:0.0")
 	var pane string
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {

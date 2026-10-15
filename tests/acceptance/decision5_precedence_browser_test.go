@@ -13,6 +13,12 @@ import (
 )
 
 func TestDecision5PrecedenceBrowser(t *testing.T) {
+	for _, prefix := range []string{"short", "long-" + strings.Repeat("path-", 12)} {
+		t.Run(prefix, testDecision5PrecedenceBrowser)
+	}
+}
+
+func testDecision5PrecedenceBrowser(t *testing.T) {
 	tmux, err := exec.LookPath("tmux")
 	if err != nil {
 		t.Fatal(err)
@@ -42,8 +48,18 @@ func TestDecision5PrecedenceBrowser(t *testing.T) {
 		}
 	}
 	assertPaneCells(t, frame, 80, 30)
-	writeEvidence(t, "precedence/browser-detail.txt", []byte(frame))
-	for page := 1; page <= 6 && !strings.Contains(frame, "Precedence: unknown"); page++ {
+	prefix := "precedence/" + strings.ReplaceAll(t.Name(), "/", "_")
+	writeEvidence(t, prefix+"/browser-detail.txt", []byte(frame))
+	_, _, total := sourceDetailRange(frame)
+	body := make([]string, total)
+	observed := ""
+	for page := 1; ; page++ {
+		first, last, _, rows := sourceDetailBody(t, frame)
+		copy(body[first-1:last], rows)
+		observed = strings.Join(body, "\n")
+		if (strings.Contains(observed, "Precedence: unknown") && strings.Contains(observed, "Related independent source:")) || last == total {
+			break
+		}
 		previous := frame
 		capture := actOnPane(t, tmux, fx, socket, "browser:0.0", func() {
 			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "NPage")
@@ -52,11 +68,12 @@ func TestDecision5PrecedenceBrowser(t *testing.T) {
 		})
 		frame = capture.cells
 		assertPaneCells(t, frame, 80, 30)
-		writeEvidence(t, fmt.Sprintf("precedence/browser-page-%d.txt", page), []byte(frame))
+		writeEvidence(t, fmt.Sprintf("%s/browser-page-%d.txt", prefix, page), []byte(frame))
 	}
-	if !strings.Contains(frame, "Precedence: unknown") || !strings.Contains(frame, "Related independent source:") {
-		t.Errorf("lower detail lost uncertain same-name relationship: %s", frame)
+	if !strings.Contains(observed, "Precedence: unknown") || !strings.Contains(observed, "Related independent source:") {
+		t.Errorf("lower detail lost uncertain same-name relationship: %s", observed)
 	}
+	writeEvidence(t, prefix+"/observed-body.txt", []byte(observed))
 	runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "q")
 	assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 }

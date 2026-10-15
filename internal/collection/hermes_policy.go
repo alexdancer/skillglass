@@ -33,7 +33,7 @@ func (inputs *hermesInputs) policyEnvProblem(path, key, reason string) {
 			delete(inputs.policyEnv, name)
 		}
 	}
-	if key == "HERMES_SAFE_MODE" || key == "HERMES_ENABLE_PROJECT_PLUGINS" || key == "HERMES_MANAGED_DIR" {
+	if key != "" {
 		inputs.policyEnvUnknown[key] = true
 		delete(inputs.policyEnv, key)
 		inputs.problems = append(inputs.problems, makeProblem(ProblemNativeInput, path, reason, nil, true))
@@ -59,7 +59,6 @@ func (inputs *hermesInputs) pluginProblem(path, reason string) {
 func (inputs *hermesInputs) readPolicy(request Request) {
 	inputs.policyEnv = make(map[string]string)
 	inputs.policyEnvUnknown = make(map[string]bool)
-	inputs.policyDeclared = make(map[string]bool)
 	for key := range hermesPolicyKeys {
 		if value, ok := os.LookupEnv(key); ok {
 			inputs.policyEnv[key] = value
@@ -104,15 +103,17 @@ func (inputs *hermesInputs) readPolicy(request Request) {
 			}
 		}
 	}
-	inputs.platform = inputs.policyEnv["HERMES_PLATFORM"]
-	if inputs.platform == "" {
-		inputs.platform = inputs.policyEnv["HERMES_SESSION_PLATFORM"]
+	platformKey := "HERMES_PLATFORM"
+	if !inputs.policyEnvUnknown[platformKey] && inputs.policyEnv[platformKey] == "" {
+		platformKey = "HERMES_SESSION_PLATFORM"
 	}
+	inputs.platformKnown = !inputs.policyEnvUnknown[platformKey]
+	inputs.platform = inputs.policyEnv[platformKey]
 	if !regexp.MustCompile(`^[a-zA-Z0-9_-]{0,64}$`).MatchString(inputs.platform) {
 		inputs.problem(filepath.Join(inputs.home, ".env"), "messaging platform policy is outside the supported literal shape")
 	}
 	platformState := "read"
-	if inputs.policyEnvUnknown["HERMES_PLATFORM"] || inputs.policyEnvUnknown["HERMES_SESSION_PLATFORM"] {
+	if !inputs.platformKnown {
 		platformState = "unknown"
 	}
 	inputs.policyLayer(filepath.Join(inputs.home, ".env"), "session-platform", platformState, "profile environment overrides shell policy; managed environment wins last; HERMES_PLATFORM precedes HERMES_SESSION_PLATFORM")
@@ -166,8 +167,9 @@ func (inputs *hermesInputs) readPolicyEnv(path string, managed bool) {
 		if !managed {
 			line = hermesDotenvExport.ReplaceAllString(line, "")
 		}
-		if key := hermesDotenvDeclarationKey(line); key != "" {
-			inputs.policyDeclared[key] = true
+		declaredKey := hermesDotenvDeclarationKey(line)
+		if declaredKey != "" && !hermesPolicyKeys[declaredKey] {
+			inputs.policyEnvUnknown[declaredKey] = true
 		}
 		key, value, present := hermesDotenvAssignment(line)
 		key = strings.TrimSpace(key)
@@ -180,9 +182,9 @@ func (inputs *hermesInputs) readPolicyEnv(path string, managed bool) {
 			inputs.policyEnvProblem(path, "", "multiline or unclosed environment binding is outside the bounded inert parser")
 			break // A later line may be part of this value rather than another assignment.
 		}
-		if !managed && key != strings.Trim(key, `"'`) && hermesPolicyKeys[strings.Trim(key, `"'`)] {
+		if !managed && key != declaredKey && hermesPolicyKeys[declaredKey] {
 			uncertain = true
-			inputs.policyEnvProblem(path, strings.Trim(key, `"'`), "quoted behavioral policy key is outside the supported syntax")
+			inputs.policyEnvProblem(path, declaredKey, "quoted behavioral policy key is outside the supported syntax")
 			continue
 		}
 		if !hermesPolicyKeys[key] {
@@ -368,7 +370,7 @@ func (inputs *hermesInputs) expandPluginPolicy(value any, path, key string) herm
 		text = hermesConfigReference.ReplaceAllStringFunc(text, func(ref string) string {
 			name := strings.TrimSpace(ref[2 : len(ref)-1])
 			name = strings.TrimSpace(strings.TrimPrefix(name, "env:"))
-			if hermesPolicyKeys[name] {
+			if hermesPolicyKeys[name] && !inputs.policyEnvUnknown[name] {
 				if value, present := inputs.policyEnv[name]; present {
 					return value
 				}
