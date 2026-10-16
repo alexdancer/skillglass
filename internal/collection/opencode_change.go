@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"unicode/utf8"
 )
 
 type opencodeControlRefusal struct{ reason string }
@@ -26,7 +25,7 @@ type opencodeControlPlan struct {
 
 var opencodeControlName = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
-func opencodeControlRecipe(s *Snapshot, intent ChangeIntent) (opencodeControlPlan, error) {
+func opencodeControlRecipe(s *Snapshot, intent ChangeIntent, facts *opencodeControlFacts) (opencodeControlPlan, error) {
 	p := opencodeControlPlan{Scope: intent.Scope, Choice: intent.Choice}
 	if intent.Scope != ControlGlobal && intent.Scope != ControlProject {
 		return p, errors.New("choose explicit global or project scope")
@@ -38,38 +37,20 @@ func opencodeControlRecipe(s *Snapshot, intent ChangeIntent) (opencodeControlPla
 		return p, errors.New("inherit removes only a project override")
 	}
 	in := s.opencodeControls
-	if in == nil || !s.Complete() || in.uncertain {
-		return p, errors.New("native OpenCode discovery or configuration is incomplete or unverified; isolated effects cannot be bounded")
+	if intent.Scope == ControlGlobal {
+		if err := facts.validateGlobal(intent.Source); err != nil {
+			return p, err
+		}
+	} else if err := facts.selected.validate(intent.Source); err != nil {
+		return p, err
 	}
 	if intent.Scope == ControlProject && (!s.request.Project.Selected || opencodeBool("OPENCODE_DISABLE_PROJECT_CONFIG")) {
 		return p, errors.New("project controls require an explicit project with native project configuration enabled; no global fallback")
 	}
-	for _, input := range in.inputs {
-		if !utf8.Valid(input.Raw) {
-			return p, errors.New("native configuration is not valid UTF-8; no writer enabled")
-		}
-	}
-	source, found := s.sources[intent.Source]
-	if !found || !changeWriterEligible(source) || source.Ownership.State == "managed" {
-		return p, errors.New("a proven ordinary native OpenCode source is required; managed, plugin and inspection-only targets are unsupported")
-	}
-	manifest, err := observeChangePath(source.Manifest.Path)
-	if err != nil || manifest.Links != 1 {
-		return p, opencodeControlRefusal{"manifest identity is unsafe or hardlinked"}
-	}
+	source := s.sources[intent.Source]
 	p.NativeName = source.Availability.NativeName
 	if len(p.NativeName) > 64 || !opencodeControlName.MatchString(p.NativeName) || p.NativeName == "customize-opencode" {
 		return p, errors.New("native name has unverified pattern semantics or collides with embedded customize-opencode")
-	}
-	for _, other := range s.sources {
-		if other.ID == source.ID || other.Availability.NativeName != p.NativeName {
-			continue
-		}
-		for _, ref := range other.Availability.References {
-			if ref.Participation == ParticipationEligible || ref.Participation == ParticipationUnknown {
-				return p, opencodeControlRefusal{"name-based permission would affect an independent same-name source; select an isolated native target"}
-			}
-		}
 	}
 	globalOccurrence := false
 	for _, fact := range source.Availability.References {
@@ -90,7 +71,7 @@ func opencodeControlRecipe(s *Snapshot, intent ChangeIntent) (opencodeControlPla
 	}
 	if intent.Choice == ControlInherit {
 		for _, input := range in.inputs {
-			if input.Scope != "project" && !(input.Scope == "native-directory" && opencodeProjectPath(s, input.Path)) {
+			if input.Scope != "project" && !(input.Scope == "native-directory" && facts.projectInputs[input.Path]) {
 				continue
 			}
 			if opencodeSavedPermission(input.Raw, p.NativeName) == "" {
@@ -149,10 +130,10 @@ func previewOpencodeChange(ctx context.Context, s *Snapshot, intent ChangeIntent
 	if _, ok := fresh.sources[intent.Source]; !ok {
 		return rejectedChange(intent, "refused", "selected source is no longer reachable; select its exact source ID")
 	}
-	return previewOpencodeSnapshot(ctx, fresh, intent, true)
+	return previewOpencodeSnapshot(ctx, fresh, intent, true, newOpencodeControlFacts(ctx, fresh))
 }
-func previewOpencodeSnapshot(ctx context.Context, s *Snapshot, intent ChangeIntent, pin bool) *ChangePreview {
-	recipe, err := opencodeControlRecipe(s, intent)
+func previewOpencodeSnapshot(ctx context.Context, s *Snapshot, intent ChangeIntent, pin bool, facts *opencodeControlFacts) *ChangePreview {
+	recipe, err := opencodeControlRecipe(s, intent, facts)
 	if err != nil {
 		var refusal opencodeControlRefusal
 		if errors.As(err, &refusal) {
@@ -160,11 +141,8 @@ func previewOpencodeSnapshot(ctx context.Context, s *Snapshot, intent ChangeInte
 		}
 		return rejectedChange(intent, "unsupported", err.Error())
 	}
-	dest, err := inspectChangeDestinationPath(recipe.ConfigPath)
+	dest, err := facts.destination(recipe)
 	if err != nil {
-		return rejectedChange(intent, "refused", err.Error())
-	}
-	if err = opencodeDestinationScope(s, recipe); err != nil {
 		return rejectedChange(intent, "refused", err.Error())
 	}
 	// Keep ask as a verified no-op when it already permits this source. A future
@@ -197,18 +175,32 @@ func previewOpencodeSnapshot(ctx context.Context, s *Snapshot, intent ChangeInte
 	if !ok {
 		return rejectedChange(intent, "refused", "selected native source would no longer be reachable")
 	}
-	if after.opencodeControls.uncertain || intent.Choice == ControlDisable && selected.Availability.State != AvailabilityDisabled || intent.Choice == ControlEnable && selected.Availability.State != AvailabilityAvailable && selected.Availability.State != AvailabilityExplicitOnly && selected.Availability.State != AvailabilityAsk {
+	if !after.Complete() || after.opencodeControls.uncertain || intent.Choice == ControlDisable && selected.Availability.State != AvailabilityDisabled || intent.Choice == ControlEnable && selected.Availability.State != AvailabilityAvailable && selected.Availability.State != AvailabilityExplicitOnly && selected.Availability.State != AvailabilityAsk {
 		return rejectedChange(intent, "refused", "higher-priority configuration, agent policy or ordered wildcard prevents the requested result; no broader fallback")
 	}
+	var globalBefore, globalAfter *Snapshot
+	var globalInputs []opencodeConfigInput
+	var expectedGlobal *opencodeContextFacts
 	if intent.Scope == ControlGlobal {
-		globalBefore := readOpencodeInputs(s.request, nil)
-		globalAfter := readOpencodeInputs(prospective, nil)
-		permission := globalAfter.permission(recipe.NativeName)
+		globalBefore = facts.global.snapshot
+		globalInputs = globalBefore.opencodeControls.inputs
+		globalAfter, err = opencodeGlobalSnapshot(ctx, after)
+		if err != nil {
+			return rejectedChange(intent, "failed", "prospective global OpenCode inventory could not be inspected")
+		}
+		expectedGlobal = newOpencodeContextFacts(globalAfter)
+		if err := expectedGlobal.validate(intent.Source); err != nil {
+			return rejectedChange(intent, "refused", "prospective global native control certainty: "+err.Error())
+		}
+		permission := globalAfter.opencodeControls.permission(recipe.NativeName)
 		if !opencodeChoiceAchieved(intent.Choice, permission.State) {
 			return rejectedChange(intent, "refused", "global configuration does not achieve the requested result independently of project overrides; no broader fallback")
 		}
-		if !opencodePatchOnlySelected(cloneOpencodeObject(globalBefore.config), cloneOpencodeObject(globalAfter.config), recipe.NativeName) {
+		if !opencodePatchOnlySelected(cloneOpencodeObject(globalBefore.opencodeControls.config), cloneOpencodeObject(globalAfter.opencodeControls.config), recipe.NativeName) {
 			return rejectedChange(intent, "refused", "conversion would change unrelated global native rules independently of project overrides")
+		}
+		if !opencodeIndependentEffects(globalBefore, globalAfter, intent.Source) {
+			return rejectedChange(intent, "refused", "permission rewrite would affect an independent global source or membership")
 		}
 	}
 	// This check ranges over every ordered rule, including names not discovered
@@ -216,20 +208,14 @@ func previewOpencodeSnapshot(ctx context.Context, s *Snapshot, intent ChangeInte
 	if !opencodePatchOnlySelected(cloneOpencodeObject(s.opencodeControls.config), cloneOpencodeObject(after.opencodeControls.config), recipe.NativeName) {
 		return rejectedChange(intent, "refused", "conversion would change unrelated ordered native rules, including scalar replacement or inherited insertion order")
 	}
-	for id, before := range s.sources {
-		if id == intent.Source {
-			continue
-		}
-		next, exists := after.sources[id]
-		if !exists || !piSamePermissions(before.Availability, next.Availability) || before.Availability.State != next.Availability.State {
-			return rejectedChange(intent, "refused", "permission rewrite would affect an independent source or membership")
-		}
+	if !opencodeIndependentEffects(s, after, intent.Source) {
+		return rejectedChange(intent, "refused", "permission rewrite would affect an independent source or membership")
 	}
-	facts, deps, err := changeObservations(s, dest)
+	observations, deps, err := opencodeChangeObservations(s, globalBefore, dest)
 	if err != nil {
 		return rejectedChange(intent, "refused", "relevant OpenCode inputs cannot be pinned: "+err.Error())
 	}
-	plan := &changePlan{request: cloneRequest(s.request), intent: intent, postimage: post, destination: dest, snapshotFacts: facts, dependencies: deps}
+	plan := &changePlan{request: cloneRequest(s.request), intent: intent, postimage: post, destination: dest, snapshotFacts: observations, dependencies: deps, opencodeGlobalExpected: expectedGlobal}
 	data, _ := json.Marshal(struct {
 		Version      string
 		Recipe       opencodeControlPlan
@@ -238,7 +224,8 @@ func previewOpencodeSnapshot(ctx context.Context, s *Snapshot, intent ChangeInte
 		Destination  changeDestination
 		Post         []byte
 		Inputs       []opencodeConfigInput
-	}{"opencode-1.17.15-controls-v1", recipe, facts, deps, dest, post, s.opencodeControls.inputs})
+		GlobalInputs []opencodeConfigInput
+	}{"opencode-1.17.15-controls-v1", recipe, observations, deps, dest, post, s.opencodeControls.inputs, globalInputs})
 	sum := sha256.Sum256(data)
 	plan.digest = "opencode1:" + hex.EncodeToString(sum[:])
 	source := s.sources[intent.Source]
@@ -391,6 +378,7 @@ func opencodeDestinationScope(s *Snapshot, p opencodeControlPlan) error {
 	return nil
 }
 func applyOpencodeCapabilities(s *Snapshot) {
+	facts := newOpencodeControlFacts(context.Background(), s)
 	for _, id := range s.order {
 		source := s.sources[id]
 		source.Availability.Capabilities = nil
@@ -399,7 +387,7 @@ func applyOpencodeCapabilities(s *Snapshot) {
 			scope  ControlScope
 			choice ControlChoice
 		}{{"enable", ControlGlobal, ControlEnable}, {"disable", ControlGlobal, ControlDisable}, {"project-override", ControlProject, ControlDisable}, {"inherit", ControlProject, ControlInherit}} {
-			p := previewOpencodeSnapshot(context.Background(), s, ChangeIntent{Source: id, Application: "opencode", Scope: entry.scope, Choice: entry.choice}, false)
+			p := previewOpencodeSnapshot(context.Background(), s, ChangeIntent{Source: id, Application: "opencode", Scope: entry.scope, Choice: entry.choice}, false, facts)
 			state, kind, reason := "unsupported", EvidenceUnknown, p.view.Reason
 			if p.view.State == "ready" {
 				state, kind, reason = "supported", EvidenceInferred, "native writer eligibility checked; explicit preview must validate effective result and independent-source effects"

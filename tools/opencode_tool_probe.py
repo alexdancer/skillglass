@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Credential-free OpenCode inert fixture skill-tool observations. Never starts a model turn."""
 import argparse
-import fnmatch
 import hashlib
 import json
 import os
@@ -88,12 +87,6 @@ def main():
     def write(path, value):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({'$schema':'https://opencode.ai/config.json',**value}))
-    def listed(label, extra=None):
-        return [x for x in json.loads(run(label,'debug','skill',extra=extra)) if x['location']!='<built-in>']
-    def permission(label, name, extra=None):
-        agent = json.loads(run(label,'debug','agent','build',extra=extra))
-        matching = [x for x in agent['permission'] if fnmatch.fnmatchcase('skill',x['permission']) and fnmatch.fnmatchcase(name,x['pattern'])]
-        return matching[-1]['action'] if matching else 'ask'
     try:
         (project/'nested').mkdir()
         run('git-init','init','-q',str(project),executable=str(git_binary),pure=False)

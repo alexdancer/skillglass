@@ -11,14 +11,15 @@ import (
 )
 
 type changePlan struct {
-	request       Request
-	intent        ChangeIntent
-	digest        string
-	postimage     []byte
-	destination   changeDestination
-	snapshotFacts []byte
-	dependencies  []changeFact
-	fault         func(string) error
+	request                Request
+	intent                 ChangeIntent
+	digest                 string
+	postimage              []byte
+	destination            changeDestination
+	snapshotFacts          []byte
+	dependencies           []changeFact
+	fault                  func(string) error
+	opencodeGlobalExpected *opencodeContextFacts
 }
 
 func changeObservations(s *Snapshot, destination changeDestination) ([]byte, []changeFact, error) {
@@ -159,9 +160,9 @@ func (p *changePlan) inspectResult(out ChangeOutcome, parent changeIdentity) Cha
 		}
 		out.Effective = &effective
 		resultReason := effective.Reason
-		var globalPermission PermissionExplanation
+		globalAchievement, globalReason := "", ""
 		if p.intent.Application == "opencode" && p.intent.Scope == ControlGlobal {
-			globalPermission = readOpencodeInputs(p.request, nil).permission(effective.NativeName)
+			globalAchievement, globalReason = p.opencodeGlobalResult(context.Background(), fresh)
 		}
 		if reason, known := fresh.hermesControls.nativeReasons[source.ID]; p.intent.Application == "hermes" && (!known || reason != "") {
 			out.Achievement = "unknown"
@@ -169,12 +170,9 @@ func (p *changePlan) inspectResult(out ChangeOutcome, parent changeIdentity) Cha
 				reason = "native control certainty was not established"
 			}
 			resultReason = "native Hermes control certainty: " + reason
-		} else if globalPermission.State != "" && !opencodeChoiceAchieved(p.intent.Choice, globalPermission.State) {
-			out.Achievement = "unmet"
-			if globalPermission.State == PermissionUnknown {
-				out.Achievement = "unknown"
-			}
-			resultReason = "global configured permission: " + globalPermission.Evidence.Reason
+		} else if globalAchievement != "" {
+			out.Achievement = globalAchievement
+			resultReason = globalReason
 		} else if p.intent.Choice == ControlInherit && out.Persistence == "verified" {
 			out.Achievement = "achieved"
 		} else if p.intent.Choice == ControlDisable && effective.State == AvailabilityDisabled {
