@@ -31,13 +31,14 @@ func previewHermesChange(ctx context.Context, s *Snapshot, intent ChangeIntent) 
 }
 
 type hermesControlFacts struct {
-	full         map[SourceID]hermesMetadataObservation
-	selectors    map[string]map[SourceID]bool
-	unknownNames map[SourceID]bool
+	full          map[SourceID]hermesMetadataObservation
+	selectors     map[string]map[SourceID]bool
+	unknownNames  map[SourceID]bool
+	nativeReasons map[SourceID]string
 }
 
 func indexHermesControls(s *Snapshot, index, full map[SourceID]hermesMetadataObservation) hermesControlFacts {
-	facts := hermesControlFacts{full: full, selectors: make(map[string]map[SourceID]bool), unknownNames: make(map[SourceID]bool)}
+	facts := hermesControlFacts{full: full, selectors: make(map[string]map[SourceID]bool), unknownNames: make(map[SourceID]bool), nativeReasons: make(map[SourceID]string)}
 	for id, source := range s.sources {
 		for _, ref := range source.Availability.References {
 			if ref.Participation == ParticipationInspection {
@@ -63,6 +64,9 @@ func hermesControlName(s *Snapshot, source Source, inputs hermesInputs) (string,
 	if !s.Complete() || inputs.uncertain || !inputs.platformKnown || inputs.policyEnvUnknown["HERMES_MANAGED_DIR"] || inputs.pluginFailure != nil {
 		return "", "native discovery, profile or platform policy is incomplete; name-based effects cannot be bounded"
 	}
+	if !inputs.controlConfigKnown {
+		return "", "native profile agent normalization or complete YAML construction is unverified"
+	}
 	skills := hermesMap(inputs.configData, "skills")
 	policies := []struct {
 		setting string
@@ -78,7 +82,7 @@ func hermesControlName(s *Snapshot, source Source, inputs hermesInputs) (string,
 	for _, policy := range policies {
 		if inputs.managedConfigData != nil {
 			if !inputs.managedYAML.known(policy.setting) {
-				return "", "managed disabled policy interpretation is unverified; no settings changed"
+				return "", "managed disabled policy interpretation is unverified"
 			}
 			managed := inputs.managedConfigData
 			keys := strings.Split(policy.setting, ".")
@@ -95,24 +99,24 @@ func hermesControlName(s *Snapshot, source Source, inputs hermesInputs) (string,
 			}
 		}
 		if !inputs.configYAML.known(policy.setting) {
-			return "", "native disabled policy interpretation is unverified; no settings changed"
+			return "", "native disabled policy interpretation is unverified"
 		}
 		if policy.value == nil {
 			continue
 		}
 		entries, ok := policy.value.([]any)
 		if !ok {
-			return "", "global and selected messaging-platform disabled policies require literal lists or null; scalar/mapping membership differs across native consumers; no settings changed"
+			return "", "global and selected messaging-platform disabled policies require literal lists or null; scalar/mapping membership differs across native consumers"
 		}
 		for _, entry := range entries {
 			text, ok := entry.(string)
 			if !ok || hermesConfigReference.MatchString(text) {
-				return "", "native disabled policy requires literal string list entries without environment references; credentials and providers are not evaluated; no settings changed"
+				return "", "native disabled policy requires literal string list entries without environment references; credentials and providers are not evaluated"
 			}
 		}
 	}
-	if !changeWriterEligible(source) || source.Ownership.State == "managed" {
-		return "", "an ordinary proven native Hermes source is required; managed and plugin controls are unsupported"
+	if source.Identity.Certainty != "proven" || source.Ownership.State == "managed" {
+		return "", "native source identity or managed registration is unverified"
 	}
 	name := source.Availability.NativeName
 	full := s.hermesControls.full[source.ID]
@@ -156,6 +160,9 @@ func previewHermesSnapshot(s *Snapshot, intent ChangeIntent) *ChangePreview {
 	if reason != "" {
 		return rejectedChange(intent, "unsupported", reason)
 	}
+	if !changeWriterEligible(source) {
+		return rejectedChange(intent, "unsupported", "an ordinary proven native Hermes source is required")
+	}
 	fact, err := observeChangePath(filepath.Join(source.Directory, "SKILL.md"))
 	if err != nil || fact.Links != 1 {
 		return rejectedChange(intent, "refused", "manifest identity is unsafe or hardlinked")
@@ -197,6 +204,10 @@ func applyHermesCapabilities(s *Snapshot, inputs hermesInputs) {
 	for _, id := range s.order {
 		source := s.sources[id]
 		name, reason := hermesControlName(s, source, inputs)
+		s.hermesControls.nativeReasons[id] = reason
+		if reason == "" && !changeWriterEligible(source) {
+			reason = "an ordinary proven native Hermes source is required"
+		}
 		if reason == "" && destinationErr != nil {
 			reason = destinationErr.Error()
 		}

@@ -18,6 +18,7 @@ type hermesInputs struct {
 	scope                  AgentScope
 	configData             map[string]any
 	configYAML             hermesYAMLObservation
+	controlConfigKnown     bool
 	pluginPolicy           map[string]hermesPolicyLeaf
 	pluginManaged          map[string]any
 	managedConfigPath      string
@@ -48,7 +49,15 @@ func (inputs *hermesInputs) problem(path, reason string) {
 }
 func (inputs *hermesInputs) yaml(path string) (map[string]any, string, hermesYAMLObservation) {
 	raw, err := nativeBytes(path)
-	if nativeAbsent(path, err) {
+	absent := nativeAbsent(path, err)
+	if path == inputs.config && (err == nil || absent) {
+		controlRaw := raw
+		if len(controlRaw) == 0 {
+			controlRaw = []byte("{}")
+		}
+		_, _, inputs.controlConfigKnown = decodeHermesControlYAML(controlRaw)
+	}
+	if absent {
 		return map[string]any{}, "absent", observeHermesYAML([]byte("{}"))
 	}
 	if err != nil {
