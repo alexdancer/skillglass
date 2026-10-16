@@ -521,7 +521,12 @@ func hermesPermission(name string, inputs *hermesInputs) PermissionExplanation {
 	if inputs.uncertain {
 		state, reason = PermissionUnknown, "profile config native string semantics cannot be reliably interpreted"
 	} else if (globalKnown && hermesHas(global, name)) || (inputs.platform != "" && selectedKnown && hermesHas(selected, name)) {
-		state, reason = PermissionDenied, "name disabled by skills.disabled union skills.platform_disabled for "+inputs.platform
+		state = PermissionDenied
+		if inputs.platform == "" {
+			reason = "name disabled by skills.disabled"
+		} else {
+			reason = "name disabled by skills.disabled union skills.platform_disabled for " + inputs.platform
+		}
 	} else if !globalKnown || !selectedKnown {
 		state, reason = PermissionUnknown, "profile config native string semantics cannot be reliably interpreted"
 	}
