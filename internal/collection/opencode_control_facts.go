@@ -141,8 +141,18 @@ func (f *opencodeControlFacts) destination(recipe opencodeControlPlan) (changeDe
 	if err == nil {
 		err = opencodeDestinationScope(f.selected.snapshot, recipe)
 	}
-	if err == nil && recipe.Scope == ControlGlobal && f.global != f.selected {
-		err = opencodeDestinationScope(f.global.snapshot, recipe)
+	if err == nil {
+		if f.globalErr != nil {
+			err = errors.New("global native inventory could not be inspected; source content overlap cannot be bounded")
+		} else if f.global.invalid != nil {
+			err = errors.New("global source content overlap cannot be bounded: " + f.global.invalid.Error())
+		} else if f.global != f.selected {
+			if recipe.Scope == ControlGlobal {
+				err = opencodeDestinationScope(f.global.snapshot, recipe)
+			} else {
+				err = opencodeDestinationContent(f.global.snapshot, recipe.ConfigPath)
+			}
+		}
 	}
 	f.destinations[key] = opencodeDestinationFact{dest, err}
 	return dest, err

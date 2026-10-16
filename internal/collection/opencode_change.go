@@ -178,13 +178,11 @@ func previewOpencodeSnapshot(ctx context.Context, s *Snapshot, intent ChangeInte
 	if !after.Complete() || after.opencodeControls.uncertain || intent.Choice == ControlDisable && selected.Availability.State != AvailabilityDisabled || intent.Choice == ControlEnable && selected.Availability.State != AvailabilityAvailable && selected.Availability.State != AvailabilityExplicitOnly && selected.Availability.State != AvailabilityAsk {
 		return rejectedChange(intent, "refused", "higher-priority configuration, agent policy or ordered wildcard prevents the requested result; no broader fallback")
 	}
-	var globalBefore, globalAfter *Snapshot
-	var globalInputs []opencodeConfigInput
+	globalBefore := facts.global.snapshot
+	globalInputs := globalBefore.opencodeControls.inputs
 	var expectedGlobal *opencodeContextFacts
 	if intent.Scope == ControlGlobal {
-		globalBefore = facts.global.snapshot
-		globalInputs = globalBefore.opencodeControls.inputs
-		globalAfter, err = opencodeGlobalSnapshot(ctx, after)
+		globalAfter, err := opencodeGlobalSnapshot(ctx, after)
 		if err != nil {
 			return rejectedChange(intent, "failed", "prospective global OpenCode inventory could not be inspected")
 		}
@@ -316,18 +314,25 @@ func opencodePathWithin(root, path string) (bool, error) {
 	}
 }
 
-func opencodeDestinationScope(s *Snapshot, p opencodeControlPlan) error {
-	output, err := opencodeOutputPath(p.ConfigPath)
-	if err != nil {
-		return err
-	}
-	in := s.opencodeControls
+func opencodeDestinationContent(s *Snapshot, output string) error {
 	for _, source := range s.sources {
 		same, sameErr := opencodeSamePath(output, source.Manifest.ResolvedPath)
 		within, withinErr := opencodePathWithin(source.Directory, output)
 		if sameErr != nil || withinErr != nil || same || within {
 			return errors.New("configuration output overlaps discovered skill content; shared content is not a native settings destination")
 		}
+	}
+	return nil
+}
+
+func opencodeDestinationScope(s *Snapshot, p opencodeControlPlan) error {
+	output, err := opencodeOutputPath(p.ConfigPath)
+	if err != nil {
+		return err
+	}
+	in := s.opencodeControls
+	if err := opencodeDestinationContent(s, output); err != nil {
+		return err
 	}
 	for _, dir := range []string{in.cache, "/Library/Application Support/opencode", os.Getenv("OPENCODE_TEST_MANAGED_CONFIG_DIR")} {
 		if dir == "" {

@@ -160,9 +160,16 @@ func (p *changePlan) inspectResult(out ChangeOutcome, parent changeIdentity) Cha
 		}
 		out.Effective = &effective
 		resultReason := effective.Reason
-		globalAchievement, globalReason := "", ""
-		if p.intent.Application == "opencode" && p.intent.Scope == ControlGlobal {
-			globalAchievement, globalReason = p.opencodeGlobalResult(context.Background(), fresh)
+		nativeAchievement, nativeReason := "", ""
+		if p.intent.Application == "opencode" {
+			if p.intent.Scope == ControlGlobal {
+				nativeAchievement, nativeReason = p.opencodeGlobalResult(context.Background(), fresh)
+			} else {
+				facts := newOpencodeControlFacts(context.Background(), fresh)
+				if _, err := facts.destination(opencodeControlPlan{ConfigPath: p.destination.Path, Scope: p.intent.Scope}); err != nil {
+					nativeAchievement, nativeReason = "unknown", "native destination safety: "+err.Error()
+				}
+			}
 		}
 		if reason, known := fresh.hermesControls.nativeReasons[source.ID]; p.intent.Application == "hermes" && (!known || reason != "") {
 			out.Achievement = "unknown"
@@ -170,9 +177,9 @@ func (p *changePlan) inspectResult(out ChangeOutcome, parent changeIdentity) Cha
 				reason = "native control certainty was not established"
 			}
 			resultReason = "native Hermes control certainty: " + reason
-		} else if globalAchievement != "" {
-			out.Achievement = globalAchievement
-			resultReason = globalReason
+		} else if nativeAchievement != "" {
+			out.Achievement = nativeAchievement
+			resultReason = nativeReason
 		} else if p.intent.Choice == ControlInherit && out.Persistence == "verified" {
 			out.Achievement = "achieved"
 		} else if p.intent.Choice == ControlDisable && effective.State == AvailabilityDisabled {
