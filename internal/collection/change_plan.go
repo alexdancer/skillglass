@@ -124,7 +124,7 @@ func (p *changePlan) inspectResult(out ChangeOutcome, parent changeIdentity) Cha
 	if err == nil && current.Exists == expectedExists && current.Symlink == "" && bytes.Equal(current.Bytes, p.postimage) && metadataMatches && (parentMatches || (p.intent.Choice == ControlInherit && !p.destination.Config.Exists && p.destination.CreateDirectory != "")) {
 		out.Persistence = "verified"
 		out.PersistedChoice = p.intent.Choice
-		if p.intent.Application != "claude-code" {
+		if p.intent.Application != "claude-code" && p.intent.Application != "hermes" {
 			// Claude visibility choices are distinct from model Skill permission.
 			if p.intent.Choice == ControlEnable {
 				out.PersistedPermission = PermissionAllowed

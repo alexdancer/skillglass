@@ -290,6 +290,7 @@ func buildHermes(ctx context.Context, request Request) (*Snapshot, error) {
 	}
 	// The shared problem attachment routine is independent of Codex policy.
 	applyNativeProblems(snapshot, inputs.problems, roots)
+	applyHermesCapabilities(snapshot, inputs)
 	return snapshot, nil
 }
 

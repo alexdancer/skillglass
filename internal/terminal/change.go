@@ -27,8 +27,8 @@ func runChange(operation string, args []string, stdout, stderr io.Writer) int {
 		writeError(stderr, err)
 		return 2
 	}
-	if flags.NArg() != 1 || (options.agent != "codex" && options.agent != "claude-code") || *scope == "" {
-		writeError(stderr, errors.New("enable/disable/inherit requires explicit --agent codex or claude-code, --scope global or project and exactly one SOURCE_ID after the flags"))
+	if flags.NArg() != 1 || (options.agent != "codex" && options.agent != "claude-code" && options.agent != "hermes") || *scope == "" {
+		writeError(stderr, errors.New("enable/disable/inherit requires explicit --agent codex, claude-code or hermes, --scope global or project and exactly one SOURCE_ID after the flags"))
 		return 2
 	}
 	snapshot, code := buildSnapshot(options, stderr)
@@ -134,6 +134,9 @@ func safeChangeLines(lines []string) []string {
 }
 
 func controlApplication(app string) string {
+	if app == "hermes" {
+		return "Hermes"
+	}
 	if app == "claude-code" {
 		return "Claude Code"
 	}
