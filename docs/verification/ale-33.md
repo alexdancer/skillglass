@@ -39,7 +39,7 @@ Native source checks and executable fixtures are distinct evidence. Viewer avail
 
 The scope and relevant source explanations disclose uncertainty for ignore-file rules, complex minimatch braces and extglobs, escaped or repeated-separator glob syntax, package manifest glob expansion and filter overrides, and `autoload=false` package deltas. These cases produce native-input diagnostics rather than fabricated availability. Unsupported remote URL forms also report incomplete coverage. Managed npm legacy fallback outside the configured agent directory is not searched, and pinned remote version satisfaction is unknown. No network query or installed-package-manager subprocess is launched by the viewer.
 
-Native `--skill`, `--no-skills`, `--approve`, `--no-approve`, SDK overrides and extension-provided resources are session-specific inputs the viewer cannot observe. Native reload and model execution are not verified. All enable, disable, project-override and delete writers remain unsupported.
+Native `--skill`, `--no-skills`, `--approve`, `--no-approve`, SDK overrides and extension-provided resources are session-specific inputs the viewer cannot observe. Native reload and model execution are not verified. At the ALE-33 baseline all enable, disable, project-override and delete writers remained unsupported. Validated ordinary Pi controls added by ALE-34 are described in [ale-34.md](ale-34.md); deletion and managed package controls remain unsupported.
 
 A standalone Markdown file is its own source. It has no proven bundle ownership or deletion scope. It can be listed, read and explained. Existing bundle comparison reports incomplete coverage when given standalone files. It never scans or compares an entire parent directory on behalf of one file.
 

@@ -131,6 +131,13 @@ func availabilitySummaryLines(value collection.AvailabilityExplanation) []string
 		lines = append(lines, "Configured permission: "+string(fact.Permission.State)+" ("+string(fact.Permission.Evidence.Kind)+")")
 		break
 	}
-	lines = append(lines, "Session: unknown | Reload: unknown")
+	session, reload := "unknown", "unknown"
+	if value.Session != nil {
+		session = value.Session.State
+	}
+	if value.Reload != nil {
+		reload = value.Reload.State
+	}
+	lines = append(lines, "Session: "+session+" | Reload: "+reload)
 	return lines
 }

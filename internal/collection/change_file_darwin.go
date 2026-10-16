@@ -217,6 +217,9 @@ func (p *changePlan) apply(ctx context.Context) (out ChangeOutcome) {
 	if p.intent.Application == "hermes" {
 		out.Reload = SessionExplanation{State: "unknown", Evidence: hermesEvidence(EvidenceUnknown, "session-reload", "", "", "fresh profile configuration was inspected; running-session context overrides, caches and reload/restart requirements are unobserved")}
 	}
+	if p.intent.Application == "pi" {
+		out.Reload = SessionExplanation{State: "required", Evidence: piEvidence(EvidenceInferred, "settings-reload", "", "", "Pi 1.1.0 cached settings require reload; fresh sessions load persisted choices; interactive /reload adoption is unverified")}
+	}
 	dest := p.destination
 	parentFD, err := unix.Open(dest.Parent.Resolved, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {

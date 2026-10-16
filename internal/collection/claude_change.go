@@ -119,7 +119,7 @@ func previewClaudeSnapshot(fresh *Snapshot, intent ChangeIntent, pin bool) *Chan
 		if e != nil {
 			return rejectedChange(intent, "refused", "settings cannot be pinned")
 		}
-		if _, e = parseClaudeJSON(raw); e != nil {
+		if _, e = parseSettingsJSON(raw); e != nil {
 			return rejectedChange(intent, "refused", e.Error())
 		}
 		higher := layer.Scope == "managed" || layer.Scope == "project-local" || (intent.Scope == ControlGlobal && layer.Scope == "project")

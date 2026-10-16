@@ -111,7 +111,7 @@ func (p *jsonSpans) object() (*jsonObject, error) {
 	o.end = p.pos
 	return o, nil
 }
-func parseClaudeJSON(raw []byte) (*jsonObject, error) {
+func parseSettingsJSON(raw []byte) (*jsonObject, error) {
 	if !json.Valid(raw) {
 		return nil, errors.New("settings must be valid JSON")
 	}
@@ -130,7 +130,7 @@ func patchClaudeChoice(raw []byte, name string, choice ControlChoice) ([]byte, S
 		}
 		raw = []byte("{}\n")
 	}
-	root, err := parseClaudeJSON(raw)
+	root, err := parseSettingsJSON(raw)
 	if err != nil {
 		return nil, change, false, err
 	}

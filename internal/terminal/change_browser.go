@@ -125,7 +125,7 @@ func (model browserModel) changePage() pagedView {
 	if model.snapshot.Scope().Agent.Application == "hermes" {
 		body[1] = "g Global active-profile configuration"
 	}
-	if model.snapshot.Scope().Agent.Application == "claude-code" {
+	if model.snapshot.Scope().Agent.Application == "claude-code" || model.snapshot.Scope().Agent.Application == "pi" {
 		body[2] = "p Project configuration"
 		body[3] = "i Remove project override / inherit"
 	}
