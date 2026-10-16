@@ -16,6 +16,7 @@ import (
 type piControlPlan struct {
 	SettingsPath           string
 	Targets, GlobalTargets []string
+	ProjectResources       []string
 	Choice                 ControlChoice
 	Scope                  ControlScope
 }
@@ -54,6 +55,7 @@ func planPiControl(s *Snapshot, intent ChangeIntent) (piControlPlan, error) {
 		return p, errors.New("manifest identity is unsafe or hardlinked")
 	}
 	global, local := map[string]bool{}, map[string]bool{}
+	projectResources := map[string]bool{}
 	for _, rid := range source.References {
 		ref := s.references[rid]
 		fact, native := inputs.facts[ref.Root]
@@ -74,6 +76,9 @@ func planPiControl(s *Snapshot, intent ChangeIntent) (piControlPlan, error) {
 			global[file] = true
 		}
 		if ref.Context == ContextProject {
+			for _, resource := range fact.resources {
+				projectResources[resource] = true
+			}
 			local[file] = true
 		}
 	}
@@ -92,6 +97,10 @@ func planPiControl(s *Snapshot, intent ChangeIntent) (piControlPlan, error) {
 	for path := range targets {
 		p.Targets = append(p.Targets, path)
 	}
+	for resource := range projectResources {
+		p.ProjectResources = append(p.ProjectResources, resource)
+	}
+	sort.Strings(p.ProjectResources)
 	sort.Strings(p.Targets)
 	sort.Strings(p.GlobalTargets)
 	if len(p.Targets) == 0 {

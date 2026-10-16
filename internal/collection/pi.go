@@ -13,6 +13,9 @@ func (inputs *piInputs) addRoot(request *Request, path string, context Reference
 	id := RootID("root_pi_" + stableID(origin, path, fact.path, fact.provenance.PluginID))
 	for _, r := range request.Roots {
 		if r.ID == id {
+			existing := inputs.facts[id]
+			existing.resources = append(existing.resources, fact.resources...)
+			inputs.facts[id] = existing
 			return
 		}
 	}
@@ -50,7 +53,7 @@ func buildPi(ctx context.Context, request Request) (*Snapshot, error) {
 			if piPattern(entry) {
 				continue
 			}
-			inputs.addRoot(&request, piPath(entry, base, request.home), context, "pi-configured-"+string(context), "pi", piRootFact{rank: rank, base: base, path: settings.path, patterns: settings.skills, trust: trust, uncertain: settings.uncertain, provenance: Provenance{Kind: string(context), Evidence: piEvidence(EvidenceObserved, "configured-resource", settings.path, "skills", "resource root selected by Pi settings")}}, false)
+			inputs.addRoot(&request, piPath(entry, base, request.home), context, "pi-configured-"+string(context), "pi", piRootFact{rank: rank, base: base, path: settings.path, patterns: settings.skills, resources: []string{entry}, trust: trust, uncertain: settings.uncertain, provenance: Provenance{Kind: string(context), Evidence: piEvidence(EvidenceObserved, "configured-resource", settings.path, "skills", "resource root selected by Pi settings")}}, false)
 		}
 	}
 	if request.Project.Selected {

@@ -35,6 +35,7 @@ type piRootFact struct {
 	rank            int
 	base, path      string
 	patterns        []string
+	resources       []string // Original literal registrations contributing this native root.
 	packagePatterns []string
 	packageFilter   bool
 	delta           bool

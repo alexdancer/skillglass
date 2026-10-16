@@ -60,11 +60,21 @@ func patchPiChoice(raw []byte, p piControlPlan) ([]byte, []SettingChange, bool, 
 	for _, target := range p.GlobalTargets {
 		global[target] = true
 	}
-	// The reversible native override is an absolute inherited instruction file
-	// plus an exact choice. An existing lone registration is user discovery state.
-	for _, value := range values {
-		if p.Scope == ControlProject && global[value] && !exact[value] && p.Choice != ControlInherit {
-			return nil, nil, false, errors.New("pre-existing project file registration has ambiguous override ownership; preserving configured resources")
+	// Observed native membership retains every original spelling, including
+	// equivalent file paths and directory roots. Only the exact native pair is
+	// removable; another selected-source registration must remain user discovery.
+	if p.Scope == ControlProject && len(p.GlobalTargets) > 0 {
+		hasDirectives := len(exact) > 0
+		for _, resource := range p.ProjectResources {
+			if global[resource] && exact[resource] {
+				continue
+			}
+			if p.Choice != ControlInherit {
+				return nil, nil, false, errors.New("pre-existing selected-source configured resource makes a reversible override ambiguous; preserving all user resources")
+			}
+			if hasDirectives {
+				return nil, nil, false, errors.New("retained selected-source configured resource prevents restoring inheritance; preserving the native pair and all user resources")
+			}
 		}
 	}
 	if p.Scope == ControlProject {
