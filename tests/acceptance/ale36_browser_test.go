@@ -98,3 +98,46 @@ func TestALE36BrowserCancelConfirmStaleAndExit(t *testing.T) {
 		})
 	}
 }
+
+func TestALE36BrowserRuntimeAskPreview(t *testing.T) {
+	tmux, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fx, _ := codexFixture(t)
+	codexSkill(t, filepath.Join(fx.home, ".agents/skills"), "target", "runtime-ask-target")
+	before := treeManifest(t, fx.base)
+	socket := "ale36-runtime-ask-" + filepath.Base(fx.base)
+	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
+	argv := fx.launchArgs(t, skillglassBinary, true, "", "browse", "--agent", "opencode", "--project", fx.project)
+	command := exec.Command(argv[0], argv[1:]...)
+	command.Dir = fx.project
+	command.Env = append(fx.environment(), `OPENCODE_PERMISSION={"skill":"ask"}`)
+	runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", "48", "-y", "24", "-s", "browser")
+	runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
+	runTmux(t, tmux, fx, socket, "set-option", "-g", "remain-on-exit", "on")
+	waitForPane(t, tmux, fx, socket, false, "Skillglass", "runtime-ask-target")
+	send := func(key string, needles ...string) string {
+		return actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", key) }, needles...)
+	}
+	send("Enter", "Rendered instructions")
+	send("e", "Select the setting scope explicitly")
+	send("g", "ready", "y Apply global enable")
+	preview := send("G", "No write needed;", "without rewriting.", "Confirm with --confirm")
+	assertPaneCells(t, preview, 48, 24)
+	writeEvidence(t, "tmux/ale36/runtime-ask/preview-bottom.txt", []byte(preview))
+	if paneContains(preview, "Already saved;") {
+		t.Fatal("runtime-only ask was described as saved")
+	}
+	send("Escape", "Cancelled. No settings changed.")
+	assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+	send("e", "Select the setting scope explicitly")
+	send("g", "ready")
+	applied := send("y", "applied", "Write: none", "Effective result: achieved")
+	writeEvidence(t, "tmux/ale36/runtime-ask/applied.txt", []byte(applied))
+	assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+	runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "q")
+	if _, err := waitForTmuxExit(t, tmux, fx, socket, "browser:0.0", 0, 5*time.Second); err != nil {
+		t.Fatal(err)
+	}
+}

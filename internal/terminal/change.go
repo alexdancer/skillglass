@@ -95,7 +95,7 @@ func changePreviewLines(view collection.ChangeView) []string {
 	}
 	lines = append(lines, view.Notes...)
 	if view.NoWriteNeeded {
-		lines = append(lines, "Already saved; confirmation will verify without rewriting.")
+		lines = append(lines, "No write needed; confirmation will verify without rewriting.")
 	}
 	lines = append(lines, "Preview only. No settings changed.", "Confirm with --confirm "+view.Confirmation)
 	return safeChangeLines(lines)
