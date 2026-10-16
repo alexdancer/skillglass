@@ -38,6 +38,13 @@ func planPiControl(s *Snapshot, intent ChangeIntent) (piControlPlan, error) {
 	if intent.Scope == ControlProject && (!s.request.Project.Selected || inputs.trust != "allowed") {
 		return p, errors.New("project controls require an explicit trusted launch project; no global fallback")
 	}
+	if intent.Scope == ControlProject && intent.Choice != ControlInherit {
+		future := *inputs
+		future.overlay = map[string][]byte{inputs.project.path: []byte("{}")}
+		if future.projectTrust(s.request.Project, filepath.Dir(inputs.global.path)) != "allowed" {
+			return p, errors.New("creating project settings requires persisted project trust; no trust change or global fallback")
+		}
+	}
 	source, found := s.sources[intent.Source]
 	if !found || !changeWriterEligible(source) || source.Ownership.State == "managed" {
 		return p, errors.New("a proven ordinary native Pi source is required; package and inspection-only controls are unsupported")
@@ -130,6 +137,9 @@ func previewPiSnapshot(ctx context.Context, s *Snapshot, intent ChangeIntent, pi
 	if err != nil {
 		return rejectedChange(intent, "refused", err.Error())
 	}
+	if !pin {
+		return &ChangePreview{view: ChangeView{State: "ready", Intent: intent}}
+	}
 	prospective := cloneRequest(s.request)
 	prospective.piPlanning = true
 	prospective.piSettingsOverlay = map[string][]byte{recipe.SettingsPath: post}
@@ -152,9 +162,6 @@ func previewPiSnapshot(ctx context.Context, s *Snapshot, intent ChangeIntent, pi
 		if !exists || !piSamePermissions(before.Availability, next.Availability) || piIndependentState(before.Availability.State) != piIndependentState(next.Availability.State) {
 			return rejectedChange(intent, "refused", "resource rewrite would change an independent source's native permission or membership")
 		}
-	}
-	if !pin {
-		return &ChangePreview{view: ChangeView{State: "ready", Intent: intent}}
 	}
 	facts, deps, err := changeObservations(s, destination)
 	if err != nil {
@@ -198,7 +205,7 @@ func applyPiCapabilities(s *Snapshot) {
 			preview := previewPiSnapshot(context.Background(), s, ChangeIntent{Source: id, Application: "pi", Scope: entry.scope, Choice: entry.choice}, false)
 			state, kind, reason := "unsupported", EvidenceUnknown, preview.view.Reason
 			if preview.view.State == "ready" {
-				state, kind, reason = "supported", EvidenceInferred, "validated exact controls; preview, effect checks and confirmation required"
+				state, kind, reason = "supported", EvidenceInferred, "native writer eligibility checked; explicit preview must validate effective result and independent-source effects"
 			}
 			source.Availability.Capabilities = append(source.Availability.Capabilities, Capability{Operation: entry.op, Scope: string(entry.scope), State: state, Evidence: piEvidence(kind, "native-settings-control", source.Manifest.Path, "skills", reason)})
 		}

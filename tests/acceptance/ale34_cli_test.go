@@ -391,7 +391,7 @@ func TestALE34NewProjectSettingsCannotBypassTrust(t *testing.T) {
 	id := piSourceAt(t, fx, target).ID
 	before := treeManifest(t, fx.base)
 	out := piChange(t, fx, "project", "disable", id, "", 1)
-	if out.State != "refused" {
+	if out.State != "unsupported" {
 		t.Fatal(out)
 	}
 	assertTreeUnchanged(t, before, treeManifest(t, fx.base))
@@ -429,4 +429,56 @@ func TestALE34RelativeExactSelectorsPreserveResourceEntries(t *testing.T) {
 		t.Fatal("relative exact denial survived")
 	}
 	piApply(t, fx, "global", "disable", id)
+}
+
+func TestALE34UnrelatedStandaloneAliasDoesNotBlockControl(t *testing.T) {
+	fx := piFixture(t)
+	target := codexSkill(t, filepath.Join(fx.home, ".pi/agent/skills"), "target", "target")
+	external := filepath.Join(fx.base, "allowed/external.md")
+	writeFile(t, external, []byte("---\nname: external\ndescription: Inert.\n---\nNo execution.\n"), 0600)
+	alias := filepath.Join(fx.home, ".pi/agent/skills/alias.md")
+	if err := os.Symlink(external, alias); err != nil {
+		t.Fatal(err)
+	}
+	id := piSourceAt(t, fx, target).ID
+	piApply(t, fx, "global", "disable", id)
+}
+
+func TestALE34CapabilityEligibilityAndPreviewEffectsAreDistinct(t *testing.T) {
+	fx := piFixture(t)
+	target := codexSkill(t, filepath.Join(fx.home, ".pi/agent/skills"), "target", "collision")
+	codexSkill(t, filepath.Join(fx.project, ".pi/skills"), "other", "collision")
+	id := piSourceAt(t, fx, target).ID
+	detail := fx.run(t, "explain", "--agent", "pi", "--project", fx.project, id)
+	assertExit(t, detail, 0)
+	if !strings.Contains(string(detail.stdout), "Capability: enable | global | supported | native writer eligibility checked; explicit preview must validate") {
+		t.Fatal(string(detail.stdout))
+	}
+	before := treeManifest(t, fx.base)
+	out := piChange(t, fx, "global", "enable", id, "", 1)
+	if out.State != "refused" || !strings.Contains(out.Reason, "same-name winner") {
+		t.Fatal(out)
+	}
+	assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+	writeFile(t, filepath.Join(fx.home, ".pi/agent/settings.json"), []byte(`{"defaultProjectTrust":"never"}`), 0600)
+	detail = fx.run(t, "explain", "--agent", "pi", "--project", fx.project, id)
+	assertExit(t, detail, 0)
+	if !strings.Contains(string(detail.stdout), "Capability: project-override | project | unsupported") || !strings.Contains(string(detail.stdout), "trusted launch project") {
+		t.Fatal(string(detail.stdout))
+	}
+}
+
+func TestALE34ProjectControlRequiresExplicitProject(t *testing.T) {
+	fx := piFixture(t)
+	target := codexSkill(t, filepath.Join(fx.home, ".pi/agent/skills"), "target", "target")
+	id := piSourceAt(t, fx, target).ID
+	before := treeManifest(t, fx.base)
+	result := changeCommand(t, fx, "", "disable", "--agent", "pi", "--scope", "project", "--json", id)
+	assertExit(t, result, 1)
+	var out changeReceipt
+	decodeJSON(t, result.stdout, &out)
+	if out.State != "unsupported" || !strings.Contains(out.Reason, "explicit trusted launch project") {
+		t.Fatal(out)
+	}
+	assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 }

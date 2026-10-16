@@ -58,7 +58,7 @@ func changeObservations(s *Snapshot, destination changeDestination) ([]byte, []c
 		add(source.Directory)
 		add(source.Manifest.Path)
 		add(source.Manifest.ResolvedPath)
-		if source.Directory != source.Manifest.Path {
+		if source.Directory != source.Manifest.ResolvedPath {
 			add(filepath.Join(source.Directory, "agents", "openai.yaml"))
 		}
 		availability := source.Availability
