@@ -249,3 +249,44 @@ func TestALE32EmptyMappingCommentsAndExactDisabledEntry(t *testing.T) {
 	assertSavedChange(t, hermesChange(t, fx, "enable", "global", id, p.Confirmation, 0))
 	assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 }
+
+func TestALE32GlobalAndSelectedPlatformPolicyShapesRefuseWithoutFallback(t *testing.T) {
+	for _, field := range []string{"global", "selected-platform"} {
+		for _, value := range []string{"prefix-ale32-target-suffix", "{ale32-target: false}", "true", "42", "[ale32-target, false]"} {
+			t.Run(field+value, func(t *testing.T) {
+				fx, profile, id, _ := hermesTarget(t)
+				config := filepath.Join(profile, "config.yaml")
+				text := "skills:\n  external_dirs: [shared]\n  disabled: [ale32-target]\n  platform_disabled:\n    telegram: []\n"
+				if field == "global" {
+					text = strings.Replace(text, "disabled: [ale32-target]", "disabled: "+value, 1)
+				} else {
+					text = strings.Replace(text, "telegram: []", "telegram: "+value, 1)
+				}
+				writeFile(t, config, []byte(text), 0600)
+				writeFile(t, filepath.Join(profile, ".env"), []byte("HERMES_PLATFORM=telegram\n"), 0600)
+				before := treeManifest(t, fx.base)
+				for _, choice := range []string{"enable", "disable"} {
+					out := hermesChange(t, fx, choice, "global", id, "", 1)
+					if out.State != "unsupported" || out.Confirmation != "" || out.Achievement == "achieved" {
+						t.Fatalf("unvalidated policy admitted %+v", out)
+					}
+				}
+				assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+			})
+		}
+	}
+}
+
+func TestALE32UnselectedPlatformPolicyIsPreserved(t *testing.T) {
+	fx, profile, id, _ := hermesTarget(t)
+	config := filepath.Join(profile, "config.yaml")
+	raw := []byte("skills:\n  external_dirs: [shared]\n  disabled: [ale32-target]\n  platform_disabled:\n    telegram: null\n    discord: prefix-ale32-target-suffix\n")
+	writeFile(t, config, raw, 0600)
+	writeFile(t, filepath.Join(profile, ".env"), []byte("HERMES_PLATFORM=telegram\n"), 0600)
+	p := hermesChange(t, fx, "enable", "global", id, "", 0)
+	assertSavedChange(t, hermesChange(t, fx, "enable", "global", id, p.Confirmation, 0))
+	expected := bytes.Replace(raw, []byte("disabled: [ale32-target]"), []byte("disabled: []"), 1)
+	if !bytes.Equal(readBytes(t, config), expected) {
+		t.Fatal("unselected policy changed or blocked exact selected result")
+	}
+}

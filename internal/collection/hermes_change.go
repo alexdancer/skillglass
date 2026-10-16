@@ -34,6 +34,35 @@ func hermesControlName(s *Snapshot, source Source, inputs hermesInputs) (string,
 	if !s.Complete() || inputs.uncertain || !inputs.platformKnown || inputs.policyEnvUnknown["HERMES_MANAGED_DIR"] {
 		return "", "native discovery, profile or platform policy is incomplete; name-based effects cannot be bounded"
 	}
+	skills := hermesMap(inputs.configData, "skills")
+	policies := []struct {
+		setting string
+		value   any
+	}{{"skills.disabled", skills["disabled"]}}
+	if inputs.platform != "" {
+		platforms := hermesMap(skills, "platform_disabled")
+		policies = append(policies, struct {
+			setting string
+			value   any
+		}{"skills.platform_disabled." + inputs.platform, platforms[inputs.platform]})
+	}
+	for _, policy := range policies {
+		if !inputs.configYAML.known(policy.setting) {
+			return "", "native disabled policy interpretation is unverified; no settings changed"
+		}
+		if policy.value == nil {
+			continue
+		}
+		entries, ok := policy.value.([]any)
+		if !ok {
+			return "", "global and selected messaging-platform disabled policies require literal lists or null; scalar/mapping membership differs across native consumers; no settings changed"
+		}
+		for _, entry := range entries {
+			if _, ok := entry.(string); !ok {
+				return "", "native disabled policy requires literal string list entries; no settings changed"
+			}
+		}
+	}
 	if !changeWriterEligible(source) || source.Ownership.State == "managed" {
 		return "", "an ordinary proven native Hermes source is required; managed and plugin controls are unsupported"
 	}
