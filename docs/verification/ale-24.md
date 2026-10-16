@@ -62,7 +62,7 @@ env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go vet ./...
 env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go test -count=1 -mod=readonly -timeout=20m -exec "$SKILLGLASS_TEST_EXEC" ./...
 python3 -m unittest discover -s tests/agent_loop -v
 python3 -m unittest discover -s tests/native -v
-python3 -m py_compile tools/verify_hermes.py tools/verify_hermes_policy.py tests/native/test_verify_hermes_retired.py
+python3 -m py_compile tools/verify_hermes.py tools/verify_hermes_policy.py tools/verify_hermes_controls.py tools/hermes_control_probe.py tests/native/test_verify_hermes_retired.py
 python3 -m unittest discover -s tests/native_verification -v
 python3 -m py_compile tools/claude_containment.py tools/verify_claude.py tools/verify_claude_controls.py tools/verify_claude_plugin_manifest.py \
   tests/native_verification/test_verify_claude.py tests/native_verification/test_claude_controls_containment.py tests/native/test_opencode_containment.py \

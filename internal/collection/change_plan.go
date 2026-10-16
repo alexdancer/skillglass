@@ -125,7 +125,7 @@ func (p *changePlan) inspectResult(out ChangeOutcome, parent changeIdentity) Cha
 		out.Persistence = "verified"
 		out.PersistedChoice = p.intent.Choice
 		if p.intent.Application != "claude-code" && p.intent.Application != "hermes" {
-			// Claude visibility choices are distinct from model Skill permission.
+			// Claude visibility and Hermes raw disabled membership do not establish native invocation permission.
 			if p.intent.Choice == ControlEnable {
 				out.PersistedPermission = PermissionAllowed
 			} else {
