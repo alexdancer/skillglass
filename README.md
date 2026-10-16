@@ -100,7 +100,15 @@ bin/skillglass inherit --agent pi --scope project --project /path/to/repository 
 
 Inspect the preview and repeat that exact request with `--confirm pi1:PREVIEW_TOKEN` to apply. In the Pi browser, `D`/`e` opens scope selection, `g`/`p` selects global/project, `i` selects project inheritance, `y` confirms and Enter or Escape cancels. See [Pi control evidence and limits](docs/verification/ale-34.md) for the override representation, preservation and refusal rules, capability versus effective-result checks, and required settings reload.
 
-OpenCode 1.17.15 supports unique ordinary native skill names through exact `permission.skill.NAME` rules. Use `--agent opencode --scope global`, or `--scope project --project /path/to/repository`; `inherit` removes only the exact selected project rule. Repeat the preview command with `--confirm opencode1:PREVIEW_TOKEN` to apply. Browser `D`/`e`, then `g`/`p`/`i`, preview, and `y` uses the same checks. Enable preserves effective ask permission; it does not infer an earlier ask from a current deny. JSONC comments and unrelated settings/rule order remain intact. Ambiguous names, managed sources, unsafe config aliases, unknown inputs and changes blocked by higher-priority rules are refused without broader fallback. [OpenCode control evidence](docs/verification/ale-36.md) separates saved configuration from unverified running-session adoption, approval prompting and full skill loading.
+OpenCode supports global enable/disable and selected-project overrides:
+
+```sh
+bin/skillglass disable --agent opencode --scope global --json SOURCE_ID
+bin/skillglass enable --agent opencode --scope project --project /path/to/repository SOURCE_ID
+bin/skillglass inherit --agent opencode --scope project --project /path/to/repository SOURCE_ID
+```
+
+Repeat the exact preview request with `--confirm opencode1:PREVIEW_TOKEN` to apply. In the OpenCode browser, `D`/`e` opens scope selection, `g`/`p` selects global/project, `i` selects project inheritance, `y` confirms and Enter or Escape cancels. See [OpenCode control evidence and limits](docs/verification/ale-36.md) for the validated version, native-name eligibility, exact override removal, ask preservation, JSONC safety, refusal rules and unverified session behavior.
 
 `bin/skillglass inherit --agent codex --scope project --project /path/to/repository SOURCE_ID` requests removal of the selected source's project override and restoration of applicable inheritance. Project enable, disable and inheritance requests return `unsupported` without a confirmation token or filesystem changes on Codex 0.155.1. They never fall back to a global change. Global `inherit` is also unsupported because there is no project override to remove at that scope. See [project control evidence and limits](docs/verification/ale-28.md) for the native limitation and the distinction between local configuration inference and session enforcement.
 
