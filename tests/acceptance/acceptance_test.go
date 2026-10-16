@@ -110,7 +110,12 @@ func TestMain(testMain *testing.M) {
 		os.Exit(1)
 	}
 	skillglassExecutable = skillglassBinary
-	rawSkillglassBinary = skillglassBinary
+	rawSkillglassBinary, err = filepath.EvalSymlinks(skillglassBinary)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.RemoveAll(builtBinaryDir)
+		os.Exit(1)
+	}
 	code := testMain.Run()
 	os.RemoveAll(tmuxSocketDirectory)
 	if err := writeEvidenceCaseIndex(); err != nil {
