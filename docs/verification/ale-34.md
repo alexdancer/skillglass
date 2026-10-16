@@ -1,6 +1,6 @@
 # ALE-34 Pi controls
 
-Pi 1.1.0 on macOS supports ordinary source controls through exact lexical resource settings in `PI_CODING_AGENT_DIR/settings.json` (default HOME/.pi/agent) and selected launch cwd/.pi/settings.json. CLI enable/disable/inherit and the terminal browser share the established preview, target-specific confirmation, stale checks, safe write and persisted-result verification. Preview performs no write; cancellation discards it. The viewer never launches Pi.
+Pi 1.1.0 on macOS supports ordinary source controls through exact lexical resource settings in `PI_CODING_AGENT_DIR/settings.json` (default `HOME/.pi/agent/settings.json`) and selected launch cwd/.pi/settings.json. CLI enable/disable/inherit and the terminal browser share the established preview, target-specific confirmation, stale checks, safe write and persisted-result verification. Preview performs no write; cancellation discards it. The viewer never launches Pi.
 
 ## Native contract
 
@@ -12,13 +12,13 @@ python3 tests/native/pi-controls-contained.py /path/to/node_modules/@earendil-wo
 
 It first proves containment, then imports the recorded native settings/resource manager and loader in disposable HOME/project, with network, live settings, extensions, credentials, installs, prompts, models and skill workloads excluded. A fresh offline bundled CLI RPC observes its commands catalogue. Assertions cover exact targets, patterns, operator precedence, aliases, independent names, project override/removal and cached settings reload. Existing ALE-33 discovery evidence remains in [ale-33.md](ale-33.md). Native loader evidence and executable Go writer evidence are distinct.
 
-`-<absolute lexical instruction path>` disables an exact occurrence. `+<exact path>` restores an occurrence under `!pattern`; exact minus wins over plus regardless of array order. These settings match lexical resource paths, before canonical instruction-file deduplication. The planner retains native root/occurrence facts, selects all applicable aliases of the exact source, and never substitutes a canonical path for an alias.
+The writer emits absolute lexical instruction-file selectors using the [native resource matching rules](ale-33.md#observed-rules-and-adapter-behavior). The planner retains each occurrence's native base when matching existing relative file or directory choices, selects all applicable aliases of the exact source, and never substitutes a canonical path for an alias.
 
 Project arrays do not filter inherited global occurrences. An inherited project choice therefore registers its exact instruction file as a configured project resource, together with its exact plus/minus choice. That project occurrence consumes the canonical slot even when disabled. Global and other-project settings stay unchanged. Native package insertion can already own the lexical resource; package controls remain unsupported.
 
 ## Inheritance and preservation
 
-An absolute inherited instruction-file registration plus its exact plus/minus directive is the native project override representation. **Inherit explicitly removes that native pair**, irrespective of its author, and confirms the source remains reachable through inherited discovery. Preview displays the complete before/after skills array and the selected settings path. This does not assert tool ownership of settings.
+An absolute inherited instruction-file registration plus its exact plus/minus directive is the native project override representation. **Inherit explicitly removes that native pair**, irrespective of its author, and confirms the source remains reachable through inherited discovery. Preview displays the complete before/after skills array and the selected settings path. This does not assert tool ownership of settings. For project-only sources, inherit removes the exact local choice while retaining their discovery registration.
 
 A pre-existing literal registration that discovers the selected inherited source is user discovery state, including equivalent absolute, relative and tilde file paths or directory roots. Inherit preserves a lone registration byte-for-byte, and a new override request refuses to turn that discovery into a removable pair. If a native pair is mixed with another retained registration of the selected source, inherit refuses rather than report inheritance while the retained project resource still wins. Other configured roots and patterns remain. A registration that cannot be removed without losing source discovery is refused. No sidecar ownership state is created, and no shared content, managed cache, package registration or broad exclusion is edited to simulate inheritance.
 
@@ -37,6 +37,8 @@ The recorded cached SettingsManager needed `reload()` before resource resolution
 ## Executable and terminal verification
 
 `tests/acceptance/ale34_cli_test.go` exercises the built executable in isolated temporary homes/projects. It checks global controls, pattern preservation, exact minus precedence, configured resources, standalone Markdown files, project enable/disable and inherit, native override-pair removal, lone registration preservation, shared aliases, independent name conflicts, stale settings/source/trust/alias changes, write denial, malformed/legacy/duplicate-key settings, config links and no-fallback refusals. It inspects actual settings/content bytes, exit status and untouched filesystem state.
+
+`tests/acceptance/ale34_inheritance_test.go` covers equivalent user registrations, mixed-pair refusal, ordinary override roundtrips and project-only controls. `tests/acceptance/ale34_native_bases_test.go` covers relative manifest/directory choices for global, selected-project and ancestor `.agents` occurrences, configured references and aliases, and refusal when removing a choice would affect an independent source.
 
 `tests/acceptance/ale34_browser_test.go` exercises confirmation/cancellation, scope selection and stale confirmation at 48 and 80 columns. Actual terminal frames are saved under `tmux/ale34/` in the verification evidence. The shared [containment contract](ale-23.md#runtime-containment-boundary) owns the executable/PTY launch controls.
 
