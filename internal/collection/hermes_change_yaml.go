@@ -37,13 +37,18 @@ func patchHermesChoice(raw []byte, name string, choice ControlChoice) ([]byte, S
 	if !observation.nativeConstructible() || !observation.known("skills.disabled") {
 		return fail()
 	}
+	lines := bytes.SplitAfter(raw, []byte("\n"))
 	blockMap := func(node *yaml.Node) bool {
 		if node.Kind != yaml.MappingNode || node.Style != 0 || node.Anchor != "" || node.Tag != "!!map" {
 			return false
 		}
 		for i := 0; i < len(node.Content); i += 2 {
 			k := node.Content[i]
-			if k.Tag != "!!str" || k.Anchor != "" || k.Value == "<<" {
+			if k.Tag != "!!str" || k.Anchor != "" || k.Value == "<<" || k.Line < 1 || k.Line > len(lines) || k.Column < 1 {
+				return false
+			}
+			line, col := string(lines[k.Line-1]), k.Column-1
+			if col > len(line) || strings.TrimSpace(line[:col]) != "" || !strings.Contains(line[col:], ":") {
 				return false
 			}
 		}
@@ -127,7 +132,6 @@ func patchHermesChoice(raw []byte, name string, choice ControlChoice) ([]byte, S
 	if bytes.Contains(raw, []byte("\r\n")) {
 		newline = "\r\n"
 	}
-	lines := bytes.SplitAfter(raw, []byte("\n"))
 	offset := func(line int) int {
 		n := 0
 		for i := 0; i < line-1 && i < len(lines); i++ {
@@ -177,7 +181,9 @@ func patchHermesChoice(raw []byte, name string, choice ControlChoice) ([]byte, S
 			return fail()
 		}
 		line := string(lines[skillKey.Line-1])
-		if tail := strings.TrimSpace(strings.SplitN(line, ":", 2)[1]); tail != "" && !strings.HasPrefix(tail, "#") {
+		_, tail, found := strings.Cut(line, ":")
+		tail = strings.TrimSpace(tail)
+		if !found || (tail != "" && !strings.HasPrefix(tail, "#")) {
 			return fail()
 		}
 		indent := skills.Column - 1

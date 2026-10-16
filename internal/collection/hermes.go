@@ -21,6 +21,7 @@ type hermesInputs struct {
 	pluginPolicy           map[string]hermesPolicyLeaf
 	pluginManaged          map[string]any
 	managedConfigPath      string
+	managedConfigData      map[string]any
 	pluginFailure          *Evidence
 	managedYAML            hermesYAMLObservation
 	policyEnv              map[string]string
@@ -268,12 +269,14 @@ func buildHermes(ctx context.Context, request Request) (*Snapshot, error) {
 		}
 	}
 	indexMetadata := make(map[SourceID]hermesMetadataObservation)
+	fullMetadata := make(map[SourceID]hermesMetadataObservation)
 	for _, id := range snapshot.order {
 		indexMetadata[id] = observeHermesIndex(snapshot.sources[id].Manifest)
-		snapshot.sources[id] = explainHermesSource(snapshot, id, roots, &inputs, indexMetadata[id])
+		fullMetadata[id] = observeHermesMetadata(snapshot.sources[id].Manifest, 0)
+		snapshot.sources[id] = explainHermesSource(snapshot, id, roots, &inputs, indexMetadata[id], fullMetadata[id])
 	}
 	applyHermesPrecedence(snapshot, request.Roots, indexMetadata)
-	applyHermesExplicitLookup(snapshot, roots, &inputs)
+	applyHermesExplicitLookup(snapshot, roots, &inputs, fullMetadata)
 	// Missing/unreadable discovery can hide a same-name candidate or a higher-priority definition.
 	uncertain := inputs.uncertain || inputs.policyEnvUnknown["HERMES_SAFE_MODE"] || (request.Project.Selected && inputs.policyEnvUnknown["HERMES_ENABLE_PROJECT_PLUGINS"]) || !snapshot.Complete()
 	if uncertain {
@@ -290,6 +293,7 @@ func buildHermes(ctx context.Context, request Request) (*Snapshot, error) {
 	}
 	// The shared problem attachment routine is independent of Codex policy.
 	applyNativeProblems(snapshot, inputs.problems, roots)
+	snapshot.hermesControls = indexHermesControls(snapshot, indexMetadata, fullMetadata)
 	applyHermesCapabilities(snapshot, inputs)
 	return snapshot, nil
 }
@@ -337,9 +341,8 @@ func observeHermesMetadata(manifest Manifest, window int) hermesMetadataObservat
 	return hermesMetadataObservation{metadata: metadata, known: err == nil, framed: true, yaml: observeHermesYAML(raw)}
 }
 
-func explainHermesSource(snapshot *Snapshot, id SourceID, roots map[RootID]DiscoveryRoot, inputs *hermesInputs, index hermesMetadataObservation) Source {
+func explainHermesSource(snapshot *Snapshot, id SourceID, roots map[RootID]DiscoveryRoot, inputs *hermesInputs, index, full hermesMetadataObservation) Source {
 	source := snapshot.sources[id]
-	full := observeHermesMetadata(source.Manifest, 0)
 	name := source.Manifest.Name
 	if name == "" {
 		name = filepath.Base(source.Directory)
@@ -775,7 +778,7 @@ func hermesExplicitSupportPath(path, root string, manifests map[string]bool) (bo
 	return false, known
 }
 
-func applyHermesExplicitLookup(snapshot *Snapshot, roots map[RootID]DiscoveryRoot, inputs *hermesInputs) {
+func applyHermesExplicitLookup(snapshot *Snapshot, roots map[RootID]DiscoveryRoot, inputs *hermesInputs, fullMetadata map[SourceID]hermesMetadataObservation) {
 	matches := make(map[string]map[string]bool)
 	directPaths := make(map[string]string)
 	manifestDirs := make(map[string]bool)
@@ -815,7 +818,7 @@ func applyHermesExplicitLookup(snapshot *Snapshot, roots map[RootID]DiscoveryRoo
 			matches[name][path] = true
 		}
 		add(filepath.Base(ref.DiscoveredPath))
-		full := observeHermesMetadata(source.Manifest, 0)
+		full := fullMetadata[ref.Source]
 		if full.nameKnown() {
 			if name, ok := full.metadata["name"].(string); ok && name != "" {
 				add(name)

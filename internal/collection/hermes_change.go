@@ -30,8 +30,37 @@ func previewHermesChange(ctx context.Context, s *Snapshot, intent ChangeIntent) 
 	return previewHermesSnapshot(fresh, intent)
 }
 
+type hermesControlFacts struct {
+	full         map[SourceID]hermesMetadataObservation
+	selectors    map[string]map[SourceID]bool
+	unknownNames map[SourceID]bool
+}
+
+func indexHermesControls(s *Snapshot, index, full map[SourceID]hermesMetadataObservation) hermesControlFacts {
+	facts := hermesControlFacts{full: full, selectors: make(map[string]map[SourceID]bool), unknownNames: make(map[SourceID]bool)}
+	for id, source := range s.sources {
+		for _, ref := range source.Availability.References {
+			if ref.Participation == ParticipationInspection {
+				continue
+			}
+			if !index[id].nameKnown() || !full[id].nameKnown() {
+				facts.unknownNames[id] = true
+				continue
+			}
+			path := s.references[ref.Reference].DiscoveredPath
+			for _, name := range []string{hermesReferenceName(index[id].metadata, path), hermesReferenceName(full[id].metadata, path), filepath.Base(path)} {
+				if facts.selectors[name] == nil {
+					facts.selectors[name] = make(map[SourceID]bool)
+				}
+				facts.selectors[name][id] = true
+			}
+		}
+	}
+	return facts
+}
+
 func hermesControlName(s *Snapshot, source Source, inputs hermesInputs) (string, string) {
-	if !s.Complete() || inputs.uncertain || !inputs.platformKnown || inputs.policyEnvUnknown["HERMES_MANAGED_DIR"] {
+	if !s.Complete() || inputs.uncertain || !inputs.platformKnown || inputs.policyEnvUnknown["HERMES_MANAGED_DIR"] || inputs.pluginFailure != nil {
 		return "", "native discovery, profile or platform policy is incomplete; name-based effects cannot be bounded"
 	}
 	skills := hermesMap(inputs.configData, "skills")
@@ -47,6 +76,24 @@ func hermesControlName(s *Snapshot, source Source, inputs hermesInputs) (string,
 		}{"skills.platform_disabled." + inputs.platform, platforms[inputs.platform]})
 	}
 	for _, policy := range policies {
+		if inputs.managedConfigData != nil {
+			if !inputs.managedYAML.known(policy.setting) {
+				return "", "managed disabled policy interpretation is unverified; no settings changed"
+			}
+			managed := inputs.managedConfigData
+			keys := strings.Split(policy.setting, ".")
+			for i, key := range keys {
+				value, present := managed[key]
+				if !present {
+					break
+				}
+				next, mapping := value.(map[string]any)
+				if !mapping || i == len(keys)-1 {
+					return "", "managed policy overrides global or selected messaging-platform disabled settings for native explicit loading; isolated profile controls are unsupported"
+				}
+				managed = next
+			}
+		}
 		if !inputs.configYAML.known(policy.setting) {
 			return "", "native disabled policy interpretation is unverified; no settings changed"
 		}
@@ -58,8 +105,9 @@ func hermesControlName(s *Snapshot, source Source, inputs hermesInputs) (string,
 			return "", "global and selected messaging-platform disabled policies require literal lists or null; scalar/mapping membership differs across native consumers; no settings changed"
 		}
 		for _, entry := range entries {
-			if _, ok := entry.(string); !ok {
-				return "", "native disabled policy requires literal string list entries; no settings changed"
+			text, ok := entry.(string)
+			if !ok || hermesConfigReference.MatchString(text) {
+				return "", "native disabled policy requires literal string list entries without environment references; credentials and providers are not evaluated; no settings changed"
 			}
 		}
 	}
@@ -67,8 +115,8 @@ func hermesControlName(s *Snapshot, source Source, inputs hermesInputs) (string,
 		return "", "an ordinary proven native Hermes source is required; managed and plugin controls are unsupported"
 	}
 	name := source.Availability.NativeName
-	full := observeHermesMetadata(source.Manifest, 0)
-	if name == "" || source.Availability.NativeNameEvidence == nil || source.Availability.NativeNameEvidence.Kind == EvidenceUnknown || !full.nameKnown() || strings.TrimFunc(name, hermesDotenvSpace) != name || strings.ContainsAny(name, ":\r\n") {
+	full := s.hermesControls.full[source.ID]
+	if name == "" || source.Availability.NativeNameEvidence == nil || source.Availability.NativeNameEvidence.Kind == EvidenceUnknown || !full.nameKnown() || strings.TrimFunc(name, hermesDotenvSpace) != name || strings.ContainsAny(name, ":\r\n") || hermesConfigReference.MatchString(name) {
 		return "", "native name interpretation is unverified"
 	}
 	for _, ref := range source.Availability.References {
@@ -84,23 +132,13 @@ func hermesControlName(s *Snapshot, source Source, inputs hermesInputs) (string,
 	if raw, _ := full.metadata["name"].(string); len([]rune(raw)) > 64 {
 		return "", "native index truncates this name while other consumers use its full name; isolated controls are unsupported"
 	}
-	for _, other := range s.sources {
-		if other.ID == source.ID {
-			continue
-		}
-		index, fullOther := observeHermesIndex(other.Manifest), observeHermesMetadata(other.Manifest, 0)
-		for _, ref := range other.Availability.References {
-			actual := s.references[ref.Reference]
-			if ref.Participation == ParticipationInspection {
-				continue
-			}
-			if !index.nameKnown() || !fullOther.nameKnown() {
-				return "", "another native source has uncertain name scope"
-			}
-			if hermesReferenceName(index.metadata, actual.DiscoveredPath) == name || hermesReferenceName(fullOther.metadata, actual.DiscoveredPath) == name || filepath.Base(actual.DiscoveredPath) == name {
-				return "", "name-based setting would affect an additional independent source"
-			}
-		}
+	unknown := s.hermesControls.unknownNames
+	if len(unknown) > 1 || (len(unknown) == 1 && !unknown[source.ID]) {
+		return "", "another native source has uncertain name scope"
+	}
+	owners := s.hermesControls.selectors[name]
+	if len(owners) > 1 || (len(owners) == 1 && !owners[source.ID]) {
+		return "", "name-based setting would affect an additional independent source"
 	}
 	return name, ""
 }

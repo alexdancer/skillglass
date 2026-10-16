@@ -340,6 +340,7 @@ func (inputs *hermesInputs) readManagedPlugins(path string) {
 		inputs.pluginProblem(path, "managed plugins must be a mapping")
 	}
 	inputs.managedYAML = observation
+	inputs.managedConfigData = data
 	inputs.pluginManaged = hermesMap(data, "plugins")
 	inputs.managedConfigPath = path
 	inputs.policyLayer(path, "managed-plugin-config", "read", "managed values replace user values per leaf; raw skills.disabled remains profile-only")
