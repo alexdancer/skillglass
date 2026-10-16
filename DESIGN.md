@@ -57,7 +57,7 @@ Details contains, in order:
 - raw frontmatter and malformed raw manifest text when applicable;
 - the full supporting-resource inventory.
 
-`d` opens Details and `i` returns to Instructions. Uppercase `D` starts disable for the selected Codex or Claude Code scope, while `e` starts enable; scope selection and preview confirmation are separate required steps. The [README's control instructions](README.md#build-and-use) own scope-selection keys and unsupported project requests. These letters remain query text in search. Arrow keys, `j`/`k`, `PgUp`/`PgDn`, `Home`/`End`, and `g`/`G` scroll the active reader.
+`d` opens Details and `i` returns to Instructions. The [README's control instructions](README.md#build-and-use) own enable/disable keys, supported application scopes, preview confirmation and unsupported project requests. These letters remain query text in search. Arrow keys, `j`/`k`, `PgUp`/`PgDn`, `Home`/`End`, and `g`/`G` scroll the active reader.
 
 ## Problems, scope, and help
 
@@ -81,7 +81,7 @@ Help is a scrollable view. It documents movement, open and return, Sources and P
 | `d` / `i` | Show source Details or Instructions |
 | `v` | In reader, toggle rendered and raw instructions; in Sources, compare against the marked source |
 | `m` | In Sources, mark the focused source as comparison left |
-| `D` / `e` | In Codex or Claude Code reader, start disable or enable; choose scope and explicitly confirm preview |
+| Control keys | See the [README's control instructions](README.md#build-and-use) for supported readers, scope selection and confirmation |
 | `a` | Cycle native configured availability |
 | `c` | Cycle all supported discovery contexts |
 | `o` | Cycle selected roots |

@@ -142,6 +142,27 @@ func TestALE33FindingLaunchReceipts(t *testing.T) {
 }
 
 func TestALE33FindingTmuxReceipts(t *testing.T) {
+	product, err := launchrecord.Identify(skillglassBinary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if supplied := os.Getenv("SKILLGLASS_BIN"); supplied != "" {
+		original, err := launchrecord.Identify(supplied)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if product.SHA256 != original.SHA256 {
+			t.Fatal("tmux fixture must test the exact supplied product bytes")
+		}
+		raw, err := json.MarshalIndent(struct {
+			Supplied launchrecord.File `json:"supplied"`
+			Executed launchrecord.File `json:"executed"`
+		}{original, product}, "", "  ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeEvidence(t, "fixture-launch/supplied-product.json", raw)
+	}
 	fx := piFixture(t)
 	tmux, err := exec.LookPath("tmux")
 	if err != nil {
@@ -189,6 +210,9 @@ func TestALE33FindingTmuxReceipts(t *testing.T) {
 			decodeJSON(t, raw, &identity)
 			if len(identity.Executables) != 1 || len(identity.Artifacts) != 2 || identity.Argv[0] != "/bin/sh" || identity.Profile == nil || identity.Profile.InheritedFrom != identity.Profile.SHA256 {
 				t.Fatalf("missing inherited payload identity: %s", raw)
+			}
+			if identity.Artifacts[0] != product {
+				t.Fatalf("payload receipt must identify the executed product: %s", raw)
 			}
 			output, err := os.ReadFile(filepath.Join(directory, completion.ID+".stdout"))
 			if err != nil {

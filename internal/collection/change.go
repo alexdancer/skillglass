@@ -87,6 +87,9 @@ func (p *ChangePreview) View() ChangeView {
 	return view
 }
 func (s *Snapshot) PreviewChange(ctx context.Context, intent ChangeIntent) *ChangePreview {
+	if intent.Application == "opencode" {
+		return previewOpencodeChange(ctx, s, intent)
+	}
 	if intent.Application == "pi" {
 		return previewPiChange(ctx, s, intent)
 	}

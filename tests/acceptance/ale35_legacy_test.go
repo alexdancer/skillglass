@@ -128,8 +128,11 @@ func TestALE35LegacyConfigPresence(t *testing.T) {
 				t.Errorf("legacy native-input problem present=%t", found)
 			}
 			for _, cap := range source.Availability.Capabilities {
-				if cap.State != "unsupported" {
-					t.Fatal("enabled writer")
+				if (!absent || cap.Operation == "delete") && cap.State != "unsupported" {
+					t.Fatal("enabled writer with unknown legacy input or deletion", cap)
+				}
+				if absent && cap.Operation == "disable" && cap.State != "supported" {
+					t.Fatal("validated writer missing for known local inputs", cap)
 				}
 			}
 			read := opencodeEnvRun(t, fx, env, "read", "--agent", "opencode", "--project", fx.project, source.ID)

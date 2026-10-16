@@ -134,7 +134,10 @@ func TestChangeFinalRecheckAndOpaqueAuthority(t *testing.T) {
 }
 func TestChangeInheritedArrayProtection(t *testing.T) {
 	_, _, config := faultFixture(t, false)
-	home := filepath.Dir(filepath.Dir(config))
+	home, err := filepath.EvalSymlinks(filepath.Dir(filepath.Dir(config)))
+	if err != nil {
+		t.Fatal(err)
+	}
 	target := filepath.Join(home, ".agents/skills/target/SKILL.md")
 	unrelated := filepath.Join(filepath.Dir(target), "other.md")
 	if err := os.WriteFile(unrelated, []byte("inert"), 0600); err != nil {

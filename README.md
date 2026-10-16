@@ -6,7 +6,7 @@ Skillglass is a Go terminal tool for browsing, reading, comparing, and controlli
 
 ## Status
 
-The production inventory, identity, comparison, and application discovery slices are implemented. Skillglass discovers explicit custom and project roots, groups references only when they resolve to the same proven source object, reports collection problems without discarding healthy sources, and exposes the same immutable snapshot through the CLI and keyboard browser. Codex, Claude Code, Pi, OpenCode, CodeAF, Gemini CLI, and Hermes integrations add native scope and local configured-availability explanations. Validated global Codex, global/project Claude Code, active-profile global Hermes and global/project Pi controls use source-bound preview and explicit confirmation. Other write controls remain unsupported, and running-session execution remains unobserved. Generic explicit-root inventory keeps unknown ownership and availability.
+The production inventory, identity, comparison, and application discovery slices are implemented. Skillglass discovers explicit custom and project roots, groups references only when they resolve to the same proven source object, reports collection problems without discarding healthy sources, and exposes the same immutable snapshot through the CLI and keyboard browser. Codex, Claude Code, Pi, OpenCode, CodeAF, Gemini CLI, and Hermes integrations add native scope and local configured-availability explanations. Validated global Codex, active-profile global Hermes, and global/project Claude Code, Pi and OpenCode controls use source-bound preview and explicit confirmation. Other write controls remain unsupported, and running-session execution remains unobserved. Generic explicit-root inventory keeps unknown ownership and availability.
 
 The project was planned as **Skill Viewer**. Existing Linear titles and historical planning documents retain that name; **Skillglass** is the product and repository name.
 
@@ -99,6 +99,16 @@ bin/skillglass inherit --agent pi --scope project --project /path/to/repository 
 ```
 
 Inspect the preview and repeat that exact request with `--confirm pi1:PREVIEW_TOKEN` to apply. In the Pi browser, `D`/`e` opens scope selection, `g`/`p` selects global/project, `i` selects project inheritance, `y` confirms and Enter or Escape cancels. See [Pi control evidence and limits](docs/verification/ale-34.md) for the override representation, preservation and refusal rules, capability versus effective-result checks, and required settings reload.
+
+OpenCode supports global enable/disable and selected-project overrides:
+
+```sh
+bin/skillglass disable --agent opencode --scope global --json SOURCE_ID
+bin/skillglass enable --agent opencode --scope project --project /path/to/repository SOURCE_ID
+bin/skillglass inherit --agent opencode --scope project --project /path/to/repository SOURCE_ID
+```
+
+Repeat the exact preview request with `--confirm opencode1:PREVIEW_TOKEN` to apply. In the OpenCode browser, `D`/`e` opens scope selection, `g`/`p` selects global/project, `i` selects project inheritance, `y` confirms and Enter or Escape cancels. See [OpenCode control evidence and limits](docs/verification/ale-36.md) for the validated version, native-name eligibility, exact override removal, ask preservation, JSONC safety, refusal rules and unverified session behavior.
 
 `bin/skillglass inherit --agent codex --scope project --project /path/to/repository SOURCE_ID` requests removal of the selected source's project override and restoration of applicable inheritance. Project enable, disable and inheritance requests return `unsupported` without a confirmation token or filesystem changes on Codex 0.155.1. They never fall back to a global change. Global `inherit` is also unsupported because there is no project override to remove at that scope. See [project control evidence and limits](docs/verification/ale-28.md) for the native limitation and the distinction between local configuration inference and session enforcement.
 

@@ -281,7 +281,14 @@ func parseOpencode(raw []byte, path string) (*opencodeObject, error) {
 	return obj, nil
 }
 
+type opencodeConfigInput struct {
+	Path, Scope string
+	Raw         []byte
+}
+
 type opencodeInputs struct {
+	inputs               []opencodeConfigInput
+	overlay              map[string][]byte
 	scope                AgentScope
 	config               *opencodeObject
 	problems             []Problem
@@ -299,6 +306,9 @@ func (in *opencodeInputs) load(path, scope string, raw []byte, required bool) {
 	var err error
 	if raw == nil {
 		raw, err = nativeBytes(path)
+		if replacement, ok := in.overlay[path]; ok {
+			raw, err = replacement, nil
+		}
 		if nativeAbsent(path, err) && !required {
 			in.scope.ConfigLayers = append(in.scope.ConfigLayers, layer)
 			return
@@ -307,6 +317,7 @@ func (in *opencodeInputs) load(path, scope string, raw []byte, required bool) {
 			raw = []byte("{}")
 		}
 	}
+	in.inputs = append(in.inputs, opencodeConfigInput{Path: path, Scope: scope, Raw: append([]byte(nil), raw...)})
 	obj, parseErr := parseOpencode(raw, path)
 	if err != nil || parseErr != nil {
 		layer.State = "unknown"
@@ -361,7 +372,7 @@ func readOpencodeInputs(request Request, ancestors []string) *opencodeInputs {
 	if project == "" {
 		project = home
 	}
-	in := &opencodeInputs{config: newOpencodeObject(), home: home, project: project, cache: filepath.Join(opencodeCacheHome(home), "opencode"), scope: AgentScope{Application: "opencode", ValidatedVersion: opencodeValidatedVersion, VersionEvidence: "recorded disposable native debug skill/config/agent receipts; docs/verification/ale-35.md", Evidence: opencodeEvidence(EvidenceInferred, "version-specific-local-rules", "", "", "not the installed version or a running-session observation"), Gaps: []string{"Running session, CLI --agent selection, saved approval rules and remote account/organization settings are unknown.", "OpenCode 1.17.15 debug discovery overwrites equal names concurrently; no deterministic winning/shadowed definition is inferred.", "Embedded customize-opencode skill has no local bundle and is not inventoried.", "Later docs describe metadata opencode/autoinvoke; 1.17.15 v1 guidance does not implement that field."}}}
+	in := &opencodeInputs{overlay: request.opencodeOverlay, config: newOpencodeObject(), home: home, project: project, cache: filepath.Join(opencodeCacheHome(home), "opencode"), scope: AgentScope{Application: "opencode", ValidatedVersion: opencodeValidatedVersion, VersionEvidence: "recorded disposable native debug skill/config/agent and control/evaluator receipts; docs/verification/ale-35.md and docs/verification/ale-36.md", Evidence: opencodeEvidence(EvidenceInferred, "version-specific-local-rules", "", "", "not the installed version or a running-session observation"), Gaps: []string{"Running session, CLI --agent selection, saved approval rules and remote account/organization settings are unknown.", "OpenCode 1.17.15 debug discovery overwrites equal names concurrently; no deterministic winning/shadowed definition is inferred.", "Embedded customize-opencode skill has no local bundle and is not inventoried.", "Later docs describe metadata opencode/autoinvoke; 1.17.15 v1 guidance does not implement that field."}}}
 	for _, key := range []string{"OPENCODE_DISABLE_EXTERNAL_SKILLS", "OPENCODE_DISABLE_CLAUDE_CODE", "OPENCODE_DISABLE_CLAUDE_CODE_SKILLS", "OPENCODE_PURE", "OPENCODE_DISABLE_PROJECT_CONFIG"} {
 		value := strings.ToLower(os.Getenv(key))
 		if value != "" && value != "0" && value != "1" && value != "true" && value != "false" {

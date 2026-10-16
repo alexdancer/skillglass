@@ -1,6 +1,6 @@
 # ALE-35: browse and explain OpenCode skills
 
-`--agent opencode` adds offline OpenCode discovery and local configured-availability explanations to the accepted shared collection contract. CLI list/read/explain/compare and the browser use the same immutable snapshot. All writers remain unsupported. Production commands never launch OpenCode, run plugin hooks, load a skill, evaluate config substitutions, fetch skill indexes, or write sources/settings.
+`--agent opencode` adds offline OpenCode discovery and local configured-availability explanations to the accepted shared collection contract. CLI list/read/explain/compare and the browser use the same immutable snapshot. Production commands never launch OpenCode, run plugin hooks, load a skill, evaluate config substitutions or fetch skill indexes. Read-only operations never write sources/settings. See [OpenCode controls](ale-36.md) for the separately validated writer contract.
 
 ## Native version and discovery
 

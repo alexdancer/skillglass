@@ -86,6 +86,10 @@ func buildOpencode(ctx context.Context, request Request) (*Snapshot, error) {
 	applyOpencodeConflicts(snapshot)
 	snapshot.scope.Agent = &in.scope
 	applyNativeProblems(snapshot, in.problems, roots)
+	snapshot.opencodeControls = in
+	if !request.opencodePlanning {
+		applyOpencodeCapabilities(snapshot)
+	}
 	return snapshot, nil
 }
 

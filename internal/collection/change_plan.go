@@ -11,14 +11,15 @@ import (
 )
 
 type changePlan struct {
-	request       Request
-	intent        ChangeIntent
-	digest        string
-	postimage     []byte
-	destination   changeDestination
-	snapshotFacts []byte
-	dependencies  []changeFact
-	fault         func(string) error
+	request                Request
+	intent                 ChangeIntent
+	digest                 string
+	postimage              []byte
+	destination            changeDestination
+	snapshotFacts          []byte
+	dependencies           []changeFact
+	fault                  func(string) error
+	opencodeGlobalExpected *opencodeContextFacts
 }
 
 func changeObservations(s *Snapshot, destination changeDestination) ([]byte, []changeFact, error) {
@@ -123,10 +124,10 @@ func (p *changePlan) inspectResult(out ChangeOutcome, parent changeIdentity) Cha
 	}
 	metadataMatches := !p.destination.Config.Exists || (current.Identity.Mode == p.destination.Config.Identity.Mode && current.Identity.UID == p.destination.Config.Identity.UID && current.Identity.GID == p.destination.Config.Identity.GID && sameChangeFacts(current.Attributes, p.destination.Config.Attributes))
 	expectedExists := p.destination.Config.Exists || len(p.postimage) > 0
-	if err == nil && current.Exists == expectedExists && current.Symlink == "" && bytes.Equal(current.Bytes, p.postimage) && metadataMatches && (parentMatches || (p.intent.Choice == ControlInherit && !p.destination.Config.Exists && p.destination.CreateDirectory != "")) {
+	if err == nil && current.Exists == expectedExists && current.Symlink == "" && bytes.Equal(current.Bytes, p.postimage) && metadataMatches && (parentMatches || (len(p.postimage) == 0 && !p.destination.Config.Exists && p.destination.CreateDirectory != "")) {
 		out.Persistence = "verified"
 		out.PersistedChoice = p.intent.Choice
-		if p.intent.Application != "claude-code" && p.intent.Application != "hermes" && p.intent.Application != "pi" {
+		if p.intent.Application != "claude-code" && p.intent.Application != "hermes" && p.intent.Application != "pi" && p.intent.Application != "opencode" {
 			// Resource choice persistence alone does not establish native invocation permission for these agents.
 			if p.intent.Choice == ControlEnable {
 				out.PersistedPermission = PermissionAllowed
@@ -144,14 +145,41 @@ func (p *changePlan) inspectResult(out ChangeOutcome, parent changeIdentity) Cha
 	out.Snapshot = fresh
 	if source, ok := fresh.Source(p.intent.Source); ok {
 		effective := source.Availability
+		if p.intent.Application == "opencode" && out.Persistence == "verified" {
+			out.PersistedPermission = opencodeSavedPermission(current.Bytes, effective.NativeName)
+			if p.intent.Choice != ControlInherit {
+				switch out.PersistedPermission {
+				case PermissionAllowed, PermissionAsk:
+					out.PersistedChoice = ControlEnable
+				case PermissionDenied:
+					out.PersistedChoice = ControlDisable
+				default:
+					out.PersistedChoice = ""
+				}
+			}
+		}
 		out.Effective = &effective
 		resultReason := effective.Reason
+		nativeAchievement, nativeReason := "", ""
+		if p.intent.Application == "opencode" {
+			if p.intent.Scope == ControlGlobal {
+				nativeAchievement, nativeReason = p.opencodeGlobalResult(context.Background(), fresh)
+			} else {
+				facts := newOpencodeControlFacts(context.Background(), fresh)
+				if _, err := facts.destination(opencodeControlPlan{ConfigPath: p.destination.Path, Scope: p.intent.Scope}); err != nil {
+					nativeAchievement, nativeReason = "unknown", "native destination safety: "+err.Error()
+				}
+			}
+		}
 		if reason, known := fresh.hermesControls.nativeReasons[source.ID]; p.intent.Application == "hermes" && (!known || reason != "") {
 			out.Achievement = "unknown"
 			if reason == "" {
 				reason = "native control certainty was not established"
 			}
 			resultReason = "native Hermes control certainty: " + reason
+		} else if nativeAchievement != "" {
+			out.Achievement = nativeAchievement
+			resultReason = nativeReason
 		} else if p.intent.Choice == ControlInherit && out.Persistence == "verified" {
 			out.Achievement = "achieved"
 		} else if p.intent.Choice == ControlDisable && effective.State == AvailabilityDisabled {

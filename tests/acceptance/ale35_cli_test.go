@@ -109,8 +109,11 @@ func TestALE35OpenCodeDiscoverySharingPermissionAndExplain(t *testing.T) {
 		}
 	}
 	for _, cap := range ask.Availability.Capabilities {
-		if cap.State != "unsupported" {
-			t.Fatal("enabled writer")
+		if cap.Operation == "delete" && cap.State != "unsupported" {
+			t.Fatal("enabled deletion")
+		}
+		if cap.Operation == "disable" && cap.State != "supported" {
+			t.Fatal("validated isolated writer unavailable", cap)
 		}
 	}
 	global := fx.run(t, "list", "--agent", "opencode", "--json")

@@ -52,7 +52,7 @@ func TestMain(testMain *testing.M) {
 	_, currentFile, _, _ := runtime.Caller(0)
 	repositoryRoot = filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", ".."))
 	var err error
-	builtBinaryDir, err = os.MkdirTemp("", "skillglass-acceptance-binary-")
+	builtBinaryDir, err = os.MkdirTemp("/private/tmp", "skillglass-acceptance-binary-")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -75,6 +75,28 @@ func TestMain(testMain *testing.M) {
 		command.Stderr = os.Stderr
 		if err := command.Run(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
+			os.RemoveAll(builtBinaryDir)
+			os.Exit(1)
+		}
+	} else {
+		// Receipt hashing runs inside the ordinary home boundary. Stage the
+		// supplied artifact outside it so canonical identity checks need no
+		// access to the real home's ancestors.
+		raw, readErr := os.ReadFile(skillglassBinary)
+		if readErr != nil {
+			fmt.Fprintln(os.Stderr, readErr)
+			os.RemoveAll(builtBinaryDir)
+			os.Exit(1)
+		}
+		skillglassBinary = filepath.Join(builtBinaryDir, "skillglass")
+		if err := os.WriteFile(skillglassBinary, raw, 0700); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.RemoveAll(builtBinaryDir)
+			os.Exit(1)
+		}
+		staged, readErr := os.ReadFile(skillglassBinary)
+		if readErr != nil || !bytes.Equal(raw, staged) {
+			fmt.Fprintf(os.Stderr, "supplied product staging verification failed: %v\n", readErr)
 			os.RemoveAll(builtBinaryDir)
 			os.Exit(1)
 		}
@@ -110,7 +132,12 @@ func TestMain(testMain *testing.M) {
 		os.Exit(1)
 	}
 	skillglassExecutable = skillglassBinary
-	rawSkillglassBinary = skillglassBinary
+	rawSkillglassBinary, err = filepath.EvalSymlinks(skillglassBinary)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.RemoveAll(builtBinaryDir)
+		os.Exit(1)
+	}
 	code := testMain.Run()
 	os.RemoveAll(tmuxSocketDirectory)
 	if err := writeEvidenceCaseIndex(); err != nil {

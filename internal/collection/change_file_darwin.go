@@ -217,6 +217,9 @@ func (p *changePlan) apply(ctx context.Context) (out ChangeOutcome) {
 	if p.intent.Application == "hermes" {
 		out.Reload = SessionExplanation{State: "unknown", Evidence: hermesEvidence(EvidenceUnknown, "session-reload", "", "", "fresh profile configuration was inspected; running-session context overrides, caches and reload/restart requirements are unobserved")}
 	}
+	if p.intent.Application == "opencode" {
+		out.Reload = SessionExplanation{State: "unknown", Evidence: opencodeEvidence(EvidenceUnknown, "session-reload", "", "", "fresh-process configuration reads were validated; running OpenCode may require reload or restart; session adoption and full skill loading are unverified")}
+	}
 	if p.intent.Application == "pi" {
 		out.Reload = SessionExplanation{State: "required", Evidence: piEvidence(EvidenceInferred, "settings-reload", "", "", "Pi 1.1.0 cached settings require reload; fresh sessions load persisted choices; interactive /reload adoption is unverified")}
 	}
@@ -245,6 +248,9 @@ func (p *changePlan) apply(ctx context.Context) (out ChangeOutcome) {
 	if bytes.Equal(dest.Config.Bytes, p.postimage) {
 		out.State = "applied"
 		out.Reason = "choice already saved; no rewrite needed"
+		if p.intent.Application == "opencode" {
+			out.Reason = "configured result already effective; no rewrite needed"
+		}
 		return p.inspectResult(out, dest.Parent.Identity)
 	}
 	writeFD := parentFD
