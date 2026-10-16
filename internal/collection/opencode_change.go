@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -129,7 +130,8 @@ func opencodeProjectPath(s *Snapshot, path string) bool {
 		return false
 	}
 	for _, dir := range ancestors {
-		if pathWithin(filepath.Join(dir, ".opencode"), path) {
+		within, err := opencodePathWithin(filepath.Join(dir, ".opencode"), path)
+		if err != nil || within {
 			return true
 		}
 	}
@@ -198,6 +200,17 @@ func previewOpencodeSnapshot(ctx context.Context, s *Snapshot, intent ChangeInte
 	if after.opencodeControls.uncertain || intent.Choice == ControlDisable && selected.Availability.State != AvailabilityDisabled || intent.Choice == ControlEnable && selected.Availability.State != AvailabilityAvailable && selected.Availability.State != AvailabilityExplicitOnly && selected.Availability.State != AvailabilityAsk {
 		return rejectedChange(intent, "refused", "higher-priority configuration, agent policy or ordered wildcard prevents the requested result; no broader fallback")
 	}
+	if intent.Scope == ControlGlobal {
+		globalBefore := readOpencodeInputs(s.request, nil)
+		globalAfter := readOpencodeInputs(prospective, nil)
+		permission := globalAfter.permission(recipe.NativeName)
+		if !opencodeChoiceAchieved(intent.Choice, permission.State) {
+			return rejectedChange(intent, "refused", "global configuration does not achieve the requested result independently of project overrides; no broader fallback")
+		}
+		if !opencodePatchOnlySelected(cloneOpencodeObject(globalBefore.config), cloneOpencodeObject(globalAfter.config), recipe.NativeName) {
+			return rejectedChange(intent, "refused", "conversion would change unrelated global native rules independently of project overrides")
+		}
+	}
 	// This check ranges over every ordered rule, including names not discovered
 	// today. It catches scalar replacement resurrecting lower-layer exact rules.
 	if !opencodePatchOnlySelected(cloneOpencodeObject(s.opencodeControls.config), cloneOpencodeObject(after.opencodeControls.config), recipe.NativeName) {
@@ -236,6 +249,10 @@ func previewOpencodeSnapshot(ctx context.Context, s *Snapshot, intent ChangeInte
 	return &ChangePreview{plan: plan, view: ChangeView{State: "ready", Reason: "preview only; no settings changed", Intent: intent, SourcePath: source.Directory, ManifestPath: source.Manifest.Path, ConfigPath: recipe.ConfigPath, InspectionProject: s.request.Project, Changes: changes, KnownReferences: s.References(source.ID), Before: source.Availability, NoWriteNeeded: !write, CreateDirectory: createDirectory, Confirmation: plan.digest, Notes: []string{fmt.Sprintf("Prospective configured result: %s (permission %s).", selected.Availability.State, after.opencodeControls.permission(recipe.NativeName).State), "OpenCode 1.17.15 exact name permission controls validated in disposable fixtures; unrelated JSONC bytes and ordered rules are preserved.", "Inherit removes only the exact project rule; remaining native rules may allow, ask or deny. Enable preserves an existing effective ask; a current deny carries no historical approval state.", "Fresh-process configuration reads and debug denial were validated. Running OpenCode may require reload or restart; live session adoption, approval prompting and full skill loading are unverified."}}}
 }
 
+func opencodeChoiceAchieved(choice ControlChoice, permission PermissionState) bool {
+	return choice == ControlDisable && permission == PermissionDenied || choice == ControlEnable && (permission == PermissionAllowed || permission == PermissionAsk)
+}
+
 func cloneOpencodeObject(o *opencodeObject) *opencodeObject {
 	out := newOpencodeObject()
 	for _, key := range o.keys {
@@ -272,6 +289,46 @@ func opencodeOutputPath(path string) (string, error) {
 		path = parent
 	}
 }
+func opencodeSamePath(left, right string) (bool, error) {
+	leftInfo, leftErr := os.Stat(left)
+	rightInfo, rightErr := os.Stat(right)
+	if leftErr == nil && rightErr == nil {
+		return os.SameFile(leftInfo, rightInfo), nil
+	}
+	if leftErr != nil && !errors.Is(leftErr, os.ErrNotExist) {
+		return false, leftErr
+	}
+	if rightErr != nil && !errors.Is(rightErr, os.ErrNotExist) {
+		return false, rightErr
+	}
+	if leftErr == nil || rightErr == nil || !strings.EqualFold(filepath.Base(left), filepath.Base(right)) {
+		return false, nil
+	}
+	leftParent, rightParent := filepath.Dir(left), filepath.Dir(right)
+	if leftParent == left || rightParent == right {
+		return false, nil
+	}
+	return opencodeSamePath(leftParent, rightParent)
+}
+
+func opencodePathWithin(root, path string) (bool, error) {
+	resolved, err := opencodeOutputPath(path)
+	if err != nil {
+		return false, err
+	}
+	for {
+		same, err := opencodeSamePath(root, resolved)
+		if err != nil || same {
+			return same, err
+		}
+		parent := filepath.Dir(resolved)
+		if parent == resolved {
+			return false, nil
+		}
+		resolved = parent
+	}
+}
+
 func opencodeDestinationScope(s *Snapshot, p opencodeControlPlan) error {
 	output, err := opencodeOutputPath(p.ConfigPath)
 	if err != nil {
@@ -279,7 +336,9 @@ func opencodeDestinationScope(s *Snapshot, p opencodeControlPlan) error {
 	}
 	in := s.opencodeControls
 	for _, source := range s.sources {
-		if output == source.Manifest.ResolvedPath || pathWithin(source.Directory, output) {
+		same, sameErr := opencodeSamePath(output, source.Manifest.ResolvedPath)
+		within, withinErr := opencodePathWithin(source.Directory, output)
+		if sameErr != nil || withinErr != nil || same || within {
 			return errors.New("configuration output overlaps discovered skill content; shared content is not a native settings destination")
 		}
 	}
@@ -287,37 +346,36 @@ func opencodeDestinationScope(s *Snapshot, p opencodeControlPlan) error {
 		if dir == "" {
 			continue
 		}
-		canonical, e := opencodeOutputPath(dir)
-		if e != nil || pathWithin(canonical, output) {
+		within, e := opencodePathWithin(dir, output)
+		if e != nil || within {
 			return errors.New("configuration output overlaps managed or unverified storage")
 		}
 	}
 	global := filepath.Join(opencodeConfigHome(s.request.home), "opencode")
 	project := s.request.Project.Path
 	if p.Scope == ControlProject {
-		canonical, e := opencodeOutputPath(global)
-		if e != nil || pathWithin(canonical, output) {
+		within, e := opencodePathWithin(global, output)
+		if e != nil || within {
 			return errors.New("project destination aliases global configuration")
 		}
 	}
 	if p.Scope == ControlGlobal && s.request.Project.Selected {
-		canonical, e := opencodeOutputPath(project)
-		if e != nil {
-			return e
-		}
-		if output == filepath.Join(canonical, "opencode.json") || output == filepath.Join(canonical, "opencode.jsonc") {
-			return errors.New("global destination aliases project configuration")
+		for _, name := range []string{"opencode.json", "opencode.jsonc"} {
+			same, e := opencodeSamePath(output, filepath.Join(project, name))
+			if e != nil || same {
+				return errors.New("global destination aliases project configuration")
+			}
 		}
 	}
 	for _, layer := range in.scope.ConfigLayers {
 		if !filepath.IsAbs(layer.Path) {
 			continue
 		}
-		canonical, e := opencodeOutputPath(layer.Path)
+		same, e := opencodeSamePath(layer.Path, output)
 		if e != nil {
 			return errors.New("native config role cannot be separated safely")
 		}
-		if canonical != output {
+		if !same {
 			continue
 		}
 		if layer.Path != p.ConfigPath {

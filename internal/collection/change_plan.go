@@ -159,12 +159,22 @@ func (p *changePlan) inspectResult(out ChangeOutcome, parent changeIdentity) Cha
 		}
 		out.Effective = &effective
 		resultReason := effective.Reason
+		var globalPermission PermissionExplanation
+		if p.intent.Application == "opencode" && p.intent.Scope == ControlGlobal {
+			globalPermission = readOpencodeInputs(p.request, nil).permission(effective.NativeName)
+		}
 		if reason, known := fresh.hermesControls.nativeReasons[source.ID]; p.intent.Application == "hermes" && (!known || reason != "") {
 			out.Achievement = "unknown"
 			if reason == "" {
 				reason = "native control certainty was not established"
 			}
 			resultReason = "native Hermes control certainty: " + reason
+		} else if globalPermission.State != "" && !opencodeChoiceAchieved(p.intent.Choice, globalPermission.State) {
+			out.Achievement = "unmet"
+			if globalPermission.State == PermissionUnknown {
+				out.Achievement = "unknown"
+			}
+			resultReason = "global configured permission: " + globalPermission.Evidence.Reason
 		} else if p.intent.Choice == ControlInherit && out.Persistence == "verified" {
 			out.Achievement = "achieved"
 		} else if p.intent.Choice == ControlDisable && effective.State == AvailabilityDisabled {
