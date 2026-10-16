@@ -88,6 +88,8 @@ type Request struct {
 	claudeHome    string
 	hermesHome    string
 	// Private read-only prospective evaluation; never retained in a persisted change plan.
+	opencodePlanning  bool
+	opencodeOverlay   map[string][]byte
 	piPlanning        bool
 	piSettingsOverlay map[string][]byte
 }
@@ -374,15 +376,16 @@ type SelectionChange struct {
 }
 
 type Snapshot struct {
-	request        Request
-	scope          Scope
-	sources        map[SourceID]Source
-	order          []SourceID
-	references     map[ReferenceID]Reference
-	referenceOrder []ReferenceID
-	problems       []Problem
-	hermesControls hermesControlFacts
-	piControls     *piInputs
+	request          Request
+	scope            Scope
+	sources          map[SourceID]Source
+	order            []SourceID
+	references       map[ReferenceID]Reference
+	referenceOrder   []ReferenceID
+	problems         []Problem
+	hermesControls   hermesControlFacts
+	piControls       *piInputs
+	opencodeControls *opencodeInputs
 }
 
 func Build(ctx context.Context, request Request) (*Snapshot, error) {
@@ -648,6 +651,13 @@ func cloneProblems(problems []Problem) []Problem {
 
 func cloneRequest(request Request) Request {
 	request.Roots = append([]DiscoveryRoot(nil), request.Roots...)
+	if request.opencodeOverlay != nil {
+		overlay := make(map[string][]byte, len(request.opencodeOverlay))
+		for path, raw := range request.opencodeOverlay {
+			overlay[path] = append([]byte(nil), raw...)
+		}
+		request.opencodeOverlay = overlay
+	}
 	return request
 }
 

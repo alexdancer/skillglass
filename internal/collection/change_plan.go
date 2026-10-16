@@ -123,10 +123,10 @@ func (p *changePlan) inspectResult(out ChangeOutcome, parent changeIdentity) Cha
 	}
 	metadataMatches := !p.destination.Config.Exists || (current.Identity.Mode == p.destination.Config.Identity.Mode && current.Identity.UID == p.destination.Config.Identity.UID && current.Identity.GID == p.destination.Config.Identity.GID && sameChangeFacts(current.Attributes, p.destination.Config.Attributes))
 	expectedExists := p.destination.Config.Exists || len(p.postimage) > 0
-	if err == nil && current.Exists == expectedExists && current.Symlink == "" && bytes.Equal(current.Bytes, p.postimage) && metadataMatches && (parentMatches || (p.intent.Choice == ControlInherit && !p.destination.Config.Exists && p.destination.CreateDirectory != "")) {
+	if err == nil && current.Exists == expectedExists && current.Symlink == "" && bytes.Equal(current.Bytes, p.postimage) && metadataMatches && (parentMatches || (len(p.postimage) == 0 && !p.destination.Config.Exists && p.destination.CreateDirectory != "")) {
 		out.Persistence = "verified"
 		out.PersistedChoice = p.intent.Choice
-		if p.intent.Application != "claude-code" && p.intent.Application != "hermes" && p.intent.Application != "pi" {
+		if p.intent.Application != "claude-code" && p.intent.Application != "hermes" && p.intent.Application != "pi" && p.intent.Application != "opencode" {
 			// Resource choice persistence alone does not establish native invocation permission for these agents.
 			if p.intent.Choice == ControlEnable {
 				out.PersistedPermission = PermissionAllowed
@@ -144,6 +144,19 @@ func (p *changePlan) inspectResult(out ChangeOutcome, parent changeIdentity) Cha
 	out.Snapshot = fresh
 	if source, ok := fresh.Source(p.intent.Source); ok {
 		effective := source.Availability
+		if p.intent.Application == "opencode" && out.Persistence == "verified" {
+			out.PersistedPermission = opencodeSavedPermission(current.Bytes, effective.NativeName)
+			if p.intent.Choice != ControlInherit {
+				switch out.PersistedPermission {
+				case PermissionAllowed, PermissionAsk:
+					out.PersistedChoice = ControlEnable
+				case PermissionDenied:
+					out.PersistedChoice = ControlDisable
+				default:
+					out.PersistedChoice = ""
+				}
+			}
+		}
 		out.Effective = &effective
 		resultReason := effective.Reason
 		if reason, known := fresh.hermesControls.nativeReasons[source.ID]; p.intent.Application == "hermes" && (!known || reason != "") {

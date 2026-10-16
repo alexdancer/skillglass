@@ -28,7 +28,7 @@ func runChange(operation string, args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if flags.NArg() != 1 || !supportsSkillControls(options.agent) || *scope == "" {
-		writeError(stderr, errors.New("enable/disable/inherit requires explicit --agent codex, claude-code, hermes or pi, --scope global or project and exactly one SOURCE_ID after the flags"))
+		writeError(stderr, errors.New("enable/disable/inherit requires explicit --agent codex, claude-code, hermes, pi or opencode, --scope global or project and exactly one SOURCE_ID after the flags"))
 		return 2
 	}
 	snapshot, code := buildSnapshot(options, stderr)
@@ -134,6 +134,9 @@ func safeChangeLines(lines []string) []string {
 }
 
 func controlApplication(app string) string {
+	if app == "opencode" {
+		return "OpenCode"
+	}
 	if app == "pi" {
 		return "Pi"
 	}
@@ -147,5 +150,5 @@ func controlApplication(app string) string {
 }
 
 func supportsSkillControls(app string) bool {
-	return app == "pi" || app == "codex" || app == "claude-code" || app == "hermes"
+	return app == "opencode" || app == "pi" || app == "codex" || app == "claude-code" || app == "hermes"
 }
