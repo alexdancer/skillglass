@@ -524,7 +524,7 @@ func (model browserModel) helpBodyLines() []string {
 		{"d / i", "Show source Details or Instructions"},
 		{"v", "In reader: toggle rendered and raw instructions; in Sources: compare marked source"},
 		{"m", "In Sources: mark the focused source as comparison left"},
-		{"D / e", "In Codex or Claude Code reader: disable or enable, then choose scope and confirm preview"},
+		{"D / e", "In Codex, Claude Code or Hermes reader: disable or enable, then choose scope and confirm preview"},
 		{"a", "Cycle native configured availability"},
 		{"c", "Cycle all supported discovery contexts"},
 		{"o", "Cycle selected roots"},
@@ -911,13 +911,13 @@ func (model browserModel) collectionFooter(target browserMode) string {
 func (model browserModel) readerFooter(page scrollPage) string {
 	if model.sourceTab == sourceDetails {
 		value := "↑↓ scroll  i instructions  ← back"
-		if scope := model.snapshot.Scope(); scope.Agent != nil && scope.Agent.Application == "codex" {
+		if scope := model.snapshot.Scope(); scope.Agent != nil && supportsSkillControls(scope.Agent.Application) {
 			value = "i instructions  D Disable  e Enable  Esc back"
 		}
 		if model.width < 60 {
 			value = "↑↓ scroll  i read  Esc back"
 		}
-		if scope := model.snapshot.Scope(); scope.Agent != nil && scope.Agent.Application == "codex" {
+		if scope := model.snapshot.Scope(); scope.Agent != nil && supportsSkillControls(scope.Agent.Application) {
 			value = "i read  D Disable  e Enable  Esc back"
 		}
 		return model.footerWithHint(value, "? help  q quit")
@@ -927,13 +927,13 @@ func (model browserModel) readerFooter(page scrollPage) string {
 		mode = "v rendered"
 	}
 	value := "↑↓ scroll  d details  " + mode + "  ← back"
-	if scope := model.snapshot.Scope(); scope.Agent != nil && scope.Agent.Application == "codex" {
+	if scope := model.snapshot.Scope(); scope.Agent != nil && supportsSkillControls(scope.Agent.Application) {
 		value = "d details  " + mode + "  D Disable  e Enable  Esc back"
 	}
 	if model.width < 60 {
 		value = "↑↓ scroll  d details  Esc back"
 	}
-	if scope := model.snapshot.Scope(); scope.Agent != nil && scope.Agent.Application == "codex" {
+	if scope := model.snapshot.Scope(); scope.Agent != nil && supportsSkillControls(scope.Agent.Application) {
 		value = "d details  D Disable  e Enable"
 	}
 	return model.footerWithHint(value, "? help  q quit")

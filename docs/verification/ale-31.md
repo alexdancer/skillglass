@@ -1,6 +1,6 @@
 # ALE-31 Hermes read validation
 
-The viewer supports `--agent hermes` for list, read, explain, compare, problems and the terminal browser. This is read-only. Availability uses the ALE-26 explanation contract and the same filters and terminal renderers. The [Hermes collection modules](../../internal/collection/) implement the version-specific rules below; the [README](../../README.md#build-and-use) owns common commands, filters and browser keys.
+The viewer supports `--agent hermes` for list, read, explain, compare, problems and the terminal browser. Inspection remains read-only; [ALE-32](ale-32.md) owns the separately validated control contract. Availability uses the ALE-26 explanation contract and the same filters and terminal renderers. The [Hermes collection modules](../../internal/collection/) implement the version-specific rules below; the [README](../../README.md#build-and-use) owns common commands, filters and browser keys.
 
 ## Recorded native version and provenance
 
@@ -69,7 +69,7 @@ Hermes-specific YAML checks separate bounded whole-document constructor validati
 
 ## Explicit evidence gaps
 
-- No native writer is advertised. Enable, disable, removal of project overrides and deletion remain unverified capabilities.
+- Control support and its remaining scope limitations are documented in [ALE-32](ale-32.md).
 - No running session, model invocation, session-local home/platform override, secret capture, or reload was observed.
 - General dotenv interpolation, multiline or unclosed bindings, quoted policy keys, non-UTF-8 normalization and secret providers are not evaluated. Plugin config expansion is bounded to behavioral Hermes environment keys; unsupported/unresolved references are unknown.
 - Machine managed policy is excluded from fixture evidence. Its real installed values and enterprise behavior were not observed. Explicit fixture managed roots exercise the supported policy semantics.
@@ -77,5 +77,5 @@ Hermes-specific YAML checks separate bounded whole-document constructor validati
 - Bundled installation plugins and pip entry points are outside this bounded home/project survey, and are called out in scope gaps. Their absence is not presented as complete machine-wide discovery.
 - Legacy flat `.md` explicit loads and malformed frontmatter fallback are outside the strict SKILL.md bundle contract; unsupported native parse cases remain unknown.
 - OS portability beyond the inspected macOS environment is unverified. Platform-specific disabled settings refer to messaging surfaces, not an invented universal OS configuration.
-- Full native CLI skill listing was not run because startup can migrate configuration or seed bundled skills. The original metadata/read probe is preserved as historical evidence from the retired runner; only the bounded environment/configuration helper remains runnable.
+- Full native CLI skill listing was not run because startup can migrate configuration or seed bundled skills. The original metadata/read probe is preserved as historical evidence from the retired runner; use the bounded environment/configuration helper for this read evidence.
 - Independent Standards/Spec reviews and no-mistakes execution are coordinator-owned stages; their status is recorded in the run receipts, not inferred from this verification guide.

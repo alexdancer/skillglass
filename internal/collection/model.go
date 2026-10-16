@@ -378,6 +378,7 @@ type Snapshot struct {
 	references     map[ReferenceID]Reference
 	referenceOrder []ReferenceID
 	problems       []Problem
+	hermesControls hermesControlFacts
 }
 
 func Build(ctx context.Context, request Request) (*Snapshot, error) {

@@ -87,6 +87,9 @@ func (p *ChangePreview) View() ChangeView {
 	return view
 }
 func (s *Snapshot) PreviewChange(ctx context.Context, intent ChangeIntent) *ChangePreview {
+	if intent.Application == "hermes" {
+		return previewHermesChange(ctx, s, intent)
+	}
 	if intent.Application == "claude-code" {
 		return previewClaudeChange(ctx, s, intent)
 	}

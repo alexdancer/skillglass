@@ -124,8 +124,8 @@ func (p *changePlan) inspectResult(out ChangeOutcome, parent changeIdentity) Cha
 	if err == nil && current.Exists == expectedExists && current.Symlink == "" && bytes.Equal(current.Bytes, p.postimage) && metadataMatches && (parentMatches || (p.intent.Choice == ControlInherit && !p.destination.Config.Exists && p.destination.CreateDirectory != "")) {
 		out.Persistence = "verified"
 		out.PersistedChoice = p.intent.Choice
-		if p.intent.Application != "claude-code" {
-			// Claude visibility choices are distinct from model Skill permission.
+		if p.intent.Application != "claude-code" && p.intent.Application != "hermes" {
+			// Claude visibility and Hermes raw disabled membership do not establish native invocation permission.
 			if p.intent.Choice == ControlEnable {
 				out.PersistedPermission = PermissionAllowed
 			} else {
@@ -143,7 +143,14 @@ func (p *changePlan) inspectResult(out ChangeOutcome, parent changeIdentity) Cha
 	if source, ok := fresh.Source(p.intent.Source); ok {
 		effective := source.Availability
 		out.Effective = &effective
-		if p.intent.Choice == ControlInherit && out.Persistence == "verified" {
+		resultReason := effective.Reason
+		if reason, known := fresh.hermesControls.nativeReasons[source.ID]; p.intent.Application == "hermes" && (!known || reason != "") {
+			out.Achievement = "unknown"
+			if reason == "" {
+				reason = "native control certainty was not established"
+			}
+			resultReason = "native Hermes control certainty: " + reason
+		} else if p.intent.Choice == ControlInherit && out.Persistence == "verified" {
 			out.Achievement = "achieved"
 		} else if p.intent.Choice == ControlDisable && effective.State == AvailabilityDisabled {
 			out.Achievement = "achieved"
@@ -155,7 +162,7 @@ func (p *changePlan) inspectResult(out ChangeOutcome, parent changeIdentity) Cha
 			out.Achievement = "unmet"
 		}
 		if out.Achievement != "achieved" {
-			out.Reason += "; effective result " + out.Achievement + ": " + effective.Reason
+			out.Reason += "; effective result " + out.Achievement + ": " + resultReason
 		}
 	} else {
 		out.Reason += "; selected source no longer reachable; effective result unknown"

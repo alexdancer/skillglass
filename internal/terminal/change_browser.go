@@ -15,7 +15,7 @@ type changeFinished struct{ outcome collection.ChangeOutcome }
 
 func (model browserModel) openChange(choice collection.ControlChoice) (tea.Model, tea.Cmd) {
 	scope := model.snapshot.Scope()
-	if scope.Agent == nil || (scope.Agent.Application != "codex" && scope.Agent.Application != "claude-code") {
+	if scope.Agent == nil || !supportsSkillControls(scope.Agent.Application) {
 		model.feedback = "Controls are unsupported for this agent scope."
 		return model, nil
 	}
@@ -122,6 +122,9 @@ func (model browserModel) changePage() pagedView {
 		header = append(header, fitLine("Inspection: selected project (details below)", model.width))
 	}
 	body := []string{"Select the setting scope explicitly.", "g Global user configuration", "p Project control: unavailable", "i Remove project override / inherit: unavailable", "Enter or Esc cancel", inspectionProjectLine(model.snapshot.Scope().Project)}
+	if model.snapshot.Scope().Agent.Application == "hermes" {
+		body[1] = "g Global active-profile configuration"
+	}
 	if model.snapshot.Scope().Agent.Application == "claude-code" {
 		body[2] = "p Project configuration"
 		body[3] = "i Remove project override / inherit"
