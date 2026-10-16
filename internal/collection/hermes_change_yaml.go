@@ -4,37 +4,44 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"reflect"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
 )
 
+func decodeHermesControlYAML(raw []byte) (*yaml.Node, map[string]any, bool) {
+	decoder := yaml.NewDecoder(bytes.NewReader(raw))
+	var doc, extra yaml.Node
+	if decoder.Decode(&doc) != nil || len(doc.Content) != 1 || decoder.Decode(&extra) != io.EOF {
+		return nil, nil, false
+	}
+	root := doc.Content[0]
+	if root.Kind != yaml.MappingNode || root.Tag != "!!map" {
+		return nil, nil, false
+	}
+	observation := hermesYAMLObservation{root: root}
+	var data map[string]any
+	if root.Decode(&data) != nil || !observation.nativeConstructible() || !observation.known("skills.disabled") {
+		return nil, nil, false
+	}
+	return root, data, true
+}
+
 // Patch a bounded block entry, retaining every unrelated byte. Refuse syntax
 // whose aliases or serialization could change the meaning of another setting.
 func patchHermesChoice(raw []byte, name string, choice ControlChoice) ([]byte, SettingChange, bool, error) {
 	change := SettingChange{Setting: "skills.disabled (" + name + ")"}
 	fail := func() ([]byte, SettingChange, bool, error) {
-		return nil, change, false, errors.New("Hermes writer requires ordinary block mappings and a literal disabled list; aliases, merges, tags, multiline and ambiguous target syntax are unsupported")
+		return nil, change, false, errors.New("Hermes writer requires one complete native-compatible YAML mapping, ordinary block mappings and a literal disabled list; extra documents, trailing content, aliases, merges, tags, multiline and ambiguous target syntax are unsupported")
 	}
 	original := raw
 	if len(raw) == 0 {
 		raw = []byte("{}\n")
 	}
-	var doc yaml.Node
-	if yaml.Unmarshal(raw, &doc) != nil || len(doc.Content) != 1 {
-		return fail()
-	}
-	root := doc.Content[0]
-	if root.Kind != yaml.MappingNode || root.Tag != "!!map" {
-		return fail()
-	}
-	var data map[string]any
-	if yaml.Unmarshal(raw, &data) != nil {
-		return fail()
-	}
-	observation := observeHermesYAML(raw)
-	if !observation.nativeConstructible() || !observation.known("skills.disabled") {
+	root, data, valid := decodeHermesControlYAML(raw)
+	if !valid || (choice != ControlEnable && choice != ControlDisable) {
 		return fail()
 	}
 	lines := bytes.SplitAfter(raw, []byte("\n"))
@@ -124,8 +131,43 @@ func patchHermesChoice(raw []byte, name string, choice ControlChoice) ([]byte, S
 		return string(encoded)
 	}
 	change.Before, change.After = selected(values), selected(wanted)
+	finish := func(post []byte) ([]byte, SettingChange, bool, error) {
+		check := post
+		if len(check) == 0 {
+			check = raw
+		}
+		_, after, valid := decodeHermesControlYAML(check)
+		if !valid {
+			return fail()
+		}
+		beforeSkills, _ := data["skills"].(map[string]any)
+		afterSkills, _ := after["skills"].(map[string]any)
+		entries, list := afterSkills["disabled"].([]any)
+		if (!list && afterSkills["disabled"] != nil) || len(entries) != len(wanted) {
+			return fail()
+		}
+		for i, entry := range entries {
+			if entry != wanted[i] {
+				return fail()
+			}
+		}
+		delete(data, "skills")
+		delete(after, "skills")
+		delete(beforeSkills, "disabled")
+		delete(afterSkills, "disabled")
+		if len(beforeSkills) == 0 {
+			beforeSkills = nil
+		}
+		if len(afterSkills) == 0 {
+			afterSkills = nil
+		}
+		if !reflect.DeepEqual(data, after) || !reflect.DeepEqual(beforeSkills, afterSkills) {
+			return nil, change, false, errors.New("Hermes patch would alter unrelated settings")
+		}
+		return post, change, !bytes.Equal(original, post), nil
+	}
 	if (choice == ControlDisable && exact) || (choice == ControlEnable && !present) {
-		return original, change, false, nil
+		return finish(original)
 	}
 	encoded, _ := json.Marshal(wanted)
 	newline := "\n"
@@ -163,19 +205,12 @@ func patchHermesChoice(raw []byte, name string, choice ControlChoice) ([]byte, S
 			}
 			end = start + 2
 			replacement = "skills:" + newline + "  disabled: " + string(encoded)
-			post := append([]byte(nil), raw[:start]...)
-			post = append(post, []byte(replacement)...)
-			post = append(post, raw[end:]...)
-			var after map[string]any
-			if yaml.Unmarshal(post, &after) != nil {
-				return fail()
+		} else {
+			if start > 0 && raw[start-1] != '\n' {
+				replacement = newline
 			}
-			return post, change, !bytes.Equal(original, post), nil
+			replacement += "skills:" + newline + "  disabled: " + string(encoded) + newline
 		}
-		if start > 0 && raw[start-1] != '\n' {
-			replacement = newline
-		}
-		replacement += "skills:" + newline + "  disabled: " + string(encoded) + newline
 	} else {
 		if !ownLine(skillKey) || skills.Line == skillKey.Line {
 			return fail()
@@ -218,25 +253,5 @@ func patchHermesChoice(raw []byte, name string, choice ControlChoice) ([]byte, S
 	post := append([]byte(nil), raw[:start]...)
 	post = append(post, []byte(replacement)...)
 	post = append(post, raw[end:]...)
-	var after map[string]any
-	if yaml.Unmarshal(post, &after) != nil {
-		return fail()
-	}
-	// Check preservation independently of byte-span calculation.
-	beforeSkills, _ := data["skills"].(map[string]any)
-	afterSkills, _ := after["skills"].(map[string]any)
-	delete(data, "skills")
-	delete(after, "skills")
-	delete(beforeSkills, "disabled")
-	delete(afterSkills, "disabled")
-	if len(beforeSkills) == 0 {
-		beforeSkills = nil
-	}
-	if len(afterSkills) == 0 {
-		afterSkills = nil
-	}
-	if !reflect.DeepEqual(data, after) || !reflect.DeepEqual(beforeSkills, afterSkills) {
-		return nil, change, false, errors.New("Hermes patch would alter unrelated settings")
-	}
-	return post, change, !bytes.Equal(original, post), nil
+	return finish(post)
 }
