@@ -81,7 +81,7 @@ Help is a scrollable view. It documents movement, open and return, Sources and P
 | `d` / `i` | Show source Details or Instructions |
 | `v` | In reader, toggle rendered and raw instructions; in Sources, compare against the marked source |
 | `m` | In Sources, mark the focused source as comparison left |
-| `D` / `e` | In Codex or Claude Code reader, start disable or enable; choose scope and explicitly confirm preview |
+| Control keys | See the [README's control instructions](README.md#build-and-use) for supported readers, scope selection and confirmation |
 | `a` | Cycle native configured availability |
 | `c` | Cycle all supported discovery contexts |
 | `o` | Cycle selected roots |
