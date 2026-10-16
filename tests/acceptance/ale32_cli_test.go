@@ -93,7 +93,7 @@ func TestALE32UnsupportedProjectNeverFallsBack(t *testing.T) {
 	assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 }
 func TestALE32RefusalsAndStaleInputs(t *testing.T) {
-	for _, scenario := range []string{"collision", "excluded-collision", "long-name", "alias-name", "merge", "flow", "duplicate", "hardlink", "manifest-hardlink", "symlink", "external-edit", "same-byte-replacement", "profile-marker", "platform-env", "new-collision", "write-denied", "unknown-platform"} {
+	for _, scenario := range []string{"collision", "excluded-collision", "long-name", "alias-name", "namespace", "scalar-disabled", "merge", "flow", "duplicate", "hardlink", "manifest-hardlink", "symlink", "external-edit", "same-byte-replacement", "profile-marker", "platform-env", "new-collision", "write-denied", "unknown-platform"} {
 		t.Run(scenario, func(t *testing.T) {
 			fx, profile, id, target := hermesTarget(t)
 			config := filepath.Join(profile, "config.yaml")
@@ -108,6 +108,16 @@ func TestALE32RefusalsAndStaleInputs(t *testing.T) {
 				writeFile(t, target, []byte("---\nname: "+strings.Repeat("x", 70)+"\n---\nInert\n"), 0600)
 			case "alias-name":
 				writeFile(t, target, []byte("---\nname: other-name\n---\nInert\n"), 0600)
+			case "namespace":
+				name := "demo:target"
+				codexSkill(t, filepath.Join(profile, "skills"), name, name)
+				for _, source := range hermesList(t, fx, 0, nil).Sources {
+					if source.Name == name {
+						id = source.ID
+					}
+				}
+			case "scalar-disabled":
+				writeFile(t, config, []byte("skills:\n  external_dirs: [shared]\n  disabled: other-target\n"), 0600)
 			case "merge":
 				writeFile(t, config, []byte("defaults: &d {disabled: []}\nskills:\n  <<: *d\n  external_dirs: [shared]\n"), 0600)
 			case "flow":
@@ -201,4 +211,41 @@ func TestALE32AbsentConfigAndBlockList(t *testing.T) {
 			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 		})
 	}
+}
+
+func TestALE32EmptyMappingCommentsAndExactDisabledEntry(t *testing.T) {
+	fx, profile, id, _ := hermesTarget(t)
+	config := filepath.Join(profile, "config.yaml")
+	raw := []byte("# retained operator note\n{} # empty mapping note\n# retained end note\n")
+	writeFile(t, config, raw, 0600)
+	p := hermesChange(t, fx, "disable", "global", id, "", 0)
+	assertSavedChange(t, hermesChange(t, fx, "disable", "global", id, p.Confirmation, 0))
+	expected := bytes.Replace(raw, []byte("{}"), []byte("skills:\n  disabled: [\"ale32-target\"]"), 1)
+	if !bytes.Equal(readBytes(t, config), expected) {
+		t.Fatalf("empty map comments changed: %s", readBytes(t, config))
+	}
+	writeFile(t, config, []byte("skills:\n  disabled: [' ale32-target ', unrelated]\n"), 0600)
+	p = hermesChange(t, fx, "disable", "global", id, "", 0)
+	if p.NoWriteNeeded {
+		t.Fatal("trimmed native utility membership cannot stand in for exact explicit denial")
+	}
+	assertSavedChange(t, hermesChange(t, fx, "disable", "global", id, p.Confirmation, 0))
+	if !bytes.Contains(readBytes(t, config), []byte("[\" ale32-target \",\"unrelated\",\"ale32-target\"]")) {
+		t.Fatalf("exact selector not added: %s", readBytes(t, config))
+	}
+	p = hermesChange(t, fx, "enable", "global", id, "", 0)
+	assertSavedChange(t, hermesChange(t, fx, "enable", "global", id, p.Confirmation, 0))
+	if !bytes.Contains(readBytes(t, config), []byte("[\"unrelated\"]")) {
+		t.Fatal("enable failed to remove selected normalized names")
+	}
+	if err := os.Remove(config); err != nil {
+		t.Fatal(err)
+	}
+	before := treeManifest(t, fx.base)
+	p = hermesChange(t, fx, "enable", "global", id, "", 0)
+	if !p.NoWriteNeeded {
+		t.Fatal("absent enable should require no write")
+	}
+	assertSavedChange(t, hermesChange(t, fx, "enable", "global", id, p.Confirmation, 0))
+	assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 }

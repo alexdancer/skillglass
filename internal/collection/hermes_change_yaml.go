@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"reflect"
 	"strings"
 
@@ -14,9 +13,9 @@ import (
 // Patch a bounded block entry, retaining every unrelated byte. Refuse syntax
 // whose aliases or serialization could change the meaning of another setting.
 func patchHermesChoice(raw []byte, name string, choice ControlChoice) ([]byte, SettingChange, bool, error) {
-	change := SettingChange{Setting: "skills.disabled (" + name + ")", Before: "no global denial", After: "no global denial"}
+	change := SettingChange{Setting: "skills.disabled (" + name + ")"}
 	fail := func() ([]byte, SettingChange, bool, error) {
-		return nil, change, false, errors.New("Hermes writer requires ordinary block mappings and a literal disabled string/list; aliases, merges, tags, multiline and ambiguous target syntax are unsupported")
+		return nil, change, false, errors.New("Hermes writer requires ordinary block mappings and a literal disabled list; aliases, merges, tags, multiline and ambiguous target syntax are unsupported")
 	}
 	original := raw
 	if len(raw) == 0 {
@@ -74,7 +73,7 @@ func patchHermesChoice(raw []byte, name string, choice ControlChoice) ([]byte, S
 			if disabled.Tag == "!!null" {
 				nodes = nil
 			} else {
-				nodes = []*yaml.Node{disabled}
+				return fail()
 			}
 		case yaml.SequenceNode:
 			nodes = disabled.Content
@@ -92,10 +91,11 @@ func patchHermesChoice(raw []byte, name string, choice ControlChoice) ([]byte, S
 		}
 	}
 	wanted := make([]string, 0, len(values)+1)
-	present := false
+	present, exact := false, false
 	for _, value := range values {
 		if strings.TrimFunc(value, hermesDotenvSpace) == name {
 			present = true
+			exact = exact || value == name
 			if choice == ControlDisable {
 				wanted = append(wanted, value)
 			}
@@ -103,16 +103,23 @@ func patchHermesChoice(raw []byte, name string, choice ControlChoice) ([]byte, S
 			wanted = append(wanted, value)
 		}
 	}
-	if present {
-		change.Before = "globally denied"
-	}
 	if choice == ControlDisable {
-		change.After = "globally denied"
-		if !present {
+		if !exact {
 			wanted = append(wanted, name)
 		}
 	}
-	if (choice == ControlDisable) == present {
+	selected := func(entries []string) string {
+		matches := []string{}
+		for _, value := range entries {
+			if strings.TrimFunc(value, hermesDotenvSpace) == name {
+				matches = append(matches, value)
+			}
+		}
+		encoded, _ := json.Marshal(matches)
+		return string(encoded)
+	}
+	change.Before, change.After = selected(values), selected(wanted)
+	if (choice == ControlDisable && exact) || (choice == ControlEnable && !present) {
 		return original, change, false, nil
 	}
 	encoded, _ := json.Marshal(wanted)
@@ -143,8 +150,23 @@ func patchHermesChoice(raw []byte, name string, choice ControlChoice) ([]byte, S
 			return fail()
 		}
 		if len(root.Content) == 0 {
-			start = 0
-			end = len(raw)
+			if root.Anchor != "" || root.Style&yaml.TaggedStyle != 0 || !ownLine(root) {
+				return fail()
+			}
+			start = offset(root.Line) + root.Column - 1
+			if start+2 > len(raw) || string(raw[start:start+2]) != "{}" {
+				return fail()
+			}
+			end = start + 2
+			replacement = "skills:" + newline + "  disabled: " + string(encoded)
+			post := append([]byte(nil), raw[:start]...)
+			post = append(post, []byte(replacement)...)
+			post = append(post, raw[end:]...)
+			var after map[string]any
+			if yaml.Unmarshal(post, &after) != nil {
+				return fail()
+			}
+			return post, change, !bytes.Equal(original, post), nil
 		}
 		if start > 0 && raw[start-1] != '\n' {
 			replacement = newline
@@ -208,7 +230,7 @@ func patchHermesChoice(raw []byte, name string, choice ControlChoice) ([]byte, S
 		afterSkills = nil
 	}
 	if !reflect.DeepEqual(data, after) || !reflect.DeepEqual(beforeSkills, afterSkills) {
-		return nil, change, false, fmt.Errorf("Hermes patch would alter unrelated settings")
+		return nil, change, false, errors.New("Hermes patch would alter unrelated settings")
 	}
 	return post, change, !bytes.Equal(original, post), nil
 }

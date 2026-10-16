@@ -15,7 +15,7 @@ type changeFinished struct{ outcome collection.ChangeOutcome }
 
 func (model browserModel) openChange(choice collection.ControlChoice) (tea.Model, tea.Cmd) {
 	scope := model.snapshot.Scope()
-	if scope.Agent == nil || (scope.Agent.Application != "codex" && scope.Agent.Application != "claude-code" && scope.Agent.Application != "hermes") {
+	if scope.Agent == nil || !supportsSkillControls(scope.Agent.Application) {
 		model.feedback = "Controls are unsupported for this agent scope."
 		return model, nil
 	}

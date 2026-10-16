@@ -58,7 +58,7 @@ func TestALE32BrowserCancelConfirmStaleAndExit(t *testing.T) {
 			} else {
 				send("Enter", "Selected:", "Rendered instructions")
 			}
-			send("d", "Selected:", "available")
+			send("d", "Selected:", "available", "D Disable", "e Enable")
 			send("D", "Select the setting scope explicitly", "g Global")
 			preview := send("g", "SKILLGLASS | Hermes control", "ready", "y Apply global disable", "Enter/Esc Cancel")
 			assertPaneCells(t, preview, width, 24)

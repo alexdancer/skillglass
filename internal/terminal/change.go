@@ -27,7 +27,7 @@ func runChange(operation string, args []string, stdout, stderr io.Writer) int {
 		writeError(stderr, err)
 		return 2
 	}
-	if flags.NArg() != 1 || (options.agent != "codex" && options.agent != "claude-code" && options.agent != "hermes") || *scope == "" {
+	if flags.NArg() != 1 || !supportsSkillControls(options.agent) || *scope == "" {
 		writeError(stderr, errors.New("enable/disable/inherit requires explicit --agent codex, claude-code or hermes, --scope global or project and exactly one SOURCE_ID after the flags"))
 		return 2
 	}
@@ -141,4 +141,8 @@ func controlApplication(app string) string {
 		return "Claude Code"
 	}
 	return "Codex"
+}
+
+func supportsSkillControls(app string) bool {
+	return app == "codex" || app == "claude-code" || app == "hermes"
 }

@@ -39,7 +39,7 @@ func hermesControlName(s *Snapshot, source Source, inputs hermesInputs) (string,
 	}
 	name := source.Availability.NativeName
 	full := observeHermesMetadata(source.Manifest, 0)
-	if name == "" || source.Availability.NativeNameEvidence == nil || source.Availability.NativeNameEvidence.Kind == EvidenceUnknown || !full.nameKnown() || strings.TrimFunc(name, hermesDotenvSpace) != name || strings.ContainsAny(name, "\r\n") {
+	if name == "" || source.Availability.NativeNameEvidence == nil || source.Availability.NativeNameEvidence.Kind == EvidenceUnknown || !full.nameKnown() || strings.TrimFunc(name, hermesDotenvSpace) != name || strings.ContainsAny(name, ":\r\n") {
 		return "", "native name interpretation is unverified"
 	}
 	for _, ref := range source.Availability.References {
