@@ -13,6 +13,9 @@ func (inputs *piInputs) addRoot(request *Request, path string, context Reference
 	id := RootID("root_pi_" + stableID(origin, path, fact.path, fact.provenance.PluginID))
 	for _, r := range request.Roots {
 		if r.ID == id {
+			existing := inputs.facts[id]
+			existing.resources = append(existing.resources, fact.resources...)
+			inputs.facts[id] = existing
 			return
 		}
 	}
@@ -27,7 +30,8 @@ func buildPi(ctx context.Context, request Request) (*Snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	inputs := piInputs{facts: make(map[RootID]piRootFact), scope: AgentScope{Application: "pi", ValidatedVersion: piValidatedVersion, VersionEvidence: "docs/verification/ale-33.md", Evidence: piEvidence(EvidenceInferred, "version-specific-adapter", "", "", "rules validated with installed native Pi resource manager and skill loader; current running sessions are not inspected"), Gaps: []string{"Running CLI --skill, --no-skills, trust overrides, custom SDK loaders and extension-provided resources are not observed.", "Complex minimatch braces/extglobs, package manifest glob expansion and ignore-file rules remain unknown; bounded discovery reports those cases.", "Non-exact ? and character-class patterns involving astral text remain unknown, including conservative uncertainty under astral candidate ancestors.", "Legacy global npm installations and remote package version satisfaction are not inferred from a cache folder.", "Within one native root, discovery order follows the recorded macOS filesystem ordering; other platforms remain unvalidated.", "Standalone Markdown resources can be read; bundle comparison has incomplete coverage and deletion is unsupported.", "All writers are unavailable in this read-only ticket."}}}
+	inputs := piInputs{facts: make(map[RootID]piRootFact), scope: AgentScope{Application: "pi", ValidatedVersion: piValidatedVersion, VersionEvidence: "docs/verification/ale-33.md", Evidence: piEvidence(EvidenceInferred, "version-specific-adapter", "", "", "rules validated with installed native Pi resource manager and skill loader; current running sessions are not inspected"), Gaps: []string{"Running CLI --skill, --no-skills, trust overrides, custom SDK loaders and extension-provided resources are not observed.", "Complex minimatch braces/extglobs, package manifest glob expansion and ignore-file rules remain unknown; bounded discovery reports those cases.", "Non-exact ? and character-class patterns involving astral text remain unknown, including conservative uncertainty under astral candidate ancestors.", "Legacy global npm installations and remote package version satisfaction are not inferred from a cache folder.", "Within one native root, discovery order follows the recorded macOS filesystem ordering; other platforms remain unvalidated.", "Standalone Markdown resources can be read; bundle comparison has incomplete coverage and deletion is unsupported.", "Package writers and deletion are unavailable; exact resource controls require a confirmed preview."}}}
+	inputs.overlay = request.piSettingsOverlay
 	inputs.global = inputs.settings(filepath.Join(agentDir, "settings.json"), "global")
 	inputs.trust = inputs.projectTrust(request.Project, agentDir)
 	ancestors, err := piAncestors(request.Project)
@@ -49,7 +53,7 @@ func buildPi(ctx context.Context, request Request) (*Snapshot, error) {
 			if piPattern(entry) {
 				continue
 			}
-			inputs.addRoot(&request, piPath(entry, base, request.home), context, "pi-configured-"+string(context), "pi", piRootFact{rank: rank, base: base, path: settings.path, patterns: settings.skills, trust: trust, uncertain: settings.uncertain, provenance: Provenance{Kind: string(context), Evidence: piEvidence(EvidenceObserved, "configured-resource", settings.path, "skills", "resource root selected by Pi settings")}}, false)
+			inputs.addRoot(&request, piPath(entry, base, request.home), context, "pi-configured-"+string(context), "pi", piRootFact{rank: rank, base: base, path: settings.path, patterns: settings.skills, resources: []string{entry}, trust: trust, uncertain: settings.uncertain, provenance: Provenance{Kind: string(context), Evidence: piEvidence(EvidenceObserved, "configured-resource", settings.path, "skills", "resource root selected by Pi settings")}}, false)
 		}
 	}
 	if request.Project.Selected {
@@ -115,6 +119,10 @@ func buildPi(ctx context.Context, request Request) (*Snapshot, error) {
 		inputs.problems = append(inputs.problems, problem)
 	}
 	applyNativeProblems(snapshot, inputs.problems, roots)
+	snapshot.piControls = &inputs
+	if !request.piPlanning {
+		applyPiCapabilities(snapshot)
+	}
 	return snapshot, nil
 }
 
@@ -253,7 +261,7 @@ func (inputs *piInputs) explain(snapshot *Snapshot, id SourceID, roots map[RootI
 	ex.Invocation = &invocation
 	ex.Precedence = &PrecedenceExplanation{State: PrecedenceUnique, Evidence: piEvidence(EvidenceInferred, "resource-precedence", source.Manifest.Path, "", "project configured > project automatic > global configured > global automatic > packages; native first name wins")}
 	ex.Session = &SessionExplanation{State: "unknown", Evidence: piEvidence(EvidenceUnknown, "session-not-observed", "", "", "no running Pi session or model invocation was inspected")}
-	ex.Reload = &SessionExplanation{State: "unknown", Evidence: piEvidence(EvidenceUnknown, "session-reload", "", "", "viewer refresh rereads files; native /reload and fresh-session enforcement are not verified")}
+	ex.Reload = &SessionExplanation{State: "required", Evidence: piEvidence(EvidenceInferred, "session-reload", "", "", "existing sessions require settings reload; fresh sessions load persisted choices; interactive /reload is unverified")}
 	for _, op := range []string{"enable", "disable", "project-override", "delete"} {
 		scope := "source"
 		if op == "project-override" {

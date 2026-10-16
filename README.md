@@ -6,7 +6,7 @@ Skillglass is a Go terminal tool for browsing, reading, comparing, and controlli
 
 ## Status
 
-The production inventory, identity, comparison, and application discovery slices are implemented. Skillglass discovers explicit custom and project roots, groups references only when they resolve to the same proven source object, reports collection problems without discarding healthy sources, and exposes the same immutable snapshot through the CLI and keyboard browser. Codex, Claude Code, Pi, OpenCode, CodeAF, Gemini CLI, and Hermes integrations add native scope and local configured-availability explanations. Validated global Codex, global/project Claude Code and active-profile global Hermes controls use source-bound preview and explicit confirmation. Other write controls remain unsupported, and running-session enforcement remains unknown. Generic explicit-root inventory keeps unknown ownership and availability.
+The production inventory, identity, comparison, and application discovery slices are implemented. Skillglass discovers explicit custom and project roots, groups references only when they resolve to the same proven source object, reports collection problems without discarding healthy sources, and exposes the same immutable snapshot through the CLI and keyboard browser. Codex, Claude Code, Pi, OpenCode, CodeAF, Gemini CLI, and Hermes integrations add native scope and local configured-availability explanations. Validated global Codex, global/project Claude Code, active-profile global Hermes and global/project Pi controls use source-bound preview and explicit confirmation. Other write controls remain unsupported, and running-session execution remains unobserved. Generic explicit-root inventory keeps unknown ownership and availability.
 
 The project was planned as **Skill Viewer**. Existing Linear titles and historical planning documents retain that name; **Skillglass** is the product and repository name.
 
@@ -35,6 +35,7 @@ Native integrations cover Codex, Claude Code, Hermes, Pi, OpenCode, Gemini CLI, 
 - [ALE-27 global Codex control verification](docs/verification/ale-27.md)
 - [ALE-30 Claude Code control verification](docs/verification/ale-30.md)
 - [ALE-29 Claude Code verification](docs/verification/ale-29.md)
+- [ALE-34 Pi control verification](docs/verification/ale-34.md)
 - [ALE-43 verification](docs/verification/ale-43.md)
 
 [Linear](https://linear.app/alex-dancer/project/skill-viewer-58706f175bed) holds live ticket requirements, status, and dependencies. The local copies are references.
@@ -88,6 +89,16 @@ bin/skillglass inherit --agent claude-code --scope project --project /path/to/re
 Repeat the exact preview request with `--confirm cl1:PREVIEW_TOKEN` to apply. In the Claude Code browser, `D`/`e` opens scope selection, `g`/`p` selects global/project, and `i` removes the project override. Inspect the preview, then `y` confirms; Enter or Escape cancels. Inheritance can succeed while the inherited result remains disabled. Higher-priority project/local choices refuse broader on/off changes. Controls require the command name to match every native discovery directory name; renamed skills, plugins and independent command-name or directory-selector collisions cannot be toggled as isolated ordinary skills. [Claude control evidence and limits](docs/verification/ale-30.md) records versions, filesystem guarantees and session loading limits.
 
 Hermes controls use `--agent hermes --scope global` with the same preview and `--confirm` token workflow. Global selects the active profile shown in the preview. In the Hermes reader, `D` and `e` open the same scope/confirmation pages. Only that profile's `skills.disabled` membership changes; platform denies and other profiles remain intact. Project enable/disable and `inherit` are unsupported on Hermes 0.20.0 and never fall back to global. An enable saved while platform policy still denies use reports the unmet effective result and exits nonzero. Running-session adoption and reload/restart requirements remain unknown. See [Hermes control validation and limits](docs/verification/ale-32.md).
+
+Pi 1.1.0 ordinary sources support global enable/disable and trusted selected-project overrides through exact lexical resource settings:
+
+```sh
+bin/skillglass disable --agent pi --scope global --json SOURCE_ID
+bin/skillglass enable --agent pi --scope project --project /path/to/repository SOURCE_ID
+bin/skillglass inherit --agent pi --scope project --project /path/to/repository SOURCE_ID
+```
+
+Inspect the preview and repeat that exact request with `--confirm pi1:PREVIEW_TOKEN` to apply. In the Pi browser, `D`/`e` opens scope selection, `g`/`p` selects global/project, `i` selects project inheritance, `y` confirms and Enter or Escape cancels. See [Pi control evidence and limits](docs/verification/ale-34.md) for the override representation, preservation and refusal rules, capability versus effective-result checks, and required settings reload.
 
 `bin/skillglass inherit --agent codex --scope project --project /path/to/repository SOURCE_ID` requests removal of the selected source's project override and restoration of applicable inheritance. Project enable, disable and inheritance requests return `unsupported` without a confirmation token or filesystem changes on Codex 0.155.1. They never fall back to a global change. Global `inherit` is also unsupported because there is no project override to remove at that scope. See [project control evidence and limits](docs/verification/ale-28.md) for the native limitation and the distinction between local configuration inference and session enforcement.
 

@@ -87,6 +87,9 @@ type Request struct {
 	codeafProfile string
 	claudeHome    string
 	hermesHome    string
+	// Private read-only prospective evaluation; never retained in a persisted change plan.
+	piPlanning        bool
+	piSettingsOverlay map[string][]byte
 }
 
 func NewRequest(rawRoots, rawProjectRoots []string, rawProject *string) (Request, error) {
@@ -379,6 +382,7 @@ type Snapshot struct {
 	referenceOrder []ReferenceID
 	problems       []Problem
 	hermesControls hermesControlFacts
+	piControls     *piInputs
 }
 
 func Build(ctx context.Context, request Request) (*Snapshot, error) {

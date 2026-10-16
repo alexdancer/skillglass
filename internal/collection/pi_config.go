@@ -35,6 +35,7 @@ type piRootFact struct {
 	rank            int
 	base, path      string
 	patterns        []string
+	resources       []string // Original literal registrations contributing this native root.
 	packagePatterns []string
 	packageFilter   bool
 	delta           bool
@@ -47,6 +48,7 @@ type piPackageProblem struct {
 	source, settings string
 }
 type piInputs struct {
+	overlay         map[string][]byte
 	packageProblems []piPackageProblem
 	scope           AgentScope
 	problems        []Problem
@@ -63,6 +65,12 @@ func (inputs *piInputs) settings(path, scope string) piSettings {
 	layer := PermissionLayer{Path: path, Scope: scope, State: "absent", Reason: "optional settings file is absent", Evidence: piEvidence(EvidenceObserved, "settings-layer", path, "skills, packages", "read-only settings observation")}
 	defer func() { inputs.scope.ConfigLayers = append(inputs.scope.ConfigLayers, layer) }()
 	raw, err := nativeBytes(path)
+	if replacement, ok := inputs.overlay[path]; ok {
+		raw, err = replacement, nil
+		if len(raw) == 0 {
+			return s
+		}
+	}
 	if nativeAbsent(path, err) {
 		return s
 	}
@@ -220,7 +228,8 @@ func (inputs *piInputs) projectTrust(project ProjectContext, agentDir string) st
 	if !project.Selected {
 		return "allowed"
 	}
-	if !piRequiresTrust(project.Path) {
+	_, prospectiveSettings := inputs.overlay[filepath.Join(project.Path, ".pi", "settings.json")]
+	if !piRequiresTrust(project.Path) && !prospectiveSettings {
 		return "allowed"
 	}
 	trustPath := filepath.Join(agentDir, "trust.json")

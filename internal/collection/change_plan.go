@@ -58,7 +58,9 @@ func changeObservations(s *Snapshot, destination changeDestination) ([]byte, []c
 		add(source.Directory)
 		add(source.Manifest.Path)
 		add(source.Manifest.ResolvedPath)
-		add(filepath.Join(source.Directory, "agents", "openai.yaml"))
+		if source.Directory != source.Manifest.ResolvedPath {
+			add(filepath.Join(source.Directory, "agents", "openai.yaml"))
+		}
 		availability := source.Availability
 		if availability.Evidence != nil {
 			evidence(*availability.Evidence)
@@ -124,8 +126,8 @@ func (p *changePlan) inspectResult(out ChangeOutcome, parent changeIdentity) Cha
 	if err == nil && current.Exists == expectedExists && current.Symlink == "" && bytes.Equal(current.Bytes, p.postimage) && metadataMatches && (parentMatches || (p.intent.Choice == ControlInherit && !p.destination.Config.Exists && p.destination.CreateDirectory != "")) {
 		out.Persistence = "verified"
 		out.PersistedChoice = p.intent.Choice
-		if p.intent.Application != "claude-code" && p.intent.Application != "hermes" {
-			// Claude visibility and Hermes raw disabled membership do not establish native invocation permission.
+		if p.intent.Application != "claude-code" && p.intent.Application != "hermes" && p.intent.Application != "pi" {
+			// Resource choice persistence alone does not establish native invocation permission for these agents.
 			if p.intent.Choice == ControlEnable {
 				out.PersistedPermission = PermissionAllowed
 			} else {
