@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"path/filepath"
 	"strings"
 )
 
@@ -41,7 +40,7 @@ func patchPiChoice(raw []byte, p piControlPlan) ([]byte, []SettingChange, bool, 
 	}
 	matches := func(value string) bool {
 		for _, target := range p.Targets {
-			yes, known := piMatch(target, value, filepath.Dir(p.SettingsPath), true)
+			yes, known := piMatch(target.File, value, target.Base, true)
 			if yes && known {
 				return true
 			}
@@ -129,7 +128,7 @@ func patchPiChoice(raw []byte, p piControlPlan) ([]byte, []SettingChange, bool, 
 			prefix = "-"
 		}
 		for _, target := range p.Targets {
-			add(prefix + target)
+			add(prefix + target.File)
 		}
 	}
 	if p.Choice == ControlInherit && !removed {

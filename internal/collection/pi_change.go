@@ -14,11 +14,16 @@ import (
 // piControlPlan separates native lexical selectors from source filesystem identity.
 // Shared changePlan owns consent, staleness and safe persistence.
 type piControlPlan struct {
-	SettingsPath           string
-	Targets, GlobalTargets []string
-	ProjectResources       []string
-	Choice                 ControlChoice
-	Scope                  ControlScope
+	SettingsPath     string
+	Targets          []piControlTarget
+	GlobalTargets    []string
+	ProjectResources []string
+	Choice           ControlChoice
+	Scope            ControlScope
+}
+
+type piControlTarget struct {
+	File, Base string
 }
 
 func planPiControl(s *Snapshot, intent ChangeIntent) (piControlPlan, error) {
@@ -54,7 +59,7 @@ func planPiControl(s *Snapshot, intent ChangeIntent) (piControlPlan, error) {
 	if err != nil || manifest.Links != 1 {
 		return p, errors.New("manifest identity is unsafe or hardlinked")
 	}
-	global, local := map[string]bool{}, map[string]bool{}
+	global, local := map[piControlTarget]bool{}, map[piControlTarget]bool{}
 	projectResources := map[string]bool{}
 	for _, rid := range source.References {
 		ref := s.references[rid]
@@ -72,36 +77,46 @@ func planPiControl(s *Snapshot, intent ChangeIntent) (piControlPlan, error) {
 		if strings.TrimSpace(file) != file || strings.ContainsAny(file, "\r\n") {
 			return p, errors.New("native lexical target has unverified whitespace")
 		}
+		target := piControlTarget{File: file, Base: fact.base}
 		if ref.Context == ContextGlobal {
-			global[file] = true
+			global[target] = true
 		}
 		if ref.Context == ContextProject {
 			for _, resource := range fact.resources {
 				projectResources[resource] = true
 			}
-			local[file] = true
+			local[target] = true
 		}
 	}
-	for path := range global {
-		p.GlobalTargets = append(p.GlobalTargets, path)
+	globalFiles := map[string]bool{}
+	for target := range global {
+		globalFiles[target.File] = true
+	}
+	for file := range globalFiles {
+		p.GlobalTargets = append(p.GlobalTargets, file)
 	}
 	targets := global
 	p.SettingsPath = inputs.global.path
 	if intent.Scope == ControlProject {
 		p.SettingsPath = inputs.project.path
 		targets = local
-		for path := range global {
-			targets[path] = true
+		for file := range globalFiles {
+			targets[piControlTarget{File: file, Base: filepath.Dir(p.SettingsPath)}] = true
 		}
 	}
-	for path := range targets {
-		p.Targets = append(p.Targets, path)
+	for target := range targets {
+		p.Targets = append(p.Targets, target)
 	}
 	for resource := range projectResources {
 		p.ProjectResources = append(p.ProjectResources, resource)
 	}
 	sort.Strings(p.ProjectResources)
-	sort.Strings(p.Targets)
+	sort.Slice(p.Targets, func(i, j int) bool {
+		if p.Targets[i].File != p.Targets[j].File {
+			return p.Targets[i].File < p.Targets[j].File
+		}
+		return p.Targets[i].Base < p.Targets[j].Base
+	})
 	sort.Strings(p.GlobalTargets)
 	if len(p.Targets) == 0 {
 		return p, errors.New("requested scope has no native occurrence; no broader fallback")
