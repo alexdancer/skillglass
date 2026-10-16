@@ -23,8 +23,13 @@ func decodeHermesControlYAML(raw []byte) (*yaml.Node, map[string]any, bool) {
 	}
 	observation := hermesYAMLObservation{root: root}
 	var data map[string]any
-	if root.Decode(&data) != nil || !observation.nativeConstructible() || !observation.known("skills.disabled") {
+	if root.Decode(&data) != nil || !observation.nativeConstructible() || !observation.known("skills.disabled", "agent") {
 		return nil, nil, false
+	}
+	if agent := data["agent"]; agent != nil {
+		if _, mapping := agent.(map[string]any); !mapping {
+			return nil, nil, false
+		}
 	}
 	return root, data, true
 }
@@ -34,7 +39,7 @@ func decodeHermesControlYAML(raw []byte) (*yaml.Node, map[string]any, bool) {
 func patchHermesChoice(raw []byte, name string, choice ControlChoice) ([]byte, SettingChange, bool, error) {
 	change := SettingChange{Setting: "skills.disabled (" + name + ")"}
 	fail := func() ([]byte, SettingChange, bool, error) {
-		return nil, change, false, errors.New("Hermes writer requires one complete native-compatible YAML mapping, ordinary block mappings and a literal disabled list; extra documents, trailing content, aliases, merges, tags, multiline and ambiguous target syntax are unsupported")
+		return nil, change, false, errors.New("Hermes writer requires one complete native-compatible YAML mapping, ordinary block mappings and a literal disabled list; profile agent must be absent, null or a known mapping for validated native normalization; extra documents, trailing content, aliases, merges, tags, multiline and ambiguous target syntax are unsupported")
 	}
 	original := raw
 	if len(raw) == 0 {
