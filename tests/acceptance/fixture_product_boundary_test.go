@@ -122,11 +122,12 @@ func TestFixturePolicyInertControls(t *testing.T) {
 			t.Fatalf("positive control %s failed", name)
 		}
 	}
+	networkCanary := allowedProbeNetworkCanary(t, fx, listener)
 	executable := canonicalPath(t, isolationProbeBinary)
 	profile := filepath.Join(fx.temporary, "probe.sb")
 	writeFile(t, profile, []byte(fixtureRuntimeProfile(executable, canonicalPath(t, fx.base))), 0600)
 	before := treeManifest(t, fx.base)
-	args := []string{allowed, excluded, blockedWrite, listener.Addr().String(), filepath.Dir(excluded)}
+	args := []string{"--network-canary", networkCanary, allowed, excluded, blockedWrite, listener.Addr().String(), filepath.Dir(excluded)}
 	command := exec.Command("/usr/bin/sandbox-exec", append([]string{"-f", profile, executable}, args...)...)
 	command.Dir = fx.project
 	command.Env = fx.environment()
@@ -143,7 +144,7 @@ func TestFixturePolicyInertControls(t *testing.T) {
 	if !controls.Passed {
 		t.Fatalf("fixture controls: %s", output)
 	}
-	assertNoSandboxedConnection(t, listener)
+	assertNoSandboxedConnection(t, listener, networkCanary)
 	assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 	writeEvidence(t, "fixture-boundary/inert-controls.json", output)
 	recordEvidenceCommand(t, "fixture-boundary-inert-probe", commandResult{stdout: output, launch: launch})

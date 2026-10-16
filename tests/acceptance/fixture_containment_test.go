@@ -32,10 +32,11 @@ func TestFixtureLaunchContainment(t *testing.T) {
 	if !positive["write_succeeds_without_sandbox"] || !positive["loopback_succeeds_without_sandbox"] {
 		t.Fatal(positive)
 	}
+	networkCanary := allowedProbeNetworkCanary(t, fx, listener)
 	profile := fx.policy
 	policy := mustReadFixturePolicy(t, fx)
 	writeEvidence(t, "fixture-launch/fixture.sb", policy)
-	args := []string{"--absence", allowed, excluded, blocked, listener.Addr().String()}
+	args := []string{"--network-canary", networkCanary, "--absence", allowed, excluded, blocked, listener.Addr().String()}
 	verify := func(data []byte) {
 		t.Helper()
 		var result struct {
@@ -61,7 +62,7 @@ func TestFixtureLaunchContainment(t *testing.T) {
 		t.Fatal(err)
 	}
 	aliasArgs := append([]string(nil), args...)
-	aliasArgs[2] = alias
+	aliasArgs[4] = alias
 	aliasResult := fx.run(t, aliasArgs...)
 	assertExit(t, aliasResult, 0)
 	verify(aliasResult.stdout)
@@ -104,7 +105,7 @@ func TestFixtureLaunchContainment(t *testing.T) {
 	}
 	verify([]byte(pane[start : end+1]))
 	writeEvidence(t, "fixture-launch/tmux.json", []byte(pane))
-	assertNoSandboxedConnection(t, listener)
+	assertNoSandboxedConnection(t, listener, networkCanary)
 	if _, err := os.Stat(blocked); !os.IsNotExist(err) {
 		t.Fatal("sandbox wrote fixture")
 	}

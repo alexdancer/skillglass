@@ -17,7 +17,7 @@ const usage = `Usage:
   skillglass read [SCOPE] [--json] SOURCE_ID
   skillglass explain [SCOPE] [--json] SOURCE_ID
   skillglass compare [SCOPE] [--json] LEFT_SOURCE_ID RIGHT_SOURCE_ID
-  skillglass enable|disable|inherit --agent codex --scope global|project [SCOPE] [--confirm TOKEN] [--json] SOURCE_ID
+  skillglass enable|disable|inherit --agent codex|claude-code --scope global|project [SCOPE] [--confirm TOKEN] [--json] SOURCE_ID
   skillglass browse [SCOPE]
 
 Scope:

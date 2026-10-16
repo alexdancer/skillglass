@@ -524,7 +524,7 @@ func (model browserModel) helpBodyLines() []string {
 		{"d / i", "Show source Details or Instructions"},
 		{"v", "In reader: toggle rendered and raw instructions; in Sources: compare marked source"},
 		{"m", "In Sources: mark the focused source as comparison left"},
-		{"D / e", "In Codex reader: disable or enable, then choose scope and confirm preview"},
+		{"D / e", "In Codex or Claude Code reader: disable or enable, then choose scope and confirm preview"},
 		{"a", "Cycle native configured availability"},
 		{"c", "Cycle all supported discovery contexts"},
 		{"o", "Cycle selected roots"},

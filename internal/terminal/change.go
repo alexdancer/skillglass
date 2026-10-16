@@ -27,8 +27,8 @@ func runChange(operation string, args []string, stdout, stderr io.Writer) int {
 		writeError(stderr, err)
 		return 2
 	}
-	if flags.NArg() != 1 || options.agent != "codex" || *scope == "" {
-		writeError(stderr, errors.New("enable/disable/inherit requires explicit --agent codex, --scope global or project and exactly one SOURCE_ID after the flags"))
+	if flags.NArg() != 1 || (options.agent != "codex" && options.agent != "claude-code") || *scope == "" {
+		writeError(stderr, errors.New("enable/disable/inherit requires explicit --agent codex or claude-code, --scope global or project and exactly one SOURCE_ID after the flags"))
 		return 2
 	}
 	snapshot, code := buildSnapshot(options, stderr)
@@ -69,7 +69,7 @@ func runChange(operation string, args []string, stdout, stderr io.Writer) int {
 	return exit
 }
 func changePreviewLines(view collection.ChangeView) []string {
-	lines := []string{fmt.Sprintf("Codex %s %s | %s", view.Intent.Scope, view.Intent.Choice, view.State), "Source ID: " + string(view.Intent.Source), "Reason: " + view.Reason}
+	lines := []string{fmt.Sprintf("%s %s %s | %s", controlApplication(view.Intent.Application), view.Intent.Scope, view.Intent.Choice, view.State), "Source ID: " + string(view.Intent.Source), "Reason: " + view.Reason}
 	if view.State != "ready" {
 		if view.Intent.Scope == collection.ControlProject {
 			lines = append(lines, inspectionProjectLine(view.InspectionProject))
@@ -79,7 +79,7 @@ func changePreviewLines(view collection.ChangeView) []string {
 	for _, change := range view.Changes {
 		lines = append(lines, "Change: "+change.Before+" -> "+change.After)
 	}
-	lines = append(lines, "Action scope: global user configuration")
+	lines = append(lines, "Action scope: "+string(view.Intent.Scope)+" configuration")
 	lines = append(lines, availabilitySummaryLines(view.Before)...)
 	lines = append(lines, "Source: "+view.SourcePath, "Target: "+view.ManifestPath, "Write: "+view.ConfigPath)
 	if view.CreateDirectory != "" {
@@ -108,7 +108,10 @@ func inspectionProjectLine(project collection.ProjectContext) string {
 }
 
 func changeOutcomeLines(out collection.ChangeOutcome) []string {
-	lines := []string{fmt.Sprintf("Codex %s %s | %s", out.Intent.Scope, out.Intent.Choice, out.State), "Source ID: " + string(out.Intent.Source), "Write: " + out.WriteState, "Persistence: " + out.Persistence, "Effective result: " + out.Achievement, "Reason: " + out.Reason}
+	lines := []string{fmt.Sprintf("%s %s %s | %s", controlApplication(out.Intent.Application), out.Intent.Scope, out.Intent.Choice, out.State), "Source ID: " + string(out.Intent.Source), "Write: " + out.WriteState, "Persistence: " + out.Persistence, "Effective result: " + out.Achievement, "Reason: " + out.Reason}
+	if out.PersistedChoice != "" {
+		lines = append(lines, "Saved choice: "+string(out.PersistedChoice))
+	}
 	if out.PersistedPermission != "" {
 		lines = append(lines, "Persisted permission: "+string(out.PersistedPermission))
 	}
@@ -128,4 +131,11 @@ func safeChangeLines(lines []string) []string {
 		lines[index] = safeInline(lines[index])
 	}
 	return lines
+}
+
+func controlApplication(app string) string {
+	if app == "claude-code" {
+		return "Claude Code"
+	}
+	return "Codex"
 }

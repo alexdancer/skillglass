@@ -2,7 +2,7 @@
 
 ## Product promise
 
-Skillglass gives people a clear, trustworthy view of the agent skills selected from explicit local roots or native agent discovery. It helps them find a skill, distinguish independent sources, read instructions, and inspect provenance or collection problems without executing skill content. Explicit global Codex controls offer a separate preview and confirmation flow.
+Skillglass gives people a clear, trustworthy view of the agent skills selected from explicit local roots or native agent discovery. It helps them find a skill, distinguish independent sources, read instructions, and inspect provenance or collection problems without executing skill content. Explicit global Codex and global/project Claude Code controls offer a separate preview and confirmation flow.
 
 The current product is a local macOS terminal application. It operates offline after dependencies are installed and exposes one immutable collection snapshot through command output and the interactive browser.
 
@@ -16,7 +16,7 @@ The primary user maintains skills for one or more agent applications and project
 4. Inspect exact identity, paths, references, metadata, resources, and diagnostics when needed.
 5. Understand whether discovery coverage is complete and which filters or roots define the current view.
 
-Problem investigation, scope inspection, and refresh are supporting jobs. Native discovery supports Codex, Claude Code, Hermes, Pi, OpenCode, Gemini CLI, and CodeAF. Comparison and explicit global Codex choices are supported.
+Problem investigation, scope inspection, and refresh are supporting jobs. Native discovery supports Codex, Claude Code, Hermes, Pi, OpenCode, Gemini CLI, and CodeAF. Comparison and explicit global Codex and scoped Claude Code choices are supported.
 
 ## Experience principles
 
@@ -53,13 +53,13 @@ Skillglass currently supports:
 - source, problem, context, root, and text filtering;
 - human and JSON list, problem, read, explain, and comparison commands;
 - native availability evidence and filtering;
-- global Codex enable and disable with a preview, explicit confirmation, freshness validation, and persisted-result verification;
+- global Codex enable and disable, and Claude Code global/project choices with project inheritance, using a preview, explicit confirmation, freshness validation, and persisted-result verification;
 - a responsive keyboard browser with source instructions, details, problems, scope, help, and explicit refresh;
 - rendered Markdown with an exact escaped raw view;
 - recursive supporting-resource inventory without content execution;
 - useful partial results and explicit incomplete coverage.
 
-Skillglass does not currently watch the filesystem, decide ownership or availability without evidence, change settings outside supported global Codex controls, delete content, or synchronize with a remote service.
+Skillglass does not currently watch the filesystem, decide ownership or availability without evidence, change settings outside supported global Codex and global/project Claude Code controls, delete content, or synchronize with a remote service.
 
 ## Success criteria
 

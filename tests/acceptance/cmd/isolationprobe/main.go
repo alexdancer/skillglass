@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -18,6 +19,20 @@ type result struct {
 }
 
 func main() {
+	if len(os.Args) == 4 && os.Args[1] == "--network-positive" {
+		networkErr, sent, writeErr := probeNetwork(os.Args[2], os.Args[3])
+		passed := networkErr == nil && writeErr == nil && sent == len(os.Args[3])
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"passed": passed, "sent": sent, "network_error": errorString(networkErr), "write_error": errorString(writeErr)})
+		if !passed {
+			os.Exit(1)
+		}
+		return
+	}
+	networkCanary := ""
+	if len(os.Args) > 3 && os.Args[1] == "--network-canary" {
+		networkCanary = os.Args[2]
+		os.Args = append(os.Args[:1], os.Args[3:]...)
+	}
 	if len(os.Args) == 9 && os.Args[1] == "boundary" {
 		boundary()
 		return
@@ -51,10 +66,7 @@ func main() {
 	allowed, allowedError := os.ReadFile(os.Args[1])
 	_, excludedError := os.ReadFile(os.Args[2])
 	writeError := os.WriteFile(os.Args[3], []byte("forbidden\n"), 0o600)
-	connection, networkError := net.DialTimeout("tcp", os.Args[4], time.Second)
-	if connection != nil {
-		_ = connection.Close()
-	}
+	networkError, sent, networkWriteError := probeNetwork(os.Args[4], networkCanary)
 	child := exec.Command("/usr/bin/true")
 	child.Stdin = os.Stdin
 	child.Stdout = os.Stdout
@@ -67,6 +79,9 @@ func main() {
 		"file_write_denied":    os.IsPermission(writeError),
 		"network_denied":       denied(networkError),
 		"child_exec_denied":    os.IsPermission(childError),
+	}
+	if networkCanary != "" {
+		checks["network_canary_not_sent"] = sent == 0 && networkWriteError == nil
 	}
 	if absence {
 		_, metadataError := os.Stat(os.Args[2])
@@ -158,4 +173,21 @@ func boundary() {
 	if !passed {
 		os.Exit(1)
 	}
+}
+
+// probeNetwork is shared by the allowed child control and contained launch probes.
+func probeNetwork(address, payload string) (error, int, error) {
+	connection, err := net.DialTimeout("tcp", address, time.Second)
+	if err != nil {
+		return err, 0, nil
+	}
+	defer connection.Close()
+	if payload == "" {
+		return nil, 0, nil
+	}
+	if err := connection.SetWriteDeadline(time.Now().Add(time.Second)); err != nil {
+		return nil, 0, err
+	}
+	sent, writeErr := io.WriteString(connection, payload)
+	return nil, sent, writeErr
 }

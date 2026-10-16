@@ -7,6 +7,7 @@ import json
 import pathlib
 import select
 import subprocess
+import sys
 import tempfile
 
 from claude_containment import NativeContainment
@@ -58,7 +59,7 @@ def initialize(command, cwd, environment):
             process.communicate()
 
 
-def main():
+def main(controls=False):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=pathlib.Path)
     parser.add_argument("--claude", default="/Users/alex/.local/bin/claude")
@@ -132,6 +133,8 @@ def main():
     registry_data = json.loads(registry_path.read_text())
     registry_data["plugins"]["root-demo@market"] = [{"scope": "user", "installPath": str(root_plugin), "version": "1.0.0"}]
     write(registry_path, json.dumps(registry_data))
+    if controls:
+        skill(home, "action", "action", "", "ORDINARY-ACTION")
     user = home / ".claude/settings.json"
     project = cwd / ".claude/settings.json"
     local = cwd / ".claude/settings.local.json"
@@ -156,7 +159,8 @@ def main():
             "--mcp-config", '{"mcpServers":{}}', "--no-session-persistence"]
     version = subprocess.check_output(containment.command(["--version"]),
                                       cwd=cwd, env=environment, text=True, timeout=25).strip()
-    assert version == "2.1.282 (Claude Code)", ("unsupported native version", version)
+    supported = {"2.1.282 (Claude Code)", "2.1.300 (Claude Code)"} if controls else {"2.1.282 (Claude Code)"}
+    assert version in supported, ("unsupported native version", version)
     cases = [
         ("baseline", {}, {}, {}),
         ("user-off", {"skillOverrides": {"collision": "off", "explicit": "off"}}, {}, {}),
@@ -184,6 +188,22 @@ def main():
         ("root-plugin-enabled", {"enabledPlugins": {"root-demo@market": True}}, {}, {}),
         ("root-plugin-disabled", {"enabledPlugins": {"root-demo@market": False}}, {}, {}),
     ]
+    if controls:
+        cases.extend([
+            ("user-on", {"skillOverrides": {"collision": "on"}}, {}, {}),
+            ("project-off", {}, {"skillOverrides": {"collision": "off"}}, {}),
+            ("inherit-user-off", {"skillOverrides": {"collision": "off"}}, {}, {}),
+            ("inherit-default", {}, {}, {}),
+            ("local-on", {"skillOverrides": {"collision": "off"}}, {"skillOverrides": {"collision": "off"}}, {"skillOverrides": {"collision": "on"}}),
+            ("local-off", {"skillOverrides": {"collision": "on"}}, {"skillOverrides": {"collision": "on"}}, {"skillOverrides": {"collision": "off"}}),
+            ("ordinary-plugin-collision", {"enabledPlugins": {"demo@market": True}, "skillOverrides": {"action": "off"}}, {}, {}),
+            ("renamed-user-command-off", {"skillOverrides": {"display-name": "off"}}, {}, {}),
+            ("renamed-user-directory-off", {"skillOverrides": {"renamed": "off"}}, {}, {}),
+            ("renamed-project-command-off", {}, {"skillOverrides": {"display-name": "off"}}, {}),
+            ("renamed-project-directory-off", {}, {"skillOverrides": {"renamed": "off"}}, {}),
+            ("renamed-local-command-off", {}, {}, {"skillOverrides": {"display-name": "off"}}),
+            ("renamed-local-directory-off", {}, {}, {"skillOverrides": {"renamed": "off"}}),
+        ])
     areas = [home / ".claude/skills", repo / ".claude", cwd / ".claude",
              plugin, configured / "skills", market / "demo", root_plugin, marketplace_path,
              shared.parent, root / "linked.md", user,
@@ -232,6 +252,15 @@ def main():
             "registry_check": registry_result,
         })
     commands = {result["case"]: result["commands"] for result in results}
+    if controls:
+        for case, expected in {"user-on": True, "project-off": False, "inherit-user-off": False, "inherit-default": True, "local-on": True, "local-off": False}.items():
+            assert any(c["name"] == "collision" for c in commands[case]) == expected, case
+        assert not any(c["name"] == "action" for c in commands["ordinary-plugin-collision"])
+        assert any(c["name"] == "demo:action" for c in commands["ordinary-plugin-collision"])
+        for scope in ["user", "project", "local"]:
+            assert any(c["name"] == "display-name" for c in commands[f"renamed-{scope}-command-off"]), scope
+            assert not any(c["name"] == "display-name" for c in commands[f"renamed-{scope}-directory-off"]), scope
+
     assert any(c["name"] == "nested-collision" and "CHILD" in c["description"]
                for c in commands["baseline"])
     assert any(c["name"] == "collision" and "PERSONAL" in c["description"]
@@ -259,6 +288,9 @@ def main():
         assert any(c["name"] == f"disable-model-invocation-{index}" for c in commands["baseline"])
     summary = {
         "version": version, "requested_binary": options.claude,
+        "runner_sha256": hashlib.sha256(pathlib.Path(sys.argv[0]).read_bytes()).hexdigest(),
+        "controls_validation": controls,
+        "initialize_input": {"type": "control_request", "request_id": "init", "request": {"subtype": "initialize"}},
         "helper_sha256": hashlib.sha256(pathlib.Path(__file__).read_bytes()).hexdigest(),
         "containment_helper_sha256": hashlib.sha256((pathlib.Path(__file__).parent / "claude_containment.py").read_bytes()).hexdigest(),
         "fixture": str(root), "network_denied": True, "containment": str(output / "containment.json"), "model_prompts": 0,

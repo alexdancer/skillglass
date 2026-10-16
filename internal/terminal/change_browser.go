@@ -15,7 +15,7 @@ type changeFinished struct{ outcome collection.ChangeOutcome }
 
 func (model browserModel) openChange(choice collection.ControlChoice) (tea.Model, tea.Cmd) {
 	scope := model.snapshot.Scope()
-	if scope.Agent == nil || scope.Agent.Application != "codex" {
+	if scope.Agent == nil || (scope.Agent.Application != "codex" && scope.Agent.Application != "claude-code") {
 		model.feedback = "Controls are unsupported for this agent scope."
 		return model, nil
 	}
@@ -61,7 +61,7 @@ func (model browserModel) updateChange(key tea.KeyPressMsg) (tea.Model, tea.Cmd)
 			if key.String() == "i" {
 				choice = collection.ControlInherit
 			}
-			model.changePreview = model.snapshot.PreviewChange(context.Background(), collection.ChangeIntent{Source: model.selected, Application: "codex", Scope: scope, Choice: choice})
+			model.changePreview = model.snapshot.PreviewChange(context.Background(), collection.ChangeIntent{Source: model.selected, Application: model.snapshot.Scope().Agent.Application, Scope: scope, Choice: choice})
 			model.mode = browserChangePreview
 			model.changeScroll = 0
 		}
@@ -82,7 +82,7 @@ func (model browserModel) updateChange(key tea.KeyPressMsg) (tea.Model, tea.Cmd)
 			held := model.changePreview
 			token := held.View().Confirmation
 			model.changing = true
-			model.feedback = "Applying confirmed global choice..."
+			model.feedback = "Applying confirmed choice..."
 			return model, func() tea.Msg { return changeFinished{held.Apply(context.Background(), token)} }
 		}
 	case "r":
@@ -114,7 +114,7 @@ func (model browserModel) changePage() pagedView {
 	if model.mode == browserChangeResult {
 		action = string(model.changeOutcome.Intent.Scope) + " " + string(model.changeOutcome.Intent.Choice)
 	}
-	header := []string{fitLine("SKILLGLASS | Codex control", model.width), fitLine("Action: "+action, model.width)}
+	header := []string{fitLine("SKILLGLASS | "+controlApplication(model.snapshot.Scope().Agent.Application)+" control", model.width), fitLine("Action: "+action, model.width)}
 	if source, ok := model.snapshot.Source(model.selected); ok {
 		header = append(header, fitLine("Selected: "+safeInline(source.Name), model.width), fitLine("Selector: "+string(source.ID), model.width))
 	}
@@ -122,10 +122,14 @@ func (model browserModel) changePage() pagedView {
 		header = append(header, fitLine("Inspection: selected project (details below)", model.width))
 	}
 	body := []string{"Select the setting scope explicitly.", "g Global user configuration", "p Project control: unavailable", "i Remove project override / inherit: unavailable", "Enter or Esc cancel", inspectionProjectLine(model.snapshot.Scope().Project)}
+	if model.snapshot.Scope().Agent.Application == "claude-code" {
+		body[2] = "p Project configuration"
+		body[3] = "i Remove project override / inherit"
+	}
 	help := wrapGroups([]string{"g Global", "p Project", "i Inherit", "↑↓ scroll", "PgUp/PgDn", "Home/End", "Enter/Esc Cancel", "q quit"}, model.width)
 	if model.mode == browserChangePreview {
 		body = changePreviewLines(model.changePreview.View())
-		help = wrapGroups([]string{"j/k scroll", "PgUp/PgDn", "g/G top/end", "y Apply global " + string(model.changeChoice), "Enter/Esc Cancel", "? help", "q quit"}, model.width)
+		help = wrapGroups([]string{"j/k scroll", "PgUp/PgDn", "g/G top/end", "y Apply " + action, "Enter/Esc Cancel", "? help", "q quit"}, model.width)
 		if model.changePreview.View().State != "ready" {
 			help = wrapGroups([]string{"j/k scroll", "PgUp/PgDn", "Enter/Esc Back", "? help", "q quit"}, model.width)
 		}
