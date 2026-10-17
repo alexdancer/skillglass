@@ -76,33 +76,24 @@ func (p *ChangePreview) View() ChangeView {
 	if p == nil {
 		return ChangeView{State: "refused", Reason: "no preview"}
 	}
-	view := p.view
-	view.Changes = append([]SettingChange(nil), p.view.Changes...)
-	view.KnownReferences = append([]Reference(nil), p.view.KnownReferences...)
+	return cloneChangeView(p.view)
+}
+func cloneChangeView(original ChangeView) ChangeView {
+	view := original
+	view.Changes = append([]SettingChange(nil), original.Changes...)
+	view.KnownReferences = append([]Reference(nil), original.KnownReferences...)
 	for index := range view.KnownReferences {
 		view.KnownReferences[index] = cloneReference(view.KnownReferences[index])
 	}
-	view.Before = cloneAvailability(p.view.Before)
-	view.Notes = append([]string(nil), p.view.Notes...)
+	view.Before = cloneAvailability(original.Before)
+	view.Notes = append([]string(nil), original.Notes...)
 	return view
 }
 func (s *Snapshot) PreviewChange(ctx context.Context, intent ChangeIntent) *ChangePreview {
-	if intent.Application == "gemini" {
-		return previewGeminiChange(ctx, s, intent)
+	if capability, known := applicationCapability(intent.Application); known && capability.preview != nil {
+		return capability.preview(ctx, s, intent)
 	}
-	if intent.Application == "opencode" {
-		return previewOpencodeChange(ctx, s, intent)
-	}
-	if intent.Application == "pi" {
-		return previewPiChange(ctx, s, intent)
-	}
-	if intent.Application == "hermes" {
-		return previewHermesChange(ctx, s, intent)
-	}
-	if intent.Application == "claude-code" {
-		return previewClaudeChange(ctx, s, intent)
-	}
-	return previewCodexChange(ctx, s, intent)
+	return rejectedChange(intent, "unsupported", "unknown or unsupported application")
 }
 func (p *ChangePreview) Apply(ctx context.Context, confirmation string) ChangeOutcome {
 	out := ChangeOutcome{State: "refused", Reason: "confirmation does not match this current preview; request a new preview", WriteState: "none", Persistence: "not-written", Achievement: "unmet", Reload: SessionExplanation{State: "unknown", Evidence: Evidence{Kind: EvidenceUnknown, Rule: "session-not-observed", Reason: "existing session adoption was not verified; a fresh launch is a conservative way to load any saved settings"}}}

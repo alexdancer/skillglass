@@ -40,6 +40,8 @@ func (model browserModel) View() tea.View {
 	switch model.mode {
 	case browserComparison:
 		lines = model.comparisonPage().layout().lines
+	case browserGroupSelect, browserGroupScope, browserGroupPreview, browserGroupResult:
+		lines = model.groupPage().layout().lines
 	case browserChangeScope, browserChangePreview, browserChangeResult:
 		lines = model.changePage().layout().lines
 	case browserSourceDetail:
@@ -524,7 +526,8 @@ func (model browserModel) helpBodyLines() []string {
 		{"d / i", "Show source Details or Instructions"},
 		{"v", "In reader: toggle rendered and raw instructions; in Sources: compare marked source"},
 		{"m", "In Sources: mark the focused source as comparison left"},
-		{"D / e", "In Codex, Claude Code or Hermes reader: disable or enable, then choose scope and confirm preview"},
+		{"A / E", "In any source reader: disable or enable an explicitly selected ordered group"},
+		{"D / e", "In a supported native reader: disable or enable one application, then choose scope and confirm"},
 		{"a", "Cycle native configured availability"},
 		{"c", "Cycle all supported discovery contexts"},
 		{"o", "Cycle selected roots"},
@@ -910,12 +913,12 @@ func (model browserModel) collectionFooter(target browserMode) string {
 
 func (model browserModel) readerFooter(page scrollPage) string {
 	if model.sourceTab == sourceDetails {
-		value := "↑↓ scroll  i instructions  ← back"
+		value := "i instructions  A/E group  Esc back"
 		if scope := model.snapshot.Scope(); scope.Agent != nil && supportsSkillControls(scope.Agent.Application) {
 			value = "i instructions  D Disable  e Enable  Esc back"
 		}
 		if model.width < 60 {
-			value = "↑↓ scroll  i read  Esc back"
+			value = "i read  A/E group  Esc back"
 		}
 		if scope := model.snapshot.Scope(); scope.Agent != nil && supportsSkillControls(scope.Agent.Application) {
 			value = "i read  D Disable  e Enable  Esc back"
@@ -926,12 +929,12 @@ func (model browserModel) readerFooter(page scrollPage) string {
 	if model.instructionView == instructionsRaw {
 		mode = "v rendered"
 	}
-	value := "↑↓ scroll  d details  " + mode + "  ← back"
+	value := "d details  " + mode + "  A/E group  Esc back"
 	if scope := model.snapshot.Scope(); scope.Agent != nil && supportsSkillControls(scope.Agent.Application) {
-		value = "d details  " + mode + "  D Disable  e Enable  Esc back"
+		value = "d details  " + mode + "  D Disable  e Enable  A/E group"
 	}
 	if model.width < 60 {
-		value = "↑↓ scroll  d details  Esc back"
+		value = "d details  A/E group  Esc back"
 	}
 	if scope := model.snapshot.Scope(); scope.Agent != nil && supportsSkillControls(scope.Agent.Application) {
 		value = "d details  D Disable  e Enable"
