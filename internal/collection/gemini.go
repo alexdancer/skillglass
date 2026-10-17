@@ -166,6 +166,7 @@ func buildGemini(ctx context.Context, request Request) (*Snapshot, error) {
 	}
 	applyGeminiPrecedence(snapshot, ranks, groups, uncertainRanks, opaqueRank)
 	applyNativeProblems(snapshot, in.problems, roots)
+	in.controlFacts = newGeminiControlFacts(snapshot)
 	if !request.geminiPlanning {
 		applyGeminiCapabilities(snapshot)
 	}

@@ -186,6 +186,8 @@ func (p *changePlan) inspectResult(out ChangeOutcome, parent changeIdentity) Cha
 			g, e := geminiGlobalSnapshot(context.Background(), fresh)
 			if e != nil {
 				nativeAchievement, nativeReason = "unknown", "global context reinspection failed"
+			} else if _, e = geminiControlRecipe(g, p.intent); e != nil {
+				nativeAchievement, nativeReason = "unknown", "global native Gemini control certainty: "+e.Error()
 			} else if p.intent.Choice != ControlInherit && !geminiChoiceAchieved(p.intent.Choice, g.geminiControls.permission(effective.NativeName).State) {
 				nativeAchievement, nativeReason = "unmet", "global settings layer prevents requested result"
 			}

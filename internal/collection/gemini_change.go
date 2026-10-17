@@ -17,6 +17,65 @@ type geminiControlPlan struct {
 	Choice     ControlChoice
 }
 
+type geminiControlFacts struct {
+	invalid error
+	names   map[string]int
+}
+
+func newGeminiControlFacts(s *Snapshot) geminiControlFacts {
+	f := geminiControlFacts{names: make(map[string]int)}
+	in := s.geminiControls
+	if in == nil || in.uncertain || !s.Complete() {
+		f.invalid = errors.New("native inputs or discovery are incomplete; no broader fallback")
+		return f
+	}
+	for _, layer := range in.scope.ConfigLayers {
+		if layer.State != "loaded" {
+			continue
+		}
+		raw, err := nativeBytes(layer.Path)
+		if value, ok := in.overlay[layer.Path]; ok {
+			raw, err = value, nil
+		}
+		if err != nil {
+			f.invalid = errors.New("native settings cannot be inspected")
+			return f
+		}
+		if _, err = readGeminiDisabledDocument(raw); err != nil {
+			f.invalid = fmt.Errorf("ambiguous native settings layer %s: %w", layer.Path, err)
+			return f
+		}
+	}
+	for _, id := range s.order {
+		source := s.sources[id]
+		native := false
+		for _, ref := range source.Availability.References {
+			if ref.Participation != ParticipationInspection {
+				native = true
+				break
+			}
+		}
+		if !native {
+			continue
+		}
+		evidence := source.Availability.NativeNameEvidence
+		if evidence == nil || evidence.Kind == EvidenceUnknown {
+			f.invalid = errors.New("opaque native candidate prevents isolated name control")
+			return f
+		}
+		if evidence.Rule == "native-manifest-rejection" {
+			continue
+		}
+		key, err := geminiComparisonKey(source.Availability.NativeName)
+		if err != nil {
+			f.invalid = err
+			return f
+		}
+		f.names[key]++
+	}
+	return f
+}
+
 func geminiChoiceAchieved(choice ControlChoice, permission PermissionState) bool {
 	return choice == ControlDisable && permission == PermissionDenied || choice == ControlEnable && permission == PermissionAllowed
 }
@@ -39,24 +98,11 @@ func geminiControlRecipe(s *Snapshot, intent ChangeIntent) (geminiControlPlan, e
 	if intent.Choice == ControlInherit && intent.Scope != ControlProject {
 		return p, errors.New("inherit removes only a project override")
 	}
-	if in == nil || in.uncertain || !s.Complete() {
-		return p, errors.New("native inputs or discovery are incomplete; no broader fallback")
+	if in == nil || in.controlFacts.names == nil {
+		return p, errors.New("native control facts are unavailable")
 	}
-	// Every admitted document must be unambiguous, not only the output.
-	for _, layer := range in.scope.ConfigLayers {
-		if layer.State != "loaded" {
-			continue
-		}
-		raw, e := nativeBytes(layer.Path)
-		if value, ok := in.overlay[layer.Path]; ok {
-			raw, e = value, nil
-		}
-		if e != nil {
-			return p, errors.New("native settings cannot be inspected")
-		}
-		if _, e = readGeminiDisabledDocument(raw); e != nil {
-			return p, fmt.Errorf("ambiguous native settings layer %s: %w", layer.Path, e)
-		}
+	if in.controlFacts.invalid != nil {
+		return p, in.controlFacts.invalid
 	}
 	source, ok := s.sources[intent.Source]
 	if !ok || !changeWriterEligible(source) || source.Ownership.State == "managed" {
@@ -70,6 +116,12 @@ func geminiControlRecipe(s *Snapshot, intent ChangeIntent) (geminiControlPlan, e
 	if err != nil {
 		return p, err
 	}
+	if key == "skill-creator" || key == "antigravity-support" {
+		return p, errors.New("native name overlaps a bundled built-in recorded for " + geminiValidatedVersion + "; isolated name control is unsupported")
+	}
+	if in.controlFacts.names[key] > 1 {
+		return p, errors.New("independent native copies share a case-equivalent name; name control would affect additional sources")
+	}
 	global := false
 	for _, ref := range source.Availability.References {
 		if ref.Provenance.Kind == "plugin" || ref.Provenance.Kind == "system" || ref.Provenance.Kind == "managed-candidate" {
@@ -79,26 +131,6 @@ func geminiControlRecipe(s *Snapshot, intent ChangeIntent) (geminiControlPlan, e
 			if s.references[ref.Reference].Context == ContextGlobal {
 				global = true
 			}
-		}
-	}
-	for _, id := range s.order {
-		other := s.sources[id]
-		native := false
-		for _, ref := range other.Availability.References {
-			if ref.Participation != ParticipationInspection {
-				native = true
-			}
-		}
-		if !native {
-			continue
-		}
-		name, e, valid := geminiNativeName(other)
-		if !valid && e.Kind == EvidenceUnknown {
-			return p, errors.New("opaque native candidate prevents isolated name control")
-		}
-		k, _ := geminiComparisonKey(name)
-		if valid && id != intent.Source && k == key {
-			return p, errors.New("independent native copies share a case-equivalent name; name control would affect additional sources")
 		}
 	}
 	p.Path = filepath.Join(in.home, ".gemini/settings.json")
