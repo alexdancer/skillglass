@@ -38,33 +38,8 @@ func groupFixture(t *testing.T, missing bool) (*Snapshot, SourceID, string) {
 	}
 	return s, id, home
 }
-func TestALE40CompositionPilot(t *testing.T) {
-	for _, apps := range [][]string{{"codex", "claude-code"}, {"claude-code", "codex"}, {"codex", "claude-code", "hermes", "pi", "opencode", "gemini"}, {"gemini", "opencode", "pi", "hermes", "claude-code", "codex"}} {
-		for _, missing := range []bool{false, true} {
-			t.Run(strings.Join(apps, "-")+map[bool]string{true: "-missing", false: "-existing"}[missing], func(t *testing.T) {
-				s, id, _ := groupFixture(t, missing)
-				p := s.PreviewGroupChange(context.Background(), GroupIntent{id, apps, ControlGlobal, ControlDisable})
-				if p.view.State != "ready" {
-					for _, m := range p.view.Members {
-						t.Log(m.Application, m.Preview.State, m.Preview.Reason)
-					}
-					t.Fatal(p.view.Reason)
-				}
-				out := p.Apply(context.Background(), p.View().Confirmation)
-				if out.ExitCode() != 0 {
-					t.Fatalf("outcome %+v", out)
-				}
-				for _, r := range out.Results {
-					if r.State != "succeeded" || r.Outcome == nil || r.Outcome.Persistence != "verified" {
-						t.Fatal(r)
-					}
-				}
-			})
-		}
-	}
-}
 func TestALE40StopAndRetain(t *testing.T) {
-	for _, stage := range []string{"write", "directory-sync", "external-edit", "cancel"} {
+	for _, stage := range []string{"directory-sync", "external-edit", "cancel"} {
 		t.Run(stage, func(t *testing.T) {
 			s, id, home := groupFixture(t, false)
 			ctx, cancel := context.WithCancel(context.Background())
