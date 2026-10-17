@@ -23,6 +23,8 @@ const geminiValidatedVersion = "Gemini CLI 0.63.0"
 var geminiSettingsPlaceholder = regexp.MustCompile(`\$(?:\w+|\{[^}]+\})`)
 
 type geminiInputs struct {
+	controlFacts         geminiControlFacts
+	overlay              map[string][]byte
 	scope                AgentScope
 	home, project        string
 	enabled, folderTrust bool
@@ -126,6 +128,13 @@ func geminiEnvPath(key, fallback string) string {
 
 // Preserve quoted strings while blanking JSON comments, matching native JSONC settings.
 func geminiJSON(raw []byte, output any) error {
+	data, err := geminiJSONBytes(raw)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, output)
+}
+func geminiJSONBytes(raw []byte) ([]byte, error) {
 	data := append([]byte(nil), raw...)
 	quoted, escaped := false, false
 	for i := 0; i < len(data); i++ {
@@ -166,13 +175,13 @@ func geminiJSON(raw []byte, output any) error {
 				i++
 			}
 			if i+1 >= len(data) {
-				return errors.New("unterminated JSON comment")
+				return nil, errors.New("unterminated JSON comment")
 			}
 			data[i], data[i+1] = ' ', ' '
 			i++
 		}
 	}
-	return json.Unmarshal(data, output)
+	return data, nil
 }
 func geminiObject(data map[string]any, keys ...string) (any, bool, bool) {
 	var current any = data
@@ -195,6 +204,9 @@ func geminiObject(data map[string]any, keys ...string) (any, bool, bool) {
 func (in *geminiInputs) loadSettings(path, scope string, apply bool) {
 	layer := PermissionLayer{Path: path, Scope: scope, State: "absent", Reason: "optional settings file does not exist", Evidence: geminiEvidence(EvidenceObserved, "settings-input", path, "", "only relevant settings are reported")}
 	raw, err := nativeBytes(path)
+	if value, ok := in.overlay[path]; ok {
+		raw, err = value, nil
+	}
 	if nativeAbsent(path, err) {
 		in.scope.ConfigLayers = append(in.scope.ConfigLayers, layer)
 		return
@@ -300,7 +312,7 @@ func (in *geminiInputs) loadSettings(path, scope string, apply bool) {
 }
 func readGeminiInputs(request Request) geminiInputs {
 	home := geminiEnvPath("GEMINI_CLI_HOME", request.home)
-	in := geminiInputs{home: home, enabled: true, folderTrust: true, disabled: make(map[string]string), trust: ParticipationExcluded, scope: AgentScope{Application: "gemini", ValidatedVersion: geminiValidatedVersion, VersionEvidence: "pinned disposable native skills list and native loader/manager verification; current installation/session not inspected", Evidence: geminiEvidence(EvidenceObserved, "recorded-native-verification", "tools/verify_gemini.py", "", "credential-free native checks recorded for reference version"), Gaps: []string{"running session, IDE trust, remote admin policy, CLI overrides and shell .env overrides are not inspected", "activation consent is inferred from native policy; no model, skill, hook or extension code was executed", "same-name ordering within one directory and between extensions is unspecified; ambiguous candidates remain unknown", "secure root-owned system scalar precedence is source-verified; disposable native validation verifies insecure-system rejection",
+	in := geminiInputs{overlay: request.geminiOverlay, home: home, enabled: true, folderTrust: true, disabled: make(map[string]string), trust: ParticipationExcluded, scope: AgentScope{Application: "gemini", ValidatedVersion: geminiValidatedVersion, VersionEvidence: "pinned disposable native skills list and native loader/manager verification; current installation/session not inspected", Evidence: geminiEvidence(EvidenceObserved, "recorded-native-verification", "tools/verify_gemini.py", "", "credential-free native checks recorded for reference version"), Gaps: []string{"running session, IDE trust, remote admin policy, CLI overrides and shell .env overrides are not inspected", "activation consent is inferred from native policy; no model, skill, hook or extension code was executed", "same-name ordering within one directory and between extensions is unspecified; ambiguous candidates remain unknown", "secure root-owned system scalar precedence is source-verified; disposable native validation verifies insecure-system rejection",
 		"bundled built-ins are searched only when a local gemini executable identifies its bundle; other packaging layouts are unverified"}}}
 	system := "/etc/gemini-cli/settings.json"
 	if runtime.GOOS == "darwin" {

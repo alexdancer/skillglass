@@ -50,6 +50,7 @@ func buildGemini(ctx context.Context, request Request) (*Snapshot, error) {
 		return nil, err
 	}
 	snapshot.request = original
+	snapshot.geminiControls = &in
 	snapshot.scope.Agent = &in.scope
 	roots := make(map[RootID]DiscoveryRoot)
 	for _, root := range request.Roots {
@@ -159,19 +160,16 @@ func buildGemini(ctx context.Context, request Request) (*Snapshot, error) {
 		}
 		explanation.Invocation = &invocation
 		explanation.Session = &SessionExplanation{State: "unknown", Evidence: geminiEvidence(EvidenceUnknown, "session-not-observed", "", "", "existing session and remote admin policy were not inspected")}
-		explanation.Reload = &SessionExplanation{State: "unknown", Evidence: geminiEvidence(EvidenceUnknown, "session-reload", "", "", "refresh rereads local files; use native /skills reload or restart for existing sessions")}
-		for _, operation := range []string{"enable", "disable", "project-override", "delete"} {
-			scope := "source"
-			if source.Ownership.State == "managed" {
-				scope = "plugin"
-			}
-			explanation.Capabilities = append(explanation.Capabilities, Capability{Operation: operation, Scope: scope, State: "unsupported", Evidence: geminiEvidence(EvidenceUnknown, "read-only-ticket", source.Directory, "", "no verified writers exposed; native skill name controls do not isolate independent copies")})
-		}
+		explanation.Reload = &SessionExplanation{State: "unknown", Evidence: geminiEvidence(EvidenceInferred, "skills-reload", "", "/skills reload", "fresh native launch validated; source-verified /skills reload or /skills refresh, or restart, loads per-name changes; running-session adoption unobserved")}
 		source.Availability = explanation
 		snapshot.sources[id] = source
 	}
 	applyGeminiPrecedence(snapshot, ranks, groups, uncertainRanks, opaqueRank)
 	applyNativeProblems(snapshot, in.problems, roots)
+	in.controlFacts = newGeminiControlFacts(snapshot)
+	if !request.geminiPlanning {
+		applyGeminiCapabilities(snapshot)
+	}
 	return snapshot, nil
 }
 func geminiWithin(root, path string) bool {
