@@ -5,10 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 )
 
 // ApplicationCapability describes a completed adapter, not permission to write a
@@ -276,64 +279,150 @@ func (s *Snapshot) PreviewGroupChange(ctx context.Context, intent GroupIntent) *
 	return p
 }
 
-func sameGroupObject(a, b changeFact) bool {
-	return a.Exists && b.Exists && a.Identity.Device == b.Identity.Device && a.Identity.Inode == b.Identity.Inode && a.Identity.BirthSec == b.Identity.BirthSec && a.Identity.BirthNano == b.Identity.BirthNano
+// A location retains object-identity anchors and the relative suffix beneath
+// each one. An absent entry has no file identity, but its existing resolved
+// parent plus exact remaining components still identify its directory slot.
+// Keeping ancestor anchors also permits containment across directory aliases.
+type groupAnchor struct {
+	object changeIdentity
+	suffix string
 }
-func groupPath(path string) string {
-	// Resolve the existing prefix, including symlinked parents of absent files.
-	tail := []string{}
+type groupLocation []groupAnchor
+
+func groupLocationAt(path string) (groupLocation, error) {
+	tail := ""
+	resolved := ""
 	for {
-		if resolved, err := filepath.EvalSymlinks(path); err == nil {
-			return filepath.Join(append([]string{resolved}, tail...)...)
+		var err error
+		resolved, err = filepath.EvalSymlinks(path)
+		if err == nil {
+			break
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, err
 		}
 		parent := filepath.Dir(path)
 		if parent == path {
-			return path
+			return nil, err
 		}
-		tail = append([]string{filepath.Base(path)}, tail...)
+		tail = filepath.Join(filepath.Base(path), tail)
 		path = parent
 	}
+	var location groupLocation
+	for {
+		// Stat follows any remaining alias and observes only metadata, never file
+		// content or directory membership. No writes probe filesystem case rules.
+		info, err := os.Stat(resolved)
+		if err != nil {
+			return nil, err
+		}
+		if tail != "" && !info.IsDir() {
+			return nil, errors.New("non-directory footprint ancestor")
+		}
+		location = append(location, groupAnchor{statIdentity(resolved, info.Sys().(*syscall.Stat_t)), tail})
+		parent := filepath.Dir(resolved)
+		if parent == resolved {
+			break
+		}
+		tail = filepath.Join(filepath.Base(resolved), tail)
+		resolved = parent
+	}
+	return location, nil
 }
-func groupWithin(path, dir string) bool {
-	return path == dir || strings.HasPrefix(path, dir+string(filepath.Separator))
+func sameGroupAnchor(a, b changeIdentity) bool {
+	return a.Device == b.Device && a.Inode == b.Inode && a.BirthSec == b.BirthSec && a.BirthNano == b.BirthNano
+}
+func (path groupLocation) equal(other groupLocation) bool {
+	for _, a := range path {
+		for _, b := range other {
+			if sameGroupAnchor(a.object, b.object) && a.suffix == b.suffix {
+				return true
+			}
+		}
+	}
+	return false
+}
+func (path groupLocation) within(directory groupLocation) bool {
+	for _, a := range path {
+		for _, b := range directory {
+			if sameGroupAnchor(a.object, b.object) && (b.suffix == "" || a.suffix == b.suffix || strings.HasPrefix(a.suffix, b.suffix+string(filepath.Separator))) {
+				return true
+			}
+		}
+	}
+	return false
 }
 func groupInterference(children []*ChangePreview) string {
+	locations := map[string]groupLocation{}
+	locate := func(path string) (groupLocation, error) {
+		if location, ok := locations[path]; ok {
+			return location, nil
+		}
+		location, err := groupLocationAt(path)
+		if err == nil {
+			locations[path] = location
+		}
+		return location, err
+	}
 	for i, child := range children {
 		if child.view.NoWriteNeeded {
 			continue
 		}
 		writer := child.plan
-		write := groupPath(writer.destination.Path)
-		create := writer.destination.CreateDirectory
-		if create != "" {
-			create = groupPath(create)
+		write, err := locate(writer.destination.Path)
+		if err != nil {
+			return "configuration footprint cannot be resolved safely; whole request unapplied"
+		}
+		var create groupLocation
+		if writer.destination.CreateDirectory != "" {
+			create, err = locate(writer.destination.CreateDirectory)
+			if err != nil {
+				return "directory creation footprint cannot be resolved safely; whole request unapplied"
+			}
 		}
 		for j, other := range children {
 			if i == j || other.plan == nil {
 				continue
 			}
-			// Write/write aliases are refused regardless of order. Only a later read can
-			// be invalidated by an earlier write; earlier reads finish before that write.
-			if !other.view.NoWriteNeeded && (write == groupPath(other.plan.destination.Path) || sameGroupObject(writer.destination.Config, other.plan.destination.Config)) {
-				return "requested configuration destinations alias; whole request unapplied"
+			// Write/write aliases refuse in either order. An earlier no-op has no
+			// replacement effect; only a later read can be invalidated by this write.
+			if !other.view.NoWriteNeeded {
+				destination, err := locate(other.plan.destination.Path)
+				if err != nil {
+					return "configuration footprint cannot be resolved safely; whole request unapplied"
+				}
+				if write.equal(destination) {
+					return "requested configuration destinations alias; whole request unapplied"
+				}
 			}
 			if j < i {
 				continue
 			}
 			for _, fact := range other.plan.dependencies {
-				read := groupPath(fact.Path)
-				if write == read || sameGroupObject(writer.destination.Config, fact) || (create != "" && groupWithin(read, create)) {
+				read, err := locate(fact.Path)
+				if err != nil {
+					return "preview input footprint cannot be resolved safely; whole request unapplied"
+				}
+				if write.equal(read) || (len(create) > 0 && read.within(create)) {
 					return fmt.Sprintf("%s would change %s preview input %s; whole request unapplied", child.view.Intent.Application, other.view.Intent.Application, fact.Path)
 				}
 			}
-			// Native discovery can change semantically even when directory facts omit
-			// entry membership. Config creation beneath another discovery root is not
-			// a bounded independent transition.
+			// Directory facts omit entry membership. Preserve the independent semantic
+			// discovery check using the same identity-aware containment comparison.
 			var view View
-			_ = json.Unmarshal(other.plan.snapshotFacts, &view)
+			if err := json.Unmarshal(other.plan.snapshotFacts, &view); err != nil {
+				return "native discovery footprint cannot be established; whole request unapplied"
+			}
 			for _, root := range view.Scope.Roots {
 				for _, path := range []string{root.Requested, root.Resolved} {
-					if path != "" && (groupWithin(write, groupPath(path)) || (create != "" && groupWithin(groupPath(path), create))) {
+					if path == "" {
+						continue
+					}
+					discovery, err := locate(path)
+					if err != nil {
+						return "native discovery footprint cannot be resolved safely; whole request unapplied"
+					}
+					if write.within(discovery) || (len(create) > 0 && discovery.within(create)) {
 						return "configuration write intersects later native discovery; whole request unapplied"
 					}
 				}
