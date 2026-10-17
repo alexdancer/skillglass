@@ -7,8 +7,8 @@ import (
 	"unicode/utf8"
 )
 
-// geminiDisabledDocument retains original syntax and typed disabled names. Only
-// array value spans change; unrelated settings and comments remain exact bytes.
+// geminiDisabledDocument retains syntax and typed disabled names so scoped
+// patches preserve unrelated settings and comments as exact bytes.
 type geminiDisabledDocument struct {
 	raw, clean   []byte
 	root, skills *jsonObject

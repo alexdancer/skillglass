@@ -10,7 +10,7 @@ The package must already exist. The probe uses the existing Gemini containment p
 
 ## Supported choices
 
-CLI and keyboard browser share source-bound `PreviewChange` and explicit-confirmation `Apply`. Preview is read-only. Repeat the exact request with its `--confirm gemini1:...` token; browser `D`/`e`, `g`/`p`, `i`, `y` and Enter/Escape select disable/enable, scope, inherit, confirm and cancel.
+CLI and keyboard browser share source-bound `PreviewChange` and explicit-confirmation `Apply`. Preview is read-only. The [README](../../README.md#build-and-use) owns commands, confirmation tokens and browser keys.
 
 Global disable appends one native name to the user's `.gemini/settings.json` `skills.disabled` array. Global enable removes every comparison-equivalent spelling from that array. `GEMINI_CLI_HOME` selects the native home consistently. A trusted explicit project's disable or enable edits only its `.gemini/settings.json`; inherit removes only its matching project entries. Empty arrays remain valid inheritance. Ordinary enabled skills remain **ask**, preserving native activation consent.
 
