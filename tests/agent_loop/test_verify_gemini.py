@@ -8,12 +8,18 @@ import socket
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 HELPER = Path(__file__).resolve().parents[2] / "tools/verify_gemini.py"
 
 
 @unittest.skipUnless(os.uname().sysname == "Darwin", "sandbox-exec requires macOS")
 class NativeHelperContainment(unittest.TestCase):
+    def test_controls_helper_contains_parent_and_inherited_child(self):
+        controls = HELPER.with_name("verify_gemini_controls.py")
+        with patch(__name__ + ".HELPER", controls):
+            self.test_actual_public_helper_contains_parent_and_inherited_child()
+
     def test_actual_public_helper_contains_parent_and_inherited_child(self):
         node = shutil.which("node")
         self.assertIsNotNone(node, "native verifier containment test requires Node.js on PATH")
@@ -92,7 +98,10 @@ setTimeout(() => done(false, 'timeout'), 1000);
                     self.assertIn(result[key+"Error"], ("EPERM", "EACCES"), result)
             self.assertFalse(outside.exists())
             self.assertFalse((root / "escape.txt").exists())
-            receipt = json.loads((evidence / "receipt.json").read_text())
+            receipt_path = evidence / "receipt.json"
+            if not receipt_path.exists():
+                receipt_path = evidence / "native.json"
+            receipt = json.loads(receipt_path.read_text())
             self.assertEqual(receipt["cases"][0]["exit"], 17)
             self.assertEqual(receipt["cases"][0]["wrapper_sha256_at_launch"], hashlib.sha256(fake.read_bytes()).hexdigest())
 

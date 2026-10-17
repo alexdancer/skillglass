@@ -88,6 +88,8 @@ type Request struct {
 	claudeHome    string
 	hermesHome    string
 	// Private read-only prospective evaluation; never retained in a persisted change plan.
+	geminiPlanning    bool
+	geminiOverlay     map[string][]byte
 	opencodePlanning  bool
 	opencodeOverlay   map[string][]byte
 	piPlanning        bool
@@ -385,6 +387,7 @@ type Snapshot struct {
 	problems         []Problem
 	hermesControls   hermesControlFacts
 	piControls       *piInputs
+	geminiControls   *geminiInputs
 	opencodeControls *opencodeInputs
 }
 
@@ -651,6 +654,13 @@ func cloneProblems(problems []Problem) []Problem {
 
 func cloneRequest(request Request) Request {
 	request.Roots = append([]DiscoveryRoot(nil), request.Roots...)
+	if request.geminiOverlay != nil {
+		overlay := make(map[string][]byte, len(request.geminiOverlay))
+		for path, raw := range request.geminiOverlay {
+			overlay[path] = append([]byte(nil), raw...)
+		}
+		request.geminiOverlay = overlay
+	}
 	if request.opencodeOverlay != nil {
 		overlay := make(map[string][]byte, len(request.opencodeOverlay))
 		for path, raw := range request.opencodeOverlay {

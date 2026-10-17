@@ -28,7 +28,7 @@ Extension candidates are bounded to `.gemini/extensions/*/skills`. Eligibility r
 
 Ordinary eligible skills are **ask**, because native `activate_skill` normally asks for consent. Built-in skills are pre-approved and may be available. Built-in roots are recognized only when a local `gemini` executable resolves beside its `builtin` bundle directory. Other packaging layouts remain unverified. The probe observes built-in listing; consent behavior is verified from native source, without activation. Viewer filters do not convert consent into enablement. Policy overrides, approval modes, IDE decisions, remote admin restrictions and already activated running-session state are not observed, so those gaps and session/reload unknowns remain explicit. The viewer does not claim that a local calculation proves model-session behavior.
 
-Enable, disable, project-override and delete capabilities stay unsupported. Native name-level controls cannot isolate independent copies. Managed content and whole-extension control require their native manager; this browsing slice supplies no mutation interface.
+The browsing slice originally exposed no writers. [ALE-38](ale-38.md) now supplies validated isolated global and trusted-project disabled-name controls, with independent-copy refusals and explicit reload evidence. Delete and managed/whole-extension controls remain unsupported.
 
 ## Verification and acceptance
 

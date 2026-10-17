@@ -223,6 +223,9 @@ func (p *changePlan) apply(ctx context.Context) (out ChangeOutcome) {
 	if p.intent.Application == "pi" {
 		out.Reload = SessionExplanation{State: "required", Evidence: piEvidence(EvidenceInferred, "settings-reload", "", "", "Pi 1.1.0 cached settings require reload; fresh sessions load persisted choices; interactive /reload adoption is unverified")}
 	}
+	if p.intent.Application == "gemini" {
+		out.Reload = SessionExplanation{State: "unknown", Evidence: geminiEvidence(EvidenceInferred, "skills-reload", "", "/skills reload", "fresh native launch validated; source-verified /skills reload or /skills refresh, or restart, loads per-name changes; running-session adoption unobserved")}
+	}
 	dest := p.destination
 	parentFD, err := unix.Open(dest.Parent.Resolved, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {

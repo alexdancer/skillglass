@@ -127,7 +127,7 @@ func (p *changePlan) inspectResult(out ChangeOutcome, parent changeIdentity) Cha
 	if err == nil && current.Exists == expectedExists && current.Symlink == "" && bytes.Equal(current.Bytes, p.postimage) && metadataMatches && (parentMatches || (len(p.postimage) == 0 && !p.destination.Config.Exists && p.destination.CreateDirectory != "")) {
 		out.Persistence = "verified"
 		out.PersistedChoice = p.intent.Choice
-		if p.intent.Application != "claude-code" && p.intent.Application != "hermes" && p.intent.Application != "pi" && p.intent.Application != "opencode" {
+		if p.intent.Application != "claude-code" && p.intent.Application != "hermes" && p.intent.Application != "pi" && p.intent.Application != "opencode" && p.intent.Application != "gemini" {
 			// Resource choice persistence alone does not establish native invocation permission for these agents.
 			if p.intent.Choice == ControlEnable {
 				out.PersistedPermission = PermissionAllowed
@@ -158,9 +158,38 @@ func (p *changePlan) inspectResult(out ChangeOutcome, parent changeIdentity) Cha
 				}
 			}
 		}
+		if p.intent.Application == "gemini" && out.Persistence == "verified" {
+			d, e := readGeminiDisabledDocument(current.Bytes)
+			if e == nil {
+				out.PersistedPermission = PermissionAllowed
+				if d.contains(effective.NativeName) {
+					out.PersistedPermission = PermissionDenied
+				}
+				if p.intent.Choice == ControlInherit {
+					out.PersistedPermission = ""
+				}
+			}
+		}
 		out.Effective = &effective
 		resultReason := effective.Reason
 		nativeAchievement, nativeReason := "", ""
+		if p.intent.Application == "gemini" {
+			recipe, e := geminiControlRecipe(fresh, p.intent)
+			if e == nil {
+				_, e = geminiDestination(fresh, recipe)
+			}
+			if e != nil {
+				nativeAchievement, nativeReason = "unknown", "native Gemini control certainty: "+e.Error()
+			}
+		}
+		if p.intent.Application == "gemini" && p.intent.Scope == ControlGlobal {
+			g, e := geminiGlobalSnapshot(context.Background(), fresh)
+			if e != nil {
+				nativeAchievement, nativeReason = "unknown", "global context reinspection failed"
+			} else if p.intent.Choice != ControlInherit && !geminiChoiceAchieved(p.intent.Choice, g.geminiControls.permission(effective.NativeName).State) {
+				nativeAchievement, nativeReason = "unmet", "global settings layer prevents requested result"
+			}
+		}
 		if p.intent.Application == "opencode" {
 			if p.intent.Scope == ControlGlobal {
 				nativeAchievement, nativeReason = p.opencodeGlobalResult(context.Background(), fresh)
