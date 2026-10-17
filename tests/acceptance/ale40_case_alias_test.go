@@ -15,16 +15,7 @@ func TestALE40CaseAliasAbsentDestinationRefusesBeforeWrites(t *testing.T) {
 	for _, apps := range [][]string{{"claude-code", "pi"}, {"pi", "claude-code"}} {
 		t.Run(strings.Join(apps, "-"), func(t *testing.T) {
 			fx, id, source := ale40Fixture(t, false)
-			claude := filepath.Join(fx.home, ".claude")
-			variant := filepath.Join(fx.home, ".CLAUDE")
-			actualInfo, err := os.Stat(claude)
-			if err != nil {
-				t.Fatal(err)
-			}
-			variantInfo, err := os.Stat(variant)
-			if err != nil || !os.SameFile(actualInfo, variantInfo) {
-				t.Fatalf("case-insensitive existing-parent proof required: %v", err)
-			}
+			claude, variant, actualInfo, variantInfo := ale40CaseParent(t, fx)
 			pi := filepath.Join(fx.home, ".pi/agent")
 			if err := os.Rename(pi, pi+"-saved"); err != nil {
 				t.Fatal(err)
@@ -85,7 +76,7 @@ func TestALE40CaseAliasAbsentDestinationRefusesBeforeWrites(t *testing.T) {
 	}
 }
 
-func ale40CaseParent(t *testing.T, fx fixture) (string, string) {
+func ale40CaseParent(t *testing.T, fx fixture) (string, string, os.FileInfo, os.FileInfo) {
 	t.Helper()
 	parent := filepath.Join(fx.home, ".claude")
 	variant := filepath.Join(fx.home, ".CLAUDE")
@@ -94,10 +85,16 @@ func ale40CaseParent(t *testing.T, fx fixture) (string, string) {
 		t.Fatal(err)
 	}
 	alias, err := os.Stat(variant)
-	if err != nil || !os.SameFile(actual, alias) {
-		t.Fatalf("case-variant existing-parent proof required: %v", err)
+	if os.IsNotExist(err) {
+		t.Skipf("case-alias coverage unavailable on fixture volume: %s does not exist", variant)
 	}
-	return parent, variant
+	if err != nil {
+		t.Fatalf("stat case-variant fixture parent: %v", err)
+	}
+	if !os.SameFile(actual, alias) {
+		t.Skipf("case-alias coverage unavailable on fixture volume: %s and %s are distinct objects", parent, variant)
+	}
+	return parent, variant, actual, alias
 }
 func ale40RedirectParent(t *testing.T, from, to string) {
 	t.Helper()
@@ -120,7 +117,7 @@ func TestALE40CaseAliasDifferentFilenamesRemainIndependent(t *testing.T) {
 	for _, apps := range [][]string{{"codex", "claude-code"}, {"claude-code", "codex"}} {
 		t.Run(strings.Join(apps, "-"), func(t *testing.T) {
 			fx, id, source := ale40Fixture(t, false)
-			parent, variant := ale40CaseParent(t, fx)
+			parent, variant, _, _ := ale40CaseParent(t, fx)
 			ale40RedirectParent(t, filepath.Join(fx.home, ".codex"), variant)
 			if err := os.Remove(filepath.Join(parent, "settings.json")); err != nil {
 				t.Fatal(err)
@@ -173,7 +170,7 @@ func TestALE40CaseAliasReadDependencyRespectsOrder(t *testing.T) {
 	for _, apps := range [][]string{{"pi", "claude-code"}, {"claude-code", "pi"}} {
 		t.Run(strings.Join(apps, "-"), func(t *testing.T) {
 			fx, id, _ := ale40Fixture(t, false)
-			parent, variant := ale40CaseParent(t, fx)
+			parent, variant, _, _ := ale40CaseParent(t, fx)
 			ale40RedirectParent(t, filepath.Join(fx.home, ".pi/agent"), variant)
 			writeFile(t, filepath.Join(parent, "settings.json"), []byte(`{"keep":true,"skillOverrides":{"ale40-target":"off"}}`), 0600)
 			before := treeManifest(t, fx.base)
@@ -206,7 +203,7 @@ func TestALE40CaseAliasReadDependencyRespectsOrder(t *testing.T) {
 }
 func TestALE40CaseAliasDiscoveryContainmentRefuses(t *testing.T) {
 	fx, id, _ := ale40Fixture(t, false)
-	parent, variant := ale40CaseParent(t, fx)
+	parent, variant, _, _ := ale40CaseParent(t, fx)
 	// Pi inspects this additional bundle, whose resource inventory includes the
 	// Claude settings file. The selected source still has its ordinary native
 	// .agents reference. Replacing that resource changes later discovery facts.
