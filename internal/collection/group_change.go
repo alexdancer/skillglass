@@ -416,20 +416,31 @@ func groupInterference(children []*ChangePreview) string {
 			if err := json.Unmarshal(other.plan.snapshotFacts, &observations); err != nil {
 				return "native discovery footprint cannot be established; whole request unapplied"
 			}
-			roots := append(observations.Scope.Roots, observations.Selected.Scope.Roots...)
-			roots = append(roots, observations.Global.Scope.Roots...)
-			for _, root := range roots {
-				for _, path := range []string{root.Requested, root.Resolved} {
-					if path == "" {
-						continue
+			var paths []string
+			for _, view := range []View{observations.View, observations.Selected, observations.Global} {
+				for _, root := range view.Scope.Roots {
+					paths = append(paths, root.Requested, root.Resolved)
+				}
+				// Every inspected bundle's resource inventory is part of consent,
+				// even when a child alias escapes its discovery root or the bundle
+				// is inspection-only. Standalone files remain exact reads; resource
+				// symlink targets are not recursively inventoried.
+				for _, source := range view.Sources {
+					if source.Identity.Method != "darwin-file-object" && source.Directory != source.Manifest.ResolvedPath {
+						paths = append(paths, source.Directory)
 					}
-					discovery, err := locate(path)
-					if err != nil {
-						return "native discovery footprint cannot be resolved safely; whole request unapplied"
-					}
-					if write.within(discovery) || (len(create) > 0 && discovery.within(create)) {
-						return "configuration write intersects later native discovery; whole request unapplied"
-					}
+				}
+			}
+			for _, path := range paths {
+				if path == "" {
+					continue
+				}
+				discovery, err := locate(path)
+				if err != nil {
+					return "native discovery footprint cannot be resolved safely; whole request unapplied"
+				}
+				if write.within(discovery) || (len(create) > 0 && discovery.within(create)) {
+					return "configuration write intersects later native discovery; whole request unapplied"
 				}
 			}
 		}

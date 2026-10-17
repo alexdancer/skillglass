@@ -315,102 +315,263 @@ func TestALE40PublicCreationReadInteraction(t *testing.T) {
 	assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 }
 func TestALE40PublicOpenCodeDiscoveryContainment(t *testing.T) {
-	for _, context := range []string{"selected-and-global", "selected-only", "global-only", "no-project"} {
-		for _, route := range []string{"direct", "symlink"} {
-			for _, claudeFirst := range []bool{true, false} {
-				order := "opencode-first"
-				if claudeFirst {
-					order = "claude-first"
-				}
-				t.Run(context+"/"+route+"/"+order, func(t *testing.T) {
-					fx, id, target := ale40Fixture(t, false)
-					body := readBytes(t, target)
-					root := filepath.Join(fx.home, ".claude")
-					writeFile(t, filepath.Join(root, "SKILL.md"), []byte("---\nname: configuration-container\ndescription: Inert additional inspected bundle.\n---\nNo execution.\n"), 0600)
-					if route == "symlink" {
-						alias := filepath.Join(fx.home, "configuration-alias")
-						if err := os.Symlink(root, alias); err != nil {
-							t.Fatal(err)
-						}
-						root = alias
-					}
-					settings, err := json.Marshal(map[string]any{"keep": true, "skills": map[string]any{"paths": []string{root}}})
-					if err != nil {
-						t.Fatal(err)
-					}
-					config := filepath.Join(fx.xdgConfig, "opencode/opencode.json")
-					if context == "selected-only" {
-						config = filepath.Join(fx.project, "opencode.json")
-					}
-					writeFile(t, config, settings, 0600)
-					if context == "global-only" {
-						writeFile(t, filepath.Join(fx.project, "opencode.json"), []byte(`{"skills":{"paths":[]}}`), 0600)
-					}
-					apps := []string{"opencode", "claude-code"}
-					if claudeFirst {
-						apps = []string{"claude-code", "opencode"}
-					}
-					run := func(token string, want int) commandResult {
-						args := []string{"disable", "--scope", "global", "--json", "--agents", apps[0], "--agents", apps[1]}
-						if context != "no-project" {
-							args = append(args, "--project", fx.project)
-						}
-						if token != "" {
-							args = append(args, "--confirm", token)
-						}
-						r := changeCommand(t, fx, "", append(args, id)...)
-						assertExit(t, r, want)
-						return r
-					}
-					want := 0
-					if claudeFirst {
-						want = 1
-					}
-					before := treeManifest(t, fx.base)
-					var preview collection.GroupView
-					decodeJSON(t, run("", want).stdout, &preview)
-					assertTreeUnchanged(t, before, treeManifest(t, fx.base))
-					for _, member := range preview.Members {
-						if member.Preview.State != "ready" || member.Preview.NoWriteNeeded {
-							t.Fatal("must reach discovery containment with native write previews", member.Preview)
-						}
-					}
-					if claudeFirst {
-						if preview.State != "refused" || preview.Confirmation != "" || !strings.Contains(preview.Reason, "intersects later native discovery") {
-							t.Fatal(preview.State, preview.Reason)
-						}
-						var out collection.GroupOutcome
-						decodeJSON(t, run("g1:forged", 1).stdout, &out)
-						if out.State != "refused" || len(out.Results) != len(apps) {
-							t.Fatal(out.State, out.Results)
-						}
-						for _, result := range out.Results {
-							if result.State != "not-attempted" {
-								t.Fatal(result)
-							}
-						}
-						assertTreeUnchanged(t, before, treeManifest(t, fx.base))
-					} else {
-						if preview.State != "ready" || preview.Confirmation == "" {
-							t.Fatal(preview.State, preview.Reason)
-						}
-						var out collection.GroupOutcome
-						decodeJSON(t, run(preview.Confirmation, 0).stdout, &out)
-						if out.State != "applied" || len(out.Results) != len(apps) {
-							t.Fatal(out.State, out.Results)
-						}
-						for _, result := range out.Results {
-							if result.State != "succeeded" || result.Outcome == nil || result.Outcome.ExitCode() != 0 {
-								t.Fatal(result)
-							}
-						}
-					}
-					if !bytes.Equal(body, readBytes(t, target)) {
-						t.Fatal("shared source changed")
-					}
+	for _, inspection := range []string{"selected-and-global", "selected-only", "global-only", "no-project"} {
+		for _, route := range []string{"direct", "symlink", "child-symlink"} {
+			for _, writerFirst := range []bool{true, false} {
+				t.Run(inspection+"/"+route+"/"+map[bool]string{true: "claude-first", false: "opencode-first"}[writerFirst], func(t *testing.T) {
+					ale40NativeDiscoveryContainment(t, "opencode", inspection, route, writerFirst)
 				})
 			}
 		}
+	}
+}
+func TestALE40PublicPiChildBundleDiscoveryContainment(t *testing.T) {
+	for _, inspection := range []string{"selected-and-global", "no-project"} {
+		for _, writerFirst := range []bool{true, false} {
+			t.Run(inspection+"/"+map[bool]string{true: "claude-first", false: "pi-first"}[writerFirst], func(t *testing.T) {
+				ale40NativeDiscoveryContainment(t, "pi", inspection, "child-symlink", writerFirst)
+			})
+		}
+	}
+}
+func TestALE40PublicInspectionBundleDiscoveryContainment(t *testing.T) {
+	for _, reader := range []string{"codex", "claude-code", "hermes", "pi", "opencode", "gemini"} {
+		t.Run(reader+"/writer-first", func(t *testing.T) {
+			ale40NativeDiscoveryContainment(t, reader, "inspection-only", "child-symlink", true)
+		})
+		for _, writerFirst := range []bool{true, false} {
+			t.Run(reader+"/no-op-writer/"+map[bool]string{true: "writer-first", false: "reader-first"}[writerFirst], func(t *testing.T) {
+				ale40NativeDiscoveryContainment(t, reader, "inspection-only-noop", "child-symlink", writerFirst)
+			})
+		}
+	}
+}
+func TestALE40PublicNativeChildBundleDiscoveryContainment(t *testing.T) {
+	for _, reader := range []string{"codex", "claude-code", "hermes", "gemini"} {
+		for _, writerFirst := range []bool{true, false} {
+			t.Run(reader+"/"+map[bool]string{true: "writer-first", false: "reader-first"}[writerFirst], func(t *testing.T) {
+				ale40NativeDiscoveryContainment(t, reader, "native-alias", "child-symlink", writerFirst)
+			})
+		}
+	}
+}
+func TestALE40PublicPiDiscoveryDoesNotReadSiblingOrExternalTarget(t *testing.T) {
+	for _, route := range []string{"standalone", "external-resource"} {
+		for _, writerFirst := range []bool{true, false} {
+			t.Run(route+"/"+map[bool]string{true: "claude-first", false: "pi-first"}[writerFirst], func(t *testing.T) {
+				ale40NativeDiscoveryContainment(t, "pi", "selected-and-global", route, writerFirst)
+			})
+		}
+	}
+}
+func TestALE40PublicBundleContainsCreatedConfigurationParent(t *testing.T) {
+	ale40NativeDiscoveryContainment(t, "pi", "parent-creation", "child-symlink", true)
+}
+func ale40NativeDiscoveryContainment(t *testing.T, reader, inspection, route string, writerFirst bool) {
+	t.Helper()
+	fx, id, target := ale40Fixture(t, false)
+	body := readBytes(t, target)
+	writer := "claude-code"
+	settingsDirectory := filepath.Join(fx.home, ".claude")
+	if reader == "claude-code" {
+		writer = "pi"
+		settingsDirectory = filepath.Join(fx.home, ".pi/agent")
+	}
+	if inspection == "parent-creation" {
+		writer = "codex"
+		settingsDirectory = fx.home
+		if err := os.Rename(filepath.Join(fx.home, ".codex"), filepath.Join(fx.home, "codex-saved")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writerNoOp := inspection == "inspection-only-noop"
+	if writerNoOp {
+		prior := ale40Preview(t, fx, []string{writer}, "global", id, 0)
+		ale40Apply(t, fx, []string{writer}, id, prior.Confirmation, "", 0)
+	}
+	manifest := []byte("---\nname: configuration-container\ndescription: Inert additional inspected bundle.\n---\nNo execution.\n")
+	root := settingsDirectory
+	inspected := settingsDirectory
+	if route == "standalone" {
+		root = filepath.Join(settingsDirectory, "companion.md")
+		writeFile(t, root, manifest, 0600)
+		inspected = root
+	} else if route == "external-resource" {
+		root = filepath.Join(fx.home, "independent-bundle")
+		writeFile(t, filepath.Join(root, "SKILL.md"), manifest, 0600)
+		if err := os.Symlink(filepath.Join(settingsDirectory, "settings.json"), filepath.Join(root, "external-settings.json")); err != nil {
+			t.Fatal(err)
+		}
+		inspected = root
+	} else {
+		writeFile(t, filepath.Join(root, "SKILL.md"), manifest, 0600)
+	}
+	if route == "symlink" {
+		alias := filepath.Join(fx.home, "configuration-alias")
+		if err := os.Symlink(root, alias); err != nil {
+			t.Fatal(err)
+		}
+		root = alias
+	} else if route == "child-symlink" {
+		container := filepath.Join(fx.home, "child-bundles")
+		name := "settings-child"
+		if inspection == "native-alias" {
+			container = filepath.Join(fx.home, map[string]string{"codex": ".codex/skills", "claude-code": ".claude/skills", "hermes": ".hermes/skills", "gemini": ".gemini/skills"}[reader])
+			name = "configuration-container"
+		}
+		if err := os.MkdirAll(container, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(root, filepath.Join(container, name)); err != nil {
+			t.Fatal(err)
+		}
+		root = container
+	}
+	extra := []string{}
+	if inspection == "inspection-only" || writerNoOp {
+		extra = []string{"--root", root}
+	} else if inspection == "native-alias" {
+		// The reader alone observes its ordinary native child directory alias.
+	} else if reader == "pi" {
+		settings, err := json.Marshal(map[string]any{"keep": true, "skills": []string{root}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(fx.home, ".pi/agent/settings.json"), settings, 0600)
+	} else {
+		settings, err := json.Marshal(map[string]any{"keep": true, "skills": map[string]any{"paths": []string{root}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		config := filepath.Join(fx.xdgConfig, "opencode/opencode.json")
+		if inspection == "selected-only" {
+			config = filepath.Join(fx.project, "opencode.json")
+		}
+		writeFile(t, config, settings, 0600)
+		if inspection == "global-only" {
+			writeFile(t, filepath.Join(fx.project, "opencode.json"), []byte(`{"skills":{"paths":[]}}`), 0600)
+		}
+	}
+	// Confirm the independently inspected bundle and its resource inventory through
+	// the public reader context. Global-only OpenCode deliberately hides it in the
+	// selected context, so inspect the global context in that case.
+	listArgs := []string{"list", "--agent", reader, "--json"}
+	if inspection != "no-project" && inspection != "global-only" {
+		listArgs = append(listArgs, "--project", fx.project)
+	}
+	listArgs = append(listArgs, extra...)
+	listed := fx.run(t, listArgs...)
+	assertExit(t, listed, 0)
+	var inventory struct{ Sources []collection.Source }
+	decodeJSON(t, listed.stdout, &inventory)
+	found := false
+	for _, source := range inventory.Sources {
+		if source.Directory != canonicalPath(t, inspected) {
+			continue
+		}
+		if route == "standalone" {
+			found = source.Identity.Method == "darwin-file-object" && source.Directory == source.Manifest.ResolvedPath && len(source.Resources) == 0
+		} else if route == "external-resource" {
+			for _, resource := range source.Resources {
+				if resource.Kind == "symlink" && resource.LinkScope == "external" {
+					found = true
+				}
+			}
+		} else {
+			found = len(source.Resources) > 0
+		}
+	}
+	if !found {
+		t.Fatal("reader must observe the independent aliased configuration bundle and resources")
+	}
+	apps := []string{reader, writer}
+	if writerFirst {
+		apps = []string{writer, reader}
+	}
+	evidence := "discovery-containment/" + reader + "/" + inspection + "/" + route + "/" + strings.Join(apps, "-")
+	writeEvidence(t, evidence+"/inventory.json", listed.stdout)
+	run := func(token string) commandResult {
+		args := []string{"disable", "--scope", "global", "--json", "--agents", apps[0], "--agents", apps[1]}
+		if inspection != "no-project" {
+			args = append(args, "--project", fx.project)
+		}
+		args = append(args, extra...)
+		if token != "" {
+			args = append(args, "--confirm", token)
+		}
+		return changeCommand(t, fx, "", append(args, id)...)
+	}
+	before := treeManifest(t, fx.base)
+	result := run("")
+	writeEvidence(t, evidence+"/preview.json", result.stdout)
+	writeEvidence(t, evidence+"/tree-before.json", before)
+	var preview collection.GroupView
+	decodeJSON(t, result.stdout, &preview)
+	assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+	if len(preview.Members) != 2 {
+		t.Fatal("both requested native previews are required", preview.Members)
+	}
+	for _, member := range preview.Members {
+		if inspection == "parent-creation" && member.Application == writer && member.Preview.CreateDirectory == "" {
+			t.Fatal("expected missing configuration parent creation", member.Preview)
+		}
+		if member.Preview.State != "ready" || member.Preview.NoWriteNeeded != (writerNoOp && member.Application == writer) {
+			t.Fatal("must reach discovery containment with native write previews", member.Preview)
+		}
+	}
+	if writerFirst && !writerNoOp && route != "standalone" && route != "external-resource" {
+		if preview.State != "refused" || preview.Confirmation != "" || !strings.Contains(preview.Reason, "intersects later native discovery") {
+			t.Fatalf("earlier replacement beneath later inspected bundle must refuse: state=%q confirmation=%q reason=%q", preview.State, preview.Confirmation, preview.Reason)
+		}
+		assertExit(t, result, 1)
+		attempted := run("g1:forged")
+		assertExit(t, attempted, 1)
+		var out collection.GroupOutcome
+		decodeJSON(t, attempted.stdout, &out)
+		if out.State != "refused" || len(out.Results) != len(apps) {
+			t.Fatal(out.State, out.Results)
+		}
+		for _, result := range out.Results {
+			if result.State != "not-attempted" {
+				t.Fatal(result)
+			}
+		}
+		assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+	} else {
+		assertExit(t, result, 0)
+		if preview.State != "ready" || preview.Confirmation == "" {
+			t.Fatal(preview.State, preview.Reason)
+		}
+		applied := run(preview.Confirmation)
+		assertExit(t, applied, 0)
+		var out collection.GroupOutcome
+		decodeJSON(t, applied.stdout, &out)
+		if out.State != "applied" || len(out.Results) != len(apps) {
+			t.Fatal(out.State, out.Results)
+		}
+		for _, result := range out.Results {
+			if result.State != "succeeded" || result.Outcome == nil || result.Outcome.ExitCode() != 0 {
+				t.Fatal(result)
+			}
+		}
+		// Earlier no-ops introduce no resource replacement. Even writer-first
+		// now safely verifies the already achieved settings without rewriting.
+		apps = []string{writer, reader}
+		noOp := run("")
+		assertExit(t, noOp, 0)
+		decodeJSON(t, noOp.stdout, &preview)
+		for _, member := range preview.Members {
+			if !member.Preview.NoWriteNeeded {
+				t.Fatal("expected verified native no-op", member.Preview)
+			}
+		}
+		unchanged := treeManifest(t, fx.base)
+		assertExit(t, run(preview.Confirmation), 0)
+		assertTreeUnchanged(t, unchanged, treeManifest(t, fx.base))
+	}
+	writeEvidence(t, evidence+"/tree-after.json", treeManifest(t, fx.base))
+	if !bytes.Equal(body, readBytes(t, target)) {
+		t.Fatal("shared source changed")
 	}
 }
 
