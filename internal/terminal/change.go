@@ -16,6 +16,8 @@ func runChange(operation string, args []string, stdout, stderr io.Writer) int {
 	flags.SetOutput(io.Discard)
 	var options commonOptions
 	options.bind(flags, false, true)
+	var applications stringList
+	flags.Var(&applications, "agents", "explicit ordered application; repeat --agents for a group; excludes --agent")
 	scope := flags.String("scope", "", "explicit control scope: global or project")
 	var confirmation optionalString
 	flags.Var(&confirmation, "confirm", "exact confirmation token from a current preview")
@@ -26,6 +28,60 @@ func runChange(operation string, args []string, stdout, stderr io.Writer) int {
 		}
 		writeError(stderr, err)
 		return 2
+	}
+	if len(applications) > 0 {
+		if options.agent != "" {
+			writeError(stderr, errors.New("--agent and --agents are mutually exclusive"))
+			return 2
+		}
+		if flags.NArg() != 1 || *scope == "" {
+			writeError(stderr, errors.New("group controls require --scope and exactly one SOURCE_ID"))
+			return 2
+		}
+		options.agent = "codex"
+		for _, app := range applications {
+			for _, c := range collection.ApplicationCapabilities() {
+				if app == c.Application {
+					options.agent = app
+					break
+				}
+			}
+			if options.agent == app {
+				break
+			}
+		}
+		snapshot, code := buildSnapshot(options, stderr)
+		if snapshot == nil {
+			return code
+		}
+		preview := snapshot.PreviewGroupChange(context.Background(), collection.GroupIntent{Source: collection.SourceID(flags.Arg(0)), Applications: applications, Scope: collection.ControlScope(*scope), Choice: collection.ControlChoice(operation)})
+		var value any = preview.View()
+		lines := groupPreviewLines(preview.View())
+		exit := 0
+		if confirmation.set {
+			out := preview.Apply(context.Background(), confirmation.value)
+			value = out
+			lines = groupOutcomeLines(out)
+			exit = out.ExitCode()
+		} else if preview.View().State != "ready" {
+			exit = 1
+		}
+		var data []byte
+		var err error
+		if options.jsonOutput {
+			data, err = encodeJSON(value)
+		} else {
+			data = []byte(strings.Join(lines, "\n") + "\n")
+		}
+		if err != nil {
+			writeError(stderr, err)
+			return 1
+		}
+		if _, err = stdout.Write(data); err != nil {
+			writeError(stderr, err)
+			return 1
+		}
+		return exit
 	}
 	if flags.NArg() != 1 || !supportsSkillControls(options.agent) || *scope == "" {
 		writeError(stderr, errors.New("enable/disable/inherit requires explicit --agent codex, claude-code, hermes, pi, opencode or gemini, --scope global or project and exactly one SOURCE_ID after the flags"))
@@ -134,24 +190,18 @@ func safeChangeLines(lines []string) []string {
 }
 
 func controlApplication(app string) string {
-	if app == "gemini" {
-		return "Gemini CLI"
+	for _, c := range collection.ApplicationCapabilities() {
+		if c.Application == app {
+			return c.Name
+		}
 	}
-	if app == "opencode" {
-		return "OpenCode"
-	}
-	if app == "pi" {
-		return "Pi"
-	}
-	if app == "hermes" {
-		return "Hermes"
-	}
-	if app == "claude-code" {
-		return "Claude Code"
-	}
-	return "Codex"
+	return app
 }
-
 func supportsSkillControls(app string) bool {
-	return app == "gemini" || app == "opencode" || app == "pi" || app == "codex" || app == "claude-code" || app == "hermes"
+	for _, c := range collection.ApplicationCapabilities() {
+		if c.Application == app {
+			return c.Controls
+		}
+	}
+	return false
 }

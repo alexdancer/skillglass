@@ -32,6 +32,10 @@ const (
 	browserChangePreview
 	browserChangeResult
 	browserHelp
+	browserGroupSelect
+	browserGroupScope
+	browserGroupPreview
+	browserGroupResult
 )
 
 type sourceTab uint8
@@ -55,6 +59,12 @@ type browserSourceLabel struct {
 }
 
 type browserModel struct {
+	groupApplications []string
+	groupFocus        int
+	groupPreview      *collection.GroupPreview
+	groupOutcome      collection.GroupOutcome
+	groupCancel       context.CancelFunc
+
 	changeChoice         collection.ControlChoice
 	changePreview        *collection.ChangePreview
 	changeOutcome        collection.ChangeOutcome
@@ -177,6 +187,20 @@ func (model browserModel) Init() tea.Cmd {
 
 func (model browserModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := message.(type) {
+	case groupFinished:
+		model.changing = false
+		model.groupCancel = nil
+		model.groupOutcome = message.outcome
+		model.mutationFailed = message.outcome.ExitCode() != 0
+		if fresh, _, err := model.snapshot.Refresh(context.Background(), model.selected); err == nil {
+			model.snapshot = fresh
+			model.rebuildSourceLabels()
+			model.applyView()
+		}
+		model.mode = browserGroupResult
+		model.changeScroll = 0
+		model.feedback = ""
+		return model, nil
 	case changeFinished:
 		model.changing = false
 		model.changeOutcome = message.outcome
@@ -238,6 +262,10 @@ func (model browserModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return model, nil
 	case tea.KeyPressMsg:
 		if model.changing {
+			if model.groupCancel != nil && (message.String() == "esc" || message.String() == "ctrl+c") {
+				model.groupCancel()
+				model.feedback = "Stopping after the current guarded operation..."
+			}
 			return model, nil
 		}
 		if message.String() == "ctrl+c" {
@@ -257,6 +285,9 @@ func (model browserModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			model.helpScroll = 0
 			model.mode = browserHelp
 			return model, nil
+		}
+		if model.mode == browserGroupSelect || model.mode == browserGroupScope || model.mode == browserGroupPreview || model.mode == browserGroupResult {
+			return model.updateGroup(message)
 		}
 		if model.mode == browserChangeScope || model.mode == browserChangePreview || model.mode == browserChangeResult {
 			return model.updateChange(message)
@@ -378,6 +409,10 @@ func (model browserModel) updateCollection(key tea.KeyPressMsg) (tea.Model, tea.
 func (model browserModel) updateSourceDetail(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	var command tea.Cmd
 	switch key.String() {
+	case "A":
+		return model.openGroup(collection.ControlDisable)
+	case "E":
+		return model.openGroup(collection.ControlEnable)
 	case "D":
 		return model.openChange(collection.ControlDisable)
 	case "e":

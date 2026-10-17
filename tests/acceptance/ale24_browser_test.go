@@ -92,20 +92,20 @@ func TestALE24BrowserModesAndReferencesAtRequiredWidths(t *testing.T) {
 			}
 			customReference := scrollALE24Until(
 				t, tmux, fx.fixture, socket, "browser:0.0", 40,
-				"Context: custom", "directory-alias-one", backHint,
+				"Context: custom", "directory-alias-one", "Esc back",
 			)
 			assertPaneCells(t, customReference, width, 30)
 			writeEvidence(t, fmt.Sprintf("tmux/ale24-modes/%d/02-reference-custom.txt", width), []byte(customReference))
 
 			projectReference := scrollALE24Until(
 				t, tmux, fx.fixture, socket, "browser:0.0", 40,
-				"Context: project", "directory-alias-two", backHint,
+				"Context: project", "directory-alias-two", "Esc back",
 			)
 			assertPaneCells(t, projectReference, width, 30)
 			writeEvidence(t, fmt.Sprintf("tmux/ale24-modes/%d/03-reference-project.txt", width), []byte(projectReference))
 
 			_ = act(func() {
-				runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "Escape")
+				runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "Left")
 			}, "Sources", "Focus: 1/1", "Search / shared-directory")
 			_ = act(func() {
 				runTmux(t, tmux, fx.fixture, socket, "send-keys", "-t", "browser:0.0", "Tab")
@@ -137,7 +137,7 @@ func TestALE24BrowserModesAndReferencesAtRequiredWidths(t *testing.T) {
 			assertPaneCells(t, problemDetail, width, 30)
 			writeEvidence(t, fmt.Sprintf("tmux/ale24-modes/%d/05-problem-detail.txt", width), []byte(problemDetail))
 			writeEvidence(t, fmt.Sprintf("tmux/ale24-modes/%d/keys.txt", width), []byte(
-				"/\nshared-directory\nEnter\nEnter\nd\n<scroll>\nEsc\nTab\n/\nCtrl+U\nEnter\nEnter\nEsc\nq\n",
+				"/\nshared-directory\nEnter\nEnter\nd\n<scroll>\nLeft\nTab\n/\nCtrl+U\nEnter\nEnter\nEsc\nq\n",
 			))
 			writeEvidence(t, fmt.Sprintf("tmux/ale24-modes/%d/command.txt", width), []byte(strings.Join(launch.Argv, "\n")+"\n"))
 			_ = act(func() {

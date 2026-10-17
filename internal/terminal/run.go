@@ -18,10 +18,12 @@ const usage = `Usage:
   skillglass explain [SCOPE] [--json] SOURCE_ID
   skillglass compare [SCOPE] [--json] LEFT_SOURCE_ID RIGHT_SOURCE_ID
   skillglass enable|disable|inherit --agent codex|claude-code|hermes|pi|opencode|gemini --scope global|project [SCOPE] [--confirm TOKEN] [--json] SOURCE_ID
+  skillglass enable|disable|inherit --agents APP --agents APP --scope global|project [SCOPE] [--confirm TOKEN] [--json] SOURCE_ID
   skillglass browse [SCOPE]
 
 Scope:
   --agent APP          codex, claude-code, pi, opencode, codeaf, gemini or hermes
+  --agents APP         control an explicit group; repeat in execution order; excludes --agent
   --root ROOT          custom discovery root; repeatable
   --project PROJECT    selected project context
   --project-root ROOT  discovery root associated with --project; repeatable
@@ -35,7 +37,9 @@ Filters:
 Browser:
   --theme VALUE        auto, dark, light, or none (default auto)
 
-Without --agent, at least one explicit --root or --project-root is required. Native rules are version-specific; the scope reports roots and remaining gaps.
+Group controls preflight all requested apps. Unsupported members block the whole request; a subset needs a fresh explicit request. Application stops at the first non-success, retains earlier successful changes, and reports remaining apps not attempted. Discovery is bounded, not machine-wide.
+
+Without --agent (outside group controls), at least one explicit --root or --project-root is required. Native rules are version-specific; the scope reports roots and remaining gaps.
 `
 
 type stringList []string

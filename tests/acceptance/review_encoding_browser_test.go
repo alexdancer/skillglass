@@ -43,7 +43,7 @@ func TestBrowserInvalidManifestEncodingHasRecoveryHint(t *testing.T) {
 	}, "manifest-invalid-encoding", "manifest.raw_bytes_base64", "Manifest: malformed")
 	end := actForPaneAt(t, tmux, fx, socket, "encoding:0.0", false, func() {
 		runTmux(t, tmux, fx, socket, "send-keys", "-t", "encoding:0.0", "-l", "G")
-	}, "resource.txt", "Resources", "← back")
+	}, "resource.txt", "Resources", "Esc back")
 	allDetails := joined + "\n" + end
 	cells := capturePaneAt(t, tmux, fx, socket, "encoding:0.0", false)
 	writeEvidence(t, "tmux/encoding/detail.txt", []byte(cells))

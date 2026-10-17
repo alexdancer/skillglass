@@ -246,10 +246,7 @@ func TestBrowserTmuxCellsAtRequiredWidths(t *testing.T) {
 			}, "scripts/never-run.sh", "executable", "q quit")
 			end := capturePane(t, tmux, fx, socket, false)
 			assertPaneCells(t, end, width, 30)
-			backHint := "← back"
-			if width < 60 {
-				backHint = "Esc back"
-			}
+			backHint := "Esc back"
 			if !strings.Contains(endJoined, backHint) {
 				t.Fatalf("joined end capture does not expose complete footer %q:\n%s", backHint, endJoined)
 			}

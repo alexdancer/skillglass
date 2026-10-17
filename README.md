@@ -78,6 +78,19 @@ Preview changes no settings. Add `--project /path/to/repository` to inspect the 
 
 In Codex browser source detail, press `D` to disable or `e` to enable, then `g` to select global scope. Press `p` instead to inspect the versioned unsupported project-control explanation, or `i` to request removal of a project override and inheritance. Both project requests refuse without changing settings on the validated Codex version. Inspect the paged preview. Press `y` to apply a ready global choice, or Enter or Escape to cancel. Long paths remain accessible with arrows, Page Up/Down and Home/End; on the scope selection page, `g` selects global scope rather than scrolling.
 
+To control the same proven source across explicitly chosen applications, use `enable` or `disable` and repeat `--agents` in execution order. Use `inherit --scope project --project /path/to/repository` with the same ordered flags to remove supported project overrides. Every member shares the chosen scope and selected project. `--agents` is mutually exclusive with `--agent`:
+
+```sh
+bin/skillglass disable --agents codex --agents claude-code --scope global --project /path/to/repository --json SOURCE_ID
+bin/skillglass disable --agents codex --agents claude-code --scope global --project /path/to/repository --confirm g1:GROUP_PREVIEW_TOKEN SOURCE_ID
+```
+
+The preview lists the exact source, ordered applications, selected project, setting changes, and bounded native discovery for all seven adapters. Equal names or contents never substitute an independent copy. Codex, Claude Code, Hermes, Pi, OpenCode, and Gemini use their existing validated writers and eligibility rules. CodeAF controls and Codex project controls remain unsupported. An unsupported or unverified requested member blocks the whole request with no writes. To apply a supported subset, select it explicitly and obtain a new preview and token. Unknown and duplicate application IDs refuse. Independently ready native previews can still be refused together by the [group preflight footprint limits](docs/verification/ale-40.md#preflight-footprint-limits).
+
+Group confirmation rechecks the complete request before any write. Applications then run sequentially, each with its original immediate freshness check. The first failed or unmet result stops the operation. Earlier successful changes remain, and later applications are reported as `not-attempted`. The result retains each attempted application's persistence, effective availability, and reload evidence; running sessions are never restarted. Configurations do not change atomically across applications. An unmet group exits nonzero. Coverage describes only the listed roots and selected project, never the whole machine. Incomplete unrequested discovery remains visible and does not authorize an unverified requested writer.
+
+In any browser source reader, press `A` to disable a group or `E` to enable a group. The application checklist starts unchecked. Move with arrows or `j`/`k`, and toggle with Space. Selection order is execution order. Press Enter to choose global, project, or project inheritance scope with `g`, `p`, or `i`. Scroll the preview with arrows, Page Up/Down, and Home/End; `y` applies a ready group. Enter or Escape cancels the preview without writes. Press `s` in a preview or result to edit the application selection and create fresh consent, including after a mixed unsupported request. Escape during application requests cancellation before the next application, retaining completed writes. Results list each application in the requested order. See [group control verification](docs/verification/ale-40.md).
+
 For a unique ordinary Claude Code source, `--agent claude-code` supports global and exact selected-project enable/disable plus project inheritance:
 
 ```sh
