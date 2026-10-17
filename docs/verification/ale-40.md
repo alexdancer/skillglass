@@ -1,16 +1,12 @@
 # Explicit group skill controls
 
-Group controls compose the six completed native writers for one proven source. They introduce no native capability or native-version claim. CodeAF controls, Codex project controls, and each adapter's existing unsupported cases remain unsupported. The adapter verification documents linked from the README retain authority for native behavior and reload requirements.
-
-`disable`, `enable`, and `inherit` accept repeated `--agents APP` flags in execution order, excluding singleton `--agent`. Every member uses the same explicit scope, selected project, and exact source ID. Unknown and duplicate IDs refuse. A requested unsupported or unverified member blocks the entire preview without a token or writes. A supported subset requires a distinct explicit selection, preview, and confirmation. The browser starts its group checklist unchecked and shares the collection policy with ordinary commands.
+The [README's group control instructions](../../README.md#build-and-use) own CLI and browser usage, capability limits, whole-request refusal, explicit subset selection, execution order, cancellation, and result semantics. The adapter verification documents linked there retain authority for native behavior and reload requirements. Group composition introduces no native capability or native-version claim.
 
 `GroupPreview` owns immutable native child previews. Its confirmation binds the exact source, ordered selection, scope, project, discovered consumers, bounded coverage evidence, and native child digests. Public views copy nested evidence and omit child confirmation tokens. Before any write, the group reconstructs its full preflight. Each original child then retains its native immediate recheck and guarded writer. Independent same-name sources are never substituted.
 
 The private footprint check compares actual write destinations and later observed inputs. It resolves parent aliases, compares filesystem object identities, accounts for missing-parent creation, and rejects configuration writes that change later discovery. Stable shared ancestors and the common immutable skill source are allowed. No-op children introduce no replacement or directory-creation effects. No observation overlay or consent rebasing is used.
 
-Applications run sequentially. A native outcome succeeds only when its existing `ChangeOutcome.ExitCode()` succeeds, including verified persistence and achieved effective result. The first non-success stops execution. Earlier successful changes remain; remaining applications are `not-attempted`. Attempted results retain write state, persistence, effective availability, reload evidence, and retained artifacts. A committed write followed by failed verification remains reported as committed. Cancellation before an application starts leaves it not attempted. Group operations make no rollback or cross-file atomicity promise.
-
-Discovery covers only the roots and project shown in each consumer's scope. Incomplete unrequested discovery remains visible and does not authorize an unverified requested writer. The consumer list does not assert installation or complete machine-wide discovery. Running application sessions are not observed or restarted.
+The group delegates native success to `ChangeOutcome.ExitCode()`, requiring verified persistence and achieved effective result rather than just a completed write. Attempted results retain the full native outcome, including retained artifacts and committed-write verification failures. Cancellation before a child is invoked produces no native outcome for that child. Consumer records describe discovery references, not application installation.
 
 ## Executable and terminal evidence
 
