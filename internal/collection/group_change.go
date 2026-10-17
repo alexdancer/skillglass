@@ -409,11 +409,16 @@ func groupInterference(children []*ChangePreview) string {
 			}
 			// Directory facts omit entry membership. Preserve the independent semantic
 			// discovery check using the same identity-aware containment comparison.
-			var view View
-			if err := json.Unmarshal(other.plan.snapshotFacts, &view); err != nil {
+			var observations struct {
+				View
+				Selected, Global View
+			}
+			if err := json.Unmarshal(other.plan.snapshotFacts, &observations); err != nil {
 				return "native discovery footprint cannot be established; whole request unapplied"
 			}
-			for _, root := range view.Scope.Roots {
+			roots := append(observations.Scope.Roots, observations.Selected.Scope.Roots...)
+			roots = append(roots, observations.Global.Scope.Roots...)
+			for _, root := range roots {
 				for _, path := range []string{root.Requested, root.Resolved} {
 					if path == "" {
 						continue

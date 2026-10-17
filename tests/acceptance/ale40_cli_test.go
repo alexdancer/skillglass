@@ -2,6 +2,7 @@ package acceptance_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"github.com/alexdancer/skillglass/internal/collection"
 	"os"
 	"path/filepath"
@@ -313,6 +314,106 @@ func TestALE40PublicCreationReadInteraction(t *testing.T) {
 	}
 	assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 }
+func TestALE40PublicOpenCodeDiscoveryContainment(t *testing.T) {
+	for _, context := range []string{"selected-and-global", "selected-only", "global-only", "no-project"} {
+		for _, route := range []string{"direct", "symlink"} {
+			for _, claudeFirst := range []bool{true, false} {
+				order := "opencode-first"
+				if claudeFirst {
+					order = "claude-first"
+				}
+				t.Run(context+"/"+route+"/"+order, func(t *testing.T) {
+					fx, id, target := ale40Fixture(t, false)
+					body := readBytes(t, target)
+					root := filepath.Join(fx.home, ".claude")
+					writeFile(t, filepath.Join(root, "SKILL.md"), []byte("---\nname: configuration-container\ndescription: Inert additional inspected bundle.\n---\nNo execution.\n"), 0600)
+					if route == "symlink" {
+						alias := filepath.Join(fx.home, "configuration-alias")
+						if err := os.Symlink(root, alias); err != nil {
+							t.Fatal(err)
+						}
+						root = alias
+					}
+					settings, err := json.Marshal(map[string]any{"keep": true, "skills": map[string]any{"paths": []string{root}}})
+					if err != nil {
+						t.Fatal(err)
+					}
+					config := filepath.Join(fx.xdgConfig, "opencode/opencode.json")
+					if context == "selected-only" {
+						config = filepath.Join(fx.project, "opencode.json")
+					}
+					writeFile(t, config, settings, 0600)
+					if context == "global-only" {
+						writeFile(t, filepath.Join(fx.project, "opencode.json"), []byte(`{"skills":{"paths":[]}}`), 0600)
+					}
+					apps := []string{"opencode", "claude-code"}
+					if claudeFirst {
+						apps = []string{"claude-code", "opencode"}
+					}
+					run := func(token string, want int) commandResult {
+						args := []string{"disable", "--scope", "global", "--json", "--agents", apps[0], "--agents", apps[1]}
+						if context != "no-project" {
+							args = append(args, "--project", fx.project)
+						}
+						if token != "" {
+							args = append(args, "--confirm", token)
+						}
+						r := changeCommand(t, fx, "", append(args, id)...)
+						assertExit(t, r, want)
+						return r
+					}
+					want := 0
+					if claudeFirst {
+						want = 1
+					}
+					before := treeManifest(t, fx.base)
+					var preview collection.GroupView
+					decodeJSON(t, run("", want).stdout, &preview)
+					assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+					for _, member := range preview.Members {
+						if member.Preview.State != "ready" || member.Preview.NoWriteNeeded {
+							t.Fatal("must reach discovery containment with native write previews", member.Preview)
+						}
+					}
+					if claudeFirst {
+						if preview.State != "refused" || preview.Confirmation != "" || !strings.Contains(preview.Reason, "intersects later native discovery") {
+							t.Fatal(preview.State, preview.Reason)
+						}
+						var out collection.GroupOutcome
+						decodeJSON(t, run("g1:forged", 1).stdout, &out)
+						if out.State != "refused" || len(out.Results) != len(apps) {
+							t.Fatal(out.State, out.Results)
+						}
+						for _, result := range out.Results {
+							if result.State != "not-attempted" {
+								t.Fatal(result)
+							}
+						}
+						assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+					} else {
+						if preview.State != "ready" || preview.Confirmation == "" {
+							t.Fatal(preview.State, preview.Reason)
+						}
+						var out collection.GroupOutcome
+						decodeJSON(t, run(preview.Confirmation, 0).stdout, &out)
+						if out.State != "applied" || len(out.Results) != len(apps) {
+							t.Fatal(out.State, out.Results)
+						}
+						for _, result := range out.Results {
+							if result.State != "succeeded" || result.Outcome == nil || result.Outcome.ExitCode() != 0 {
+								t.Fatal(result)
+							}
+						}
+					}
+					if !bytes.Equal(body, readBytes(t, target)) {
+						t.Fatal("shared source changed")
+					}
+				})
+			}
+		}
+	}
+}
+
 func TestALE40PublicHumanAndUsage(t *testing.T) {
 	fx, id, _ := ale40Fixture(t, false)
 	apps := []string{"codex", "claude-code"}
