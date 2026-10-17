@@ -6,14 +6,14 @@ Skillglass is a Go terminal tool for browsing, reading, comparing, and controlli
 
 ## Status
 
-The production inventory, identity, comparison, and application discovery slices are implemented. Skillglass discovers explicit custom and project roots, groups references only when they resolve to the same proven source object, reports collection problems without discarding healthy sources, and exposes the same immutable snapshot through the CLI and keyboard browser. Codex, Claude Code, Pi, OpenCode, CodeAF, Gemini CLI, and Hermes integrations add native scope and local configured-availability explanations. Validated global Codex, active-profile global Hermes, and global/project Claude Code, Pi, OpenCode and Gemini CLI controls use source-bound preview and explicit confirmation. Other write controls remain unsupported, and running-session execution remains unobserved. Generic explicit-root inventory keeps unknown ownership and availability.
+The production inventory, identity, comparison, and application discovery slices are implemented. Skillglass discovers explicit custom and project roots, groups references only when they resolve to the same proven source object, reports collection problems without discarding healthy sources, and exposes the same immutable snapshot through the CLI and keyboard browser. Codex, Claude Code, Pi, OpenCode, CodeAF, Gemini CLI, and Hermes integrations add native scope and local configured-availability explanations. Validated global Codex, active-profile global Hermes, and global/project Claude Code, Pi, OpenCode and Gemini CLI controls use source-bound preview and explicit confirmation. Other write controls remain unsupported, and running-session execution remains unobserved. Generic explicit-root inventory keeps unknown ownership and availability. Permanent deletion adds a separate positive filesystem ownership check, exact content preview, and target-specific confirmation in both interfaces.
 
 The project was planned as **Skill Viewer**. Existing Linear titles and historical planning documents retain that name; **Skillglass** is the product and repository name.
 
 ## Planned capabilities
 
 - Extend version-specific availability evidence and remaining validation coverage.
-- Extend validated control scopes, and add permanent deletion of explicitly selected content after confirmation.
+- Extend validated control scopes.
 - Work offline, with the first release targeting macOS.
 
 Native integrations cover Codex, Claude Code, Hermes, Pi, OpenCode, Gemini CLI, and CodeAF. Capabilities must be validated per application, version, and scope. CodeAF browsing with explicit persistent-control limitations is an accepted first-release exception.
@@ -37,6 +37,7 @@ Native integrations cover Codex, Claude Code, Hermes, Pi, OpenCode, Gemini CLI, 
 - [ALE-29 Claude Code verification](docs/verification/ale-29.md)
 - [ALE-34 Pi control verification](docs/verification/ale-34.md)
 - [ALE-43 verification](docs/verification/ale-43.md)
+- [ALE-41 permanent deletion verification](docs/verification/ale-41.md)
 
 [Linear](https://linear.app/alex-dancer/project/skill-viewer-58706f175bed) holds live ticket requirements, status, and dependencies. The local copies are references.
 
@@ -65,6 +66,17 @@ bin/skillglass read --root /path/to/custom --project /path/to/project --project-
 bin/skillglass compare --root /path/to/custom --json LEFT_SOURCE_ID RIGHT_SOURCE_ID
 bin/skillglass browse --root /path/to/custom --project /path/to/project --project-root /path/to/project-skills --theme auto
 ```
+
+To permanently delete one source, obtain its exact `SOURCE_ID` from `list`, inspect the deletion preview, and repeat the request with its full confirmation token:
+
+```sh
+bin/skillglass delete --agent codex --project /path/to/repository --json SOURCE_ID
+bin/skillglass delete --agent codex --project /path/to/repository --confirm 'TOKEN_FROM_PREVIEW' SOURCE_ID
+```
+
+A preview exits nonzero and changes no content or settings. Only verified removal exits zero. The preview identifies the canonical directory or standalone Markdown file, its exact no-follow inventory, positive local ownership evidence, and known references and provenance across all seven integrations. `--root` and `--project-root` also work. Managed content, unsafe broader roots, unsupported ownership metadata, and incomplete target inventories refuse deletion.
+
+In any browser source reader, press `X` for **permanent delete**. Scroll the preview, press Enter, type `delete SOURCE_ID` exactly, then press Enter again. Bare `y` and empty input cannot delete. Escape cancels. Deletion removes canonical shared content, leaving directory aliases and other references untouched. Independent copies and external targets of interior links survive. There is no trash, undo, or built-in recovery. Results distinguish actual removals, remaining entries, replacements, and unverified paths. See [deletion safety and discovery limits](docs/verification/ale-41.md).
 
 To change one source's global Codex choice, obtain its ID from `list`, inspect a preview, then repeat the exact request with its confirmation token:
 
