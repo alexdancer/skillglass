@@ -84,10 +84,27 @@ func (p *DeletePreview) View() DeleteView {
 	if p == nil {
 		return DeleteView{State: "refused", Reason: "no deletion preview"}
 	}
-	raw, _ := json.Marshal(p.view)
-	var result DeleteView
-	_ = json.Unmarshal(raw, &result)
-	return result
+	view := p.view
+	view.References = make([]Reference, len(p.view.References))
+	for i, ref := range p.view.References {
+		view.References[i] = cloneReference(ref)
+	}
+	view.Contents = append([]DeleteEntry(nil), p.view.Contents...)
+	view.Limits = append([]string(nil), p.view.Limits...)
+	view.Consumers = append([]DeleteConsumer(nil), p.view.Consumers...)
+	for i := range view.Consumers {
+		consumer := &view.Consumers[i]
+		consumer.Scope = cloneScope(consumer.Scope)
+		consumer.References = append([]Reference(nil), consumer.References...)
+		for j, ref := range consumer.References {
+			consumer.References[j] = cloneReference(ref)
+		}
+		if consumer.Availability != nil {
+			value := cloneAvailability(*consumer.Availability)
+			consumer.Availability = &value
+		}
+	}
+	return view
 }
 func (s *Snapshot) PreviewDelete(ctx context.Context, id SourceID) *DeletePreview {
 	p := &DeletePreview{view: DeleteView{State: "refused", Reason: "selected source cannot be deleted", Limits: []string{

@@ -36,6 +36,9 @@ const (
 	browserGroupScope
 	browserGroupPreview
 	browserGroupResult
+	browserDeletePreview
+	browserDeleteConfirm
+	browserDeleteResult
 )
 
 type sourceTab uint8
@@ -59,6 +62,10 @@ type browserSourceLabel struct {
 }
 
 type browserModel struct {
+	deletePreview     *collection.DeletePreview
+	deleteOutcome     collection.DeleteOutcome
+	deleteInput       string
+	deleteCancel      context.CancelFunc
 	groupApplications []string
 	groupFocus        int
 	groupPreview      *collection.GroupPreview
@@ -187,6 +194,25 @@ func (model browserModel) Init() tea.Cmd {
 
 func (model browserModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch message := message.(type) {
+	case deleteFinished:
+		model.changing = false
+		model.deleteCancel = nil
+		model.deletePreview = nil
+		model.deleteInput = ""
+		model.deleteOutcome = message.outcome
+		model.mutationFailed = message.outcome.ExitCode() != 0
+		if fresh, selection, err := model.snapshot.Refresh(context.Background(), model.selected); err == nil {
+			model.snapshot = fresh
+			if selection.State == collection.SelectionChangeCleared {
+				model.selected = ""
+			}
+			model.rebuildSourceLabels()
+			model.applyView()
+		}
+		model.mode = browserDeleteResult
+		model.changeScroll = 0
+		model.feedback = ""
+		return model, nil
 	case groupFinished:
 		model.changing = false
 		model.groupCancel = nil
@@ -255,6 +281,10 @@ func (model browserModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return model, nil
 	case tea.PasteMsg:
+		if model.mode == browserDeleteConfirm && len(model.deleteInput)+len(message.Content) <= 256 {
+			model.deleteInput += message.Content
+			return model, nil
+		}
 		if model.mode == browserSearch {
 			model.filters.Search += message.Content
 			model.applyView()
@@ -262,6 +292,10 @@ func (model browserModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		return model, nil
 	case tea.KeyPressMsg:
 		if model.changing {
+			if model.deleteCancel != nil && (message.String() == "esc" || message.String() == "ctrl+c") {
+				model.deleteCancel()
+				model.feedback = "Stopping after the current guarded operation..."
+			}
 			if model.groupCancel != nil && (message.String() == "esc" || message.String() == "ctrl+c") {
 				model.groupCancel()
 				model.feedback = "Stopping after the current guarded operation..."
@@ -273,6 +307,9 @@ func (model browserModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if model.mode == browserSearch {
 			return model.updateSearch(message)
+		}
+		if model.mode == browserDeletePreview || model.mode == browserDeleteConfirm || model.mode == browserDeleteResult {
+			return model.updateDelete(message)
 		}
 		if message.String() == "q" {
 			return model, tea.Quit
@@ -409,6 +446,8 @@ func (model browserModel) updateCollection(key tea.KeyPressMsg) (tea.Model, tea.
 func (model browserModel) updateSourceDetail(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	var command tea.Cmd
 	switch key.String() {
+	case "X":
+		return model.openDelete()
 	case "A":
 		return model.openGroup(collection.ControlDisable)
 	case "E":

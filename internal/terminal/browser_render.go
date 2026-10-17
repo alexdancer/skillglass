@@ -40,6 +40,8 @@ func (model browserModel) View() tea.View {
 	switch model.mode {
 	case browserComparison:
 		lines = model.comparisonPage().layout().lines
+	case browserDeletePreview, browserDeleteConfirm, browserDeleteResult:
+		lines = model.deletePage().layout().lines
 	case browserGroupSelect, browserGroupScope, browserGroupPreview, browserGroupResult:
 		lines = model.groupPage().layout().lines
 	case browserChangeScope, browserChangePreview, browserChangeResult:
@@ -526,6 +528,7 @@ func (model browserModel) helpBodyLines() []string {
 		{"d / i", "Show source Details or Instructions"},
 		{"v", "In reader: toggle rendered and raw instructions; in Sources: compare marked source"},
 		{"m", "In Sources: mark the focused source as comparison left"},
+		{"X", "In any source reader: preview permanent deletion, then type the exact source-specific phrase"},
 		{"A / E", "In any source reader: disable or enable an explicitly selected ordered group"},
 		{"D / e", "In a supported native reader: disable or enable one application, then choose scope and confirm"},
 		{"a", "Cycle native configured availability"},
@@ -911,35 +914,29 @@ func (model browserModel) collectionFooter(target browserMode) string {
 	return model.footerWithHint(status+"  "+strings.TrimSuffix(action, " ? help q quit"), "? help  q quit")
 }
 
-func (model browserModel) readerFooter(page scrollPage) string {
-	if model.sourceTab == sourceDetails {
-		value := "i instructions  A/E group  Esc back"
-		if scope := model.snapshot.Scope(); scope.Agent != nil && supportsSkillControls(scope.Agent.Application) {
-			value = "i instructions  D Disable  e Enable  Esc back"
+func (model browserModel) readerFooter(_ scrollPage) string {
+	label, short := "i instructions", "i read"
+	if model.sourceTab != sourceDetails {
+		mode := "v raw"
+		if model.instructionView == instructionsRaw {
+			mode = "v rendered"
 		}
-		if model.width < 60 {
-			value = "i read  A/E group  Esc back"
-		}
-		if scope := model.snapshot.Scope(); scope.Agent != nil && supportsSkillControls(scope.Agent.Application) {
-			value = "i read  D Disable  e Enable  Esc back"
-		}
-		return model.footerWithHint(value, "? help  q quit")
+		label, short = "d details "+mode, "d details"
 	}
-	mode := "v raw"
-	if model.instructionView == instructionsRaw {
-		mode = "v rendered"
-	}
-	value := "d details  " + mode + "  A/E group  Esc back"
+	candidates := []string{label + "  X Delete  A/E group  Esc back", short + "  X Delete  Esc back", "X Delete  Esc back"}
 	if scope := model.snapshot.Scope(); scope.Agent != nil && supportsSkillControls(scope.Agent.Application) {
-		value = "d details  " + mode + "  D Disable  e Enable  A/E group"
+		candidates = []string{label + "  X Delete  D Disable  e Enable  A/E group  Esc back", label + "  X Delete  D Disable  e Enable  Esc back", short + "  X Delete  D Disable  e Enable", "X Delete  D Disable  e Enable", "X Delete  Esc back"}
 	}
-	if model.width < 60 {
-		value = "d details  A/E group  Esc back"
+	hint := "? help  q quit"
+	available := model.width - ansi.StringWidth(hint) - 3
+	value := candidates[len(candidates)-1]
+	for _, candidate := range candidates {
+		if ansi.StringWidth(candidate) <= available {
+			value = candidate
+			break
+		}
 	}
-	if scope := model.snapshot.Scope(); scope.Agent != nil && supportsSkillControls(scope.Agent.Application) {
-		value = "d details  D Disable  e Enable"
-	}
-	return model.footerWithHint(value, "? help  q quit")
+	return model.footerWithHint(value, hint)
 }
 
 func (model browserModel) problemDetailFooter(_ scrollPage) string {

@@ -43,9 +43,26 @@ func deleteFaultFixture(t *testing.T) (*DeletePreview, string, string) {
 	return preview, dir, external
 }
 func TestDeleteRemovalFaults(t *testing.T) {
-	for _, scenario := range []string{"first-error", "after-first-error", "cancel", "symlink-before", "rename-child", "add-name", "replace-root", "name-gap"} {
+	for _, scenario := range []string{"first-error", "after-first-error", "cancel", "symlink-before", "rename-child", "rename-directory", "add-name", "replace-root", "name-gap"} {
 		t.Run(scenario, func(t *testing.T) {
 			p, dir, external := deleteFaultFixture(t)
+			if scenario == "rename-directory" {
+				child := filepath.Join(dir, ".dir", "child")
+				if err := os.MkdirAll(filepath.Dir(child), 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(child, []byte("anchored child survives"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				fresh, err := Build(context.Background(), p.request)
+				if err != nil {
+					t.Fatal(err)
+				}
+				p = fresh.PreviewDelete(context.Background(), p.view.Target.Source)
+				if p.view.State != "ready" {
+					t.Fatal(p.view.Reason)
+				}
+			}
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			fired := false
@@ -86,6 +103,11 @@ func TestDeleteRemovalFaults(t *testing.T) {
 						fired = true
 						return os.Rename(filepath.Join(dir, ".a"), filepath.Join(dir, "moved"))
 					}
+				case "rename-directory":
+					if phase == "before-unlink-validation" && path == ".dir/child" {
+						fired = true
+						return os.Rename(filepath.Join(dir, ".dir"), dir+"-child")
+					}
 				case "add-name":
 					if phase == "after-unlink" {
 						fired = true
@@ -113,6 +135,20 @@ func TestDeleteRemovalFaults(t *testing.T) {
 			case "first-error", "symlink-before", "replace-root":
 				if len(out.Removed) != 0 {
 					t.Fatal(out)
+				}
+				survivor := filepath.Join(dir, "z")
+				if scenario == "replace-root" {
+					survivor = filepath.Join(dir+"-moved", "z")
+				}
+				if raw, err := os.ReadFile(survivor); err != nil || string(raw) != "retained resource" {
+					t.Fatal("original content lost", err)
+				}
+				if len(out.Remaining) == 0 && len(out.Replacements) == 0 {
+					t.Fatal("remnants were not reported", out.State, out.Reason)
+				}
+			case "rename-directory":
+				if raw, err := os.ReadFile(filepath.Join(dir+"-child", "child")); err != nil || string(raw) != "anchored child survives" {
+					t.Fatal("moved anchored child was traversed", err)
 				}
 			case "after-first-error", "cancel", "add-name":
 				if out.State != "partial" || len(out.Removed) != 1 {
