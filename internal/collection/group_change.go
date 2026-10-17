@@ -12,6 +12,9 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/unicode/norm"
 )
 
 // ApplicationCapability describes a completed adapter, not permission to write a
@@ -280,17 +283,17 @@ func (s *Snapshot) PreviewGroupChange(ctx context.Context, intent GroupIntent) *
 }
 
 // A location retains object-identity anchors and the relative suffix beneath
-// each one. An absent entry has no file identity, but its existing resolved
-// parent plus exact remaining components still identify its directory slot.
-// Keeping ancestor anchors also permits containment across directory aliases.
+// each one. Keeping ancestor anchors also permits containment across directory aliases.
 type groupAnchor struct {
-	object changeIdentity
-	suffix string
+	object  changeIdentity
+	suffix  string
+	missing int
 }
 type groupLocation []groupAnchor
 
 func groupLocationAt(path string) (groupLocation, error) {
 	tail := ""
+	missing := 0
 	resolved := ""
 	for {
 		var err error
@@ -306,6 +309,7 @@ func groupLocationAt(path string) (groupLocation, error) {
 			return nil, err
 		}
 		tail = filepath.Join(filepath.Base(path), tail)
+		missing++
 		path = parent
 	}
 	var location groupLocation
@@ -319,7 +323,7 @@ func groupLocationAt(path string) (groupLocation, error) {
 		if tail != "" && !info.IsDir() {
 			return nil, errors.New("non-directory footprint ancestor")
 		}
-		location = append(location, groupAnchor{statIdentity(resolved, info.Sys().(*syscall.Stat_t)), tail})
+		location = append(location, groupAnchor{statIdentity(resolved, info.Sys().(*syscall.Stat_t)), tail, missing})
 		parent := filepath.Dir(resolved)
 		if parent == resolved {
 			break
@@ -332,10 +336,39 @@ func groupLocationAt(path string) (groupLocation, error) {
 func sameGroupAnchor(a, b changeIdentity) bool {
 	return a.Device == b.Device && a.Inode == b.Inode && a.BirthSec == b.BirthSec && a.BirthNano == b.BirthNano
 }
+func (path groupAnchor) within(directory groupAnchor) bool {
+	if !sameGroupAnchor(path.object, directory.object) {
+		return false
+	}
+	if directory.suffix == "" {
+		return true
+	}
+	if path.suffix == "" {
+		return false
+	}
+	parts := strings.Split(path.suffix, string(filepath.Separator))
+	parents := strings.Split(directory.suffix, string(filepath.Separator))
+	if len(parts) < len(parents) {
+		return false
+	}
+	for i, parent := range parents {
+		if parts[i] == parent {
+			continue
+		}
+		if i < len(parts)-path.missing || i < len(parents)-directory.missing {
+			return false
+		}
+		fold := cases.Fold()
+		if norm.NFD.String(fold.String(norm.NFD.String(parts[i]))) != norm.NFD.String(fold.String(norm.NFD.String(parent))) {
+			return false
+		}
+	}
+	return true
+}
 func (path groupLocation) equal(other groupLocation) bool {
 	for _, a := range path {
 		for _, b := range other {
-			if sameGroupAnchor(a.object, b.object) && a.suffix == b.suffix {
+			if a.within(b) && b.within(a) {
 				return true
 			}
 		}
@@ -345,7 +378,7 @@ func (path groupLocation) equal(other groupLocation) bool {
 func (path groupLocation) within(directory groupLocation) bool {
 	for _, a := range path {
 		for _, b := range directory {
-			if sameGroupAnchor(a.object, b.object) && (b.suffix == "" || a.suffix == b.suffix || strings.HasPrefix(a.suffix, b.suffix+string(filepath.Separator))) {
+			if a.within(b) {
 				return true
 			}
 		}
@@ -392,7 +425,7 @@ func groupInterference(children []*ChangePreview) string {
 					return "configuration footprint cannot be resolved safely; whole request unapplied"
 				}
 				if write.equal(destination) {
-					return "requested configuration destinations alias; whole request unapplied"
+					return "requested configuration destinations may alias; whole request unapplied"
 				}
 			}
 			if j < i {
@@ -404,7 +437,7 @@ func groupInterference(children []*ChangePreview) string {
 					return "preview input footprint cannot be resolved safely; whole request unapplied"
 				}
 				if write.equal(read) || (len(create) > 0 && read.within(create)) {
-					return fmt.Sprintf("%s would change %s preview input %s; whole request unapplied", child.view.Intent.Application, other.view.Intent.Application, fact.Path)
+					return fmt.Sprintf("%s may change %s preview input %s; whole request unapplied", child.view.Intent.Application, other.view.Intent.Application, fact.Path)
 				}
 			}
 			// Directory facts omit entry membership. Preserve the independent semantic
@@ -440,7 +473,7 @@ func groupInterference(children []*ChangePreview) string {
 					return "native discovery footprint cannot be resolved safely; whole request unapplied"
 				}
 				if write.within(discovery) || (len(create) > 0 && discovery.within(create)) {
-					return "configuration write intersects later native discovery; whole request unapplied"
+					return "configuration write potentially intersects later native discovery; whole request unapplied"
 				}
 			}
 		}
