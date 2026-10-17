@@ -23,7 +23,7 @@ func TestBrowserHelpQQuitsOutsideSearch(t *testing.T) {
 	)
 
 	runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "?")
-	help := waitForPaneAt(t, tmux, fx, socket, target, false, "Keys", "q", "Quit")
+	help := waitForPaneAt(t, tmux, fx, socket, target, false, "Keys", "q quit")
 	writeEvidence(t, "ale43-review/help-q/01-help.txt", []byte(help))
 	runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "-l", "q")
 
@@ -408,7 +408,7 @@ func TestBrowserHelpListsPagingAndTopEndAliases(t *testing.T) {
 	)
 
 	runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "?")
-	help := waitForPaneAt(t, tmux, fx, socket, target, false, "Keys", "Ctrl+U", "Clear search while editing", "q", "Quit")
+	help := waitForPaneAt(t, tmux, fx, socket, target, false, "Keys", "Ctrl+U", "Clear search while editing", "q quit")
 	writeEvidence(t, "ale43-review/help-keys/help.txt", []byte(help))
 	for _, expected := range []string{"PgUp / PgDn", "Home / End"} {
 		if !paneContains(help, expected) {
@@ -420,6 +420,29 @@ func TestBrowserHelpListsPagingAndTopEndAliases(t *testing.T) {
 	}, "Themes:", "NO_COLOR")
 	assertPaneCells(t, themes, 80, 30)
 	writeEvidence(t, "ale43-review/help-keys/themes.txt", []byte(themes))
+	top := actForPaneAt(t, tmux, fx, socket, target, false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "Home")
+	}, "Keys", "Ctrl+U", "Clear search while editing", "q quit")
+	writeEvidence(t, "ale43-review/help-keys/home.txt", []byte(top))
+	pageEnd := actForPaneAt(t, tmux, fx, socket, target, false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "PageDown")
+	}, "Themes:", "NO_COLOR", "Quit")
+	writeEvidence(t, "ale43-review/help-keys/page-down.txt", []byte(pageEnd))
+	pageTop := actForPaneAt(t, tmux, fx, socket, target, false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "PageUp")
+	}, "Keys", "Ctrl+U", "Clear search while editing", "q quit")
+	writeEvidence(t, "ale43-review/help-keys/page-up.txt", []byte(pageTop))
+	returned := actForPaneAt(t, tmux, fx, socket, target, false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "Left")
+	}, "Focused: normal-skill", "Search / type to filter", "? help", "q quit")
+	writeEvidence(t, "ale43-review/help-keys/left-return.txt", []byte(returned))
+	_ = actForPaneAt(t, tmux, fx, socket, target, false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "?")
+	}, "Keys", "Ctrl+U", "q quit")
+	escaped := actForPaneAt(t, tmux, fx, socket, target, false, func() {
+		runTmux(t, tmux, fx, socket, "send-keys", "-t", target, "Escape")
+	}, "Focused: normal-skill", "Search / type to filter", "? help", "q quit")
+	writeEvidence(t, "ale43-review/help-keys/escape-return.txt", []byte(escaped))
 }
 
 func startALE43ReviewBrowser(
