@@ -136,7 +136,7 @@ func runReview(args []string, stdout, stderr io.Writer) int {
 	if *machine {
 		return writeReviewJSON(selection, stdout, stderr)
 	}
-	fmt.Fprintf(stdout, "Selection %s | %s\nChosen in proposal order: %s\nOmitted (unapproved): %s\n", selection.SelectionID, selection.State, safeInline(strings.Join(selection.Chosen, ", ")), safeInline(strings.Join(selection.Omitted, ", ")))
+	fmt.Fprintf(stdout, "Selection %s | %s\nChosen in proposal order: %s\nOmitted (unapproved): %s\n", selection.SelectionID, selection.State, displayOptional(strings.Join(selection.Chosen, ", ")), displayOptional(strings.Join(selection.Omitted, ", ")))
 	renderReviewEffects(stdout, selection.Effects)
 	if selection.State == "preview" {
 		fmt.Fprintf(stdout, "After explicit user approval, repeat this exact selection with --approve %s\n", selection.SelectionID)
@@ -146,7 +146,7 @@ func runReview(args []string, stdout, stderr io.Writer) int {
 }
 
 func renderReviewProposal(stdout io.Writer, p collection.ReviewProposal) {
-	fmt.Fprintf(stdout, "Proposal %s | %s\nApplications: %s\nScope: %s | project: %s\nGoal: %s\nKeep enabled: %v\n", p.ProposalID, p.State, strings.Join(p.Draft.Context.Applications, ", "), p.Draft.Context.Scope, safeInline(p.Draft.Context.Project), safeInline(p.Draft.Context.Goal), p.Draft.Context.KeepEnabled)
+	fmt.Fprintf(stdout, "Proposal %s | %s\nApplications: %s\nScope: %s | project: %s\nGoal: %s\nKeep enabled: %v\n", p.ProposalID, p.State, strings.Join(p.Draft.Context.Applications, ", "), p.Draft.Context.Scope, displayOptional(p.Draft.Context.Project), safeInline(p.Draft.Context.Goal), p.Draft.Context.KeepEnabled)
 	for _, change := range p.Changes {
 		r := change.Recommendation
 		fmt.Fprintf(stdout, "%s. %s %s | %s | %s\nSource: %s\nReason: %s\nNative preview: %s | %s\n", safeInline(r.ID), r.Application, r.Action, p.Draft.Context.Scope, r.Source, safeInline(change.Baseline.SourcePath), safeInline(r.Reason), change.Baseline.State, safeInline(change.Baseline.Reason))
