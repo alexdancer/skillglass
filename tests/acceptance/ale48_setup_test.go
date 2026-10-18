@@ -249,7 +249,7 @@ func TestALE48ProspectiveAliasAndCompatibilityRefusals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	script := "#!/bin/bash\nif [ \"$1\" = companion ]; then printf '%s\\n' " + shellQuote(string(raw)) + "; else printf '%s\\n' '{\"schema_version\":1,\"help\":\"read-resource review prepare review select\"}'; fi\n"
+	script := "#!/bin/bash\nif [ \"$1\" = companion ]; then printf '%s\\n' " + shellQuote(string(raw)) + "; else printf '%s\\n' '{\"schema_version\":1,\"help\":\"read-resource review prepare review select setup --check\"}'; fi\n"
 	writeFile(t, fake, []byte(script), 0700)
 	result = ale48Run(t, fx, policy, filepath.Dir(fake), "setup", "--check", "--json")
 	assertExit(t, result, 1)

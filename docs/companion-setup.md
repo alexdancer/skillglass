@@ -12,8 +12,8 @@ The executable must be named `skillglass` and discoverable on the PATH used by
 the native application. A desktop application's PATH can differ from a shell's.
 `skillglass setup --check --json` checks executable discovery without installing.
 For another executable found on PATH it checks the exact companion bytes and
-help's documented reading, setup and review commands, with bounded output and
-a timeout. The currently running exact filesystem executable already owns that
+help's documented reading, setup and review prepare/select/apply commands, with
+bounded output and a timeout. The currently running exact filesystem executable already owns that
 embedded contract. Setup does not pin an absolute binary location or write
 shell/application configuration.
 

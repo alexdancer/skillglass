@@ -11,6 +11,10 @@ import (
 )
 
 type changePlan struct {
+	reviewCheck        func(context.Context) error
+	reviewCheckCreated func(context.Context, changeFact) error
+	committedFact      *changeFact
+	createdFact        *changeFact
 	// reviewPatch reuses this validated native recipe without writing a destination.
 	reviewPatch            func([]byte, bool) ([]byte, []SettingChange, bool, error)
 	request                Request
@@ -30,6 +34,24 @@ func changeObservations(s *Snapshot, destination changeDestination) ([]byte, []c
 	if err != nil {
 		return nil, nil, err
 	}
+	ordered := changeObservationPaths(view, destination)
+	var facts []changeFact
+	for _, path := range ordered {
+		fact, err := observeChangePath(path)
+		if err != nil {
+			if errors.Is(err, os.ErrPermission) {
+				return nil, nil, errors.New("unreadable relevant input")
+			}
+			return nil, nil, err
+		}
+		facts = append(facts, fact)
+	}
+	return raw, facts, nil
+}
+
+// changeObservationPaths describes the native read set without changing the
+// native writer's strict observation/error policy.
+func changeObservationPaths(view View, destination changeDestination) []string {
 	paths := map[string]bool{}
 	add := func(path string) {
 		if filepath.IsAbs(path) {
@@ -96,20 +118,14 @@ func changeObservations(s *Snapshot, destination changeDestination) ([]byte, []c
 		ordered = append(ordered, path)
 	}
 	sort.Strings(ordered)
-	var facts []changeFact
-	for _, path := range ordered {
-		fact, err := observeChangePath(path)
-		if err != nil {
-			if errors.Is(err, os.ErrPermission) {
-				return nil, nil, errors.New("unreadable relevant input")
-			}
-			return nil, nil, err
-		}
-		facts = append(facts, fact)
-	}
-	return raw, facts, nil
+	return ordered
 }
 func (p *changePlan) recheck(ctx context.Context) error {
+	if p.reviewCheck != nil {
+		if err := p.reviewCheck(ctx); err != nil {
+			return err
+		}
+	}
 	fresh := (&Snapshot{request: p.request}).PreviewChange(ctx, p.intent)
 	if fresh.plan == nil || fresh.plan.digest != p.digest {
 		return errors.New("preview is stale; source, configuration, context or file identity changed; request a new preview")

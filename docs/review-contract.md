@@ -44,16 +44,36 @@ receiving explicit user approval, the caller repeats it with `--approve
 SELECTION_ID`. The CLI records the caller's attestation as `state: approved`.
 Selection never changes availability, including when approval is recorded.
 
-`collection.PrepareReview`, `SelectReview`, `ApproveReview`,
-`ValidateReviewProposal` and `ValidateReviewSelection` are the shared Go interface
-for the execution slice. A future executor must accept only an approved,
-integrity-valid selection; preflight every chosen effect before writes; compare
-original observations with live state; and track only expected preceding approved
-writes. Selection effects do not authorize omitted recommendations. Independent
-preview tokens are insufficient for shared-settings execution. A later
-implementation may reuse the same native recipes and in-memory progression but
-must retain external-edit, identity, discovery and effect freshness checks.
-The current build has no collection execution command.
+`review apply --selection FILE` consumes only an integrity-valid `state: approved`
+selection. It reconstructs the entire original proposal and selected effects,
+including omitted recommendations, before any availability write. A blocked or
+stale selection refuses as a whole; a supported subset needs an explicit revised
+proposal and approval. An empty selection applies no changes.
+
+Execution guards the original native read set, reviewed evidence and structural
+inventories for every catalog consumer. Each next native preview must match the
+approved ordered effect exactly. It retains the native writer's immediate
+rechecks under its held directory lock and before commit. Expected progression
+advances configuration facts only to the exact staged file object installed by a
+successful native write, with verified bytes and metadata. Exclusive native
+directory creation may add only that held directory's identity to ancestor
+chains. Every other file, identity, source, reference, evidence observation and
+new native input remains subject to freshness checks. Independent stale native
+tokens are never replayed and unrelated same-byte replacements still refuse.
+
+The first unexpected non-success stops application. Completed writes remain;
+later items are `not-attempted`. Machine receipts retain each source, application,
+scope/project, native write state, persistence, configured achievement, and
+reload/session limits. `final_configured` and `final_observation` separately
+report final reinspection of successful, failed and unapplied items. A successful
+native no-write result is `no-op`. Omitted recommendations stay unapproved.
+There is no cross-file atomicity or automatic rollback. A continuation requires
+fresh inspection and renewed approval. Exit 1 reports any unmet or unknown
+request, including final reinspection failure; exit 2 reports invalid input.
+
+`collection.ApplyReview` composes the established native controls; it adds no
+application or scope capability. `PrepareReview`, `SelectReview`, `ApproveReview`,
+`ValidateReviewProposal` and `ValidateReviewSelection` retain contract 1.
 
 JSON files use schema version 1, strict known fields and unique object keys.
 Malformed, altered, incompatible, ambiguous and stale requests refuse. The
@@ -64,7 +84,7 @@ controls.
 
 ## Representative external-agent evaluations
 
-`tools/review_scenario.py` provides a disposable read-only CLI surface. It runs no
+`tools/review_scenario.py` provides a disposable CLI surface, read-only by default. It runs no
 model. Create a fresh session for each independent evaluator with a built artifact
 and the repository's built isolation probe:
 
@@ -81,6 +101,14 @@ native system inputs controlled absent. No installed native agent is invoked.
 `session.json` and `prompt.txt` are evaluator inputs. `run` records raw output,
 exit status and before/after manifests; `put` accepts JSON only into a fixture
 artifact filename; `status` compares source/settings state with the initial tree.
+For an execution walkthrough, add `--execution` to `create`. That session permits
+only `review apply` through its separately sealed writer profile. Prepare/select
+and ordinary reads retain the reader profile and equal before/after requirement;
+direct native confirmation stays outside this surface. Apply may change only the
+fixture's explicit Codex/Claude settings paths. All other content remains guarded.
+The result records actual `no_write` and both manifests. `status` reports the
+initial/current manifests; an explicitly enabled execution session may differ.
+Use distinct sessions for controller smokes and actual model evaluations.
 The controller and an independent model evaluator need separately reserved slots.
 
 Give a fresh evaluator the emitted companion, prompt, and tool surface without

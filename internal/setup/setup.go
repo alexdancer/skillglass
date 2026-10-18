@@ -104,7 +104,7 @@ func CheckExecutable(ctx context.Context) ExecutableCheck {
 		SchemaVersion int    `json:"schema_version"`
 		Help          string `json:"help"`
 	}
-	if err := command.Run(); err != nil || json.Unmarshal(stdout.Bytes(), &capabilities) != nil || capabilities.SchemaVersion != 1 || !strings.Contains(capabilities.Help, "review prepare") || !strings.Contains(capabilities.Help, "review select") || !strings.Contains(capabilities.Help, "read-resource") || !strings.Contains(capabilities.Help, "setup --check") {
+	if err := command.Run(); err != nil || json.Unmarshal(stdout.Bytes(), &capabilities) != nil || capabilities.SchemaVersion != 1 || !strings.Contains(capabilities.Help, "review prepare") || !strings.Contains(capabilities.Help, "review select") || !strings.Contains(capabilities.Help, "review apply") || !strings.Contains(capabilities.Help, "read-resource") || !strings.Contains(capabilities.Help, "setup --check") {
 		out.State = "incompatible"
 		out.Reason = "PATH executable does not advertise the documented setup, resource-reading and review commands"
 		return out

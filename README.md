@@ -17,8 +17,11 @@ with this executable. `companion --json` includes its version, files and hashes.
 An external agent can inspect selected applications, review a broad or lean
 collection, prepare exact native availability recommendations, and record user
 approval of a chosen subset with `review prepare` and `review select`. These
-commands write no skill contents or settings. Explicit companion setup is
-available separately; collection batch execution is a later slice. See [the review contract](docs/review-contract.md)
+commands write no skill contents or settings. Apply the complete approved
+selection with `review apply --selection FILE`. It preflights the entire batch,
+tracks expected shared-settings writes, stops on failure and reinspects each
+result. Completed writes remain in place. Explicit companion setup is available
+separately. See [the review contract](docs/review-contract.md)
 and `skillglass help` for direct reads, controls and proposal syntax.
 
 ## Install the companion for selected applications

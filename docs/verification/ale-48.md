@@ -14,6 +14,9 @@ CodeAF consent without a CodeAF target, unsupported targets/destinations,
 identical installations, customized/extra/nonregular conflicts, prospective
 aliases, filesystem denial with retained partial success, missing/moved and
 incompatible executable discovery, invalid consent and unsupported scope flags.
+`TestALE48InstalledCompanionApprovedSubsetApply` additionally joins installation,
+compatible startup, preparation, exact subset approval, batch application and
+reinspection while retaining installed companion bytes and omitted skills.
 Before/after manifests prove successful setup preserves unrelated entries and
 writes only the exact selected bundle destinations and necessary parents.
 

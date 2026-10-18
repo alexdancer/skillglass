@@ -145,7 +145,7 @@ func prepareReview(ctx context.Context, draft ReviewDraft) (preparedReview, erro
 	p := ReviewProposal{SchemaVersion: ReviewContractVersion, Kind: "skillglass-review-proposal", CompanionVersion: companion.Version,
 		State: "prepared", Draft: draft, Discovery: []ReviewDiscovery{}, Sources: []ReviewSource{}, Changes: []ReviewChange{}, Effects: []ReviewEffect{},
 		Coverage:    ReviewCoverage{Discovery: Complete, SelectedEvidence: Complete, Unreviewed: []ReviewPair{}},
-		Limitations: []string{"Native discovery is bounded by reported roots and gaps, not machine-wide.", "Evidence reads verify observations, not the agent's assessment or actual usage.", "Prospective effects are not persisted; running-session adoption is unobserved.", "Preparation and selection write no source content or settings. Collection execution is not included in this build."}}
+		Limitations: []string{"Native discovery is bounded by reported roots and gaps, not machine-wide.", "Evidence reads verify observations, not the agent's assessment or actual usage.", "Prospective effects are not persisted; running-session adoption is unobserved.", "Preparation and selection write no source content or settings. Only an exact approved selection can be applied with review apply."}}
 	snapshots := map[string]*Snapshot{}
 	sources := map[SourceID]Source{}
 	sourceApps := map[SourceID][]string{}
