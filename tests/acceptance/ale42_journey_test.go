@@ -460,7 +460,7 @@ func TestALE42DeliveredBrowserJourney(t *testing.T) {
 			}
 			send("Enter", "Type: delete src_")
 			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "delete "+selected.ID)
-			capture("20-exact-confirmation", waitForPane(t, tmux, fx, socket, false, "Input: delete src_"))
+			capture("20-exact-confirmation", waitForPane(t, tmux, fx, socket, false, "Input: delete "+selected.ID))
 			capture("21-removed", send("Enter", "Permanent delete result: removed", "Verified removal: true"))
 			if _, err := os.Stat(filepath.Join(selected.SourcePath, "SKILL.md")); !os.IsNotExist(err) {
 				t.Fatal("wrong source deleted", err)
