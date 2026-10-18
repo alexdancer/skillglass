@@ -6,7 +6,7 @@ repository=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 go_binary=${GO_BIN:-/opt/homebrew/bin/go}
 evidence=${1:-}
 test_run=${SKILLGLASS_TEST_RUN:-.}
-test_timeout=20m
+test_timeout=25m
 artifact_dir=$(mktemp -d "${TMPDIR:-/tmp}/skillglass-acceptance.XXXXXX")
 trap 'rm -rf "$artifact_dir"' EXIT HUP INT TERM
 

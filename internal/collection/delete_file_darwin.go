@@ -578,6 +578,10 @@ func (p *DeletePreview) remove(ctx context.Context, out DeleteOutcome) DeleteOut
 		if err := unix.Unlinkat(int(dir.Fd()), name, flags); err != nil {
 			return err
 		}
+		if err := checkpoint("after-unlink-syscall", relative); err != nil {
+			out.Unverified = append(out.Unverified, relative)
+			return err
+		}
 		if err := unix.Fstat(int(f.Fd()), &held); err != nil {
 			return fmt.Errorf("unlink succeeded but original object cannot be verified: %s", relative)
 		}
@@ -588,6 +592,25 @@ func (p *DeletePreview) remove(ctx context.Context, out DeleteOutcome) DeleteOut
 		}
 		removed[relative] = true
 		out.Removed = append(out.Removed, relative)
+		if e.Kind != "directory" {
+			post, err := deleteOwnUnlinkStamp(f, e, held)
+			if err != nil {
+				return err
+			}
+			for path, alias := range expected {
+				if removed[path] || !deleteSameInode(e.stamp, alias.stamp) {
+					continue
+				}
+				before := e.stamp
+				before.Path = path
+				if alias.stamp != before || alias.Kind != e.Kind || alias.SHA256 != e.SHA256 || alias.LinkTarget != e.LinkTarget {
+					return errors.New("shared inode expectations are inconsistent; stopping")
+				}
+				alias.stamp = post
+				alias.stamp.Path = path
+				expected[path] = alias
+			}
+		}
 		if err := checkpoint("after-unlink", relative); err != nil {
 			return err
 		}
@@ -702,7 +725,7 @@ func deleteFDPath(f *os.File) (string, error) {
 }
 func deleteUnlinked(f *os.File, kind, expectedPath string, before, after unix.Stat_t) bool {
 	if kind != "directory" {
-		return after.Nlink < before.Nlink
+		return before.Nlink > 0 && after.Nlink == before.Nlink-1
 	}
 	path, err := deleteFDPath(f)
 	return errors.Is(err, syscall.ENOENT) || err == nil && path == expectedPath
@@ -717,4 +740,54 @@ func deleteUniquePaths(paths []string) []string {
 		}
 	}
 	return result
+}
+
+func deleteSameInode(a, b deleteStamp) bool {
+	return a.Device == b.Device && a.Inode == b.Inode && a.BirthSec == b.BirthSec && a.BirthNano == b.BirthNano
+}
+
+// Own unlink changes ctime and the link count of every name of a shared inode.
+// Only a verified one-link decrement may advance remaining aliases. Sealed
+// content, identity, permissions and every other metadata field stay binding.
+func deleteOwnUnlinkStamp(f *os.File, entry DeleteEntry, held unix.Stat_t) (deleteStamp, error) {
+	post := deleteStat(entry.Path, held)
+	acl, err := deleteACLProof(int(f.Fd()))
+	if err != nil {
+		return post, err
+	}
+	post.ACL = acl
+	want := entry.stamp
+	if want.Links == 0 {
+		return post, errors.New("invalid pre-unlink link count")
+	}
+	want.Links--
+	want.ChangeSec, want.ChangeNano = post.ChangeSec, post.ChangeNano
+	if want != post {
+		return post, errors.New("object changed beyond the verified own unlink")
+	}
+	if entry.Kind == "file" {
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			return post, err
+		}
+		hash := sha256.New()
+		count, err := io.Copy(hash, io.LimitReader(f, deleteFileLimit+1))
+		if err != nil {
+			return post, err
+		}
+		if count != entry.Size || hex.EncodeToString(hash.Sum(nil)) != entry.SHA256 {
+			return post, errors.New("sealed bytes changed during own-unlink accounting")
+		}
+		var after unix.Stat_t
+		if err := unix.Fstat(int(f.Fd()), &after); err != nil {
+			return post, err
+		}
+		if !deleteStatMatches(post, deleteStat(entry.Path, after)) {
+			return post, errors.New("object changed while verifying own-unlink content")
+		}
+		afterACL, err := deleteACLProof(int(f.Fd()))
+		if err != nil || afterACL != post.ACL {
+			return post, errors.New("ACL changed while verifying own-unlink content")
+		}
+	}
+	return post, nil
 }

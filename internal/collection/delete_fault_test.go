@@ -5,9 +5,11 @@ package collection
 import (
 	"context"
 	"errors"
+	"golang.org/x/sys/unix"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func deleteFaultFixture(t *testing.T) (*DeletePreview, string, string) {
@@ -184,5 +186,101 @@ func TestDeletePreviewSingleUse(t *testing.T) {
 	}
 	if _, err := os.Stat(dir); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestDeleteSharedInodeRejectsPostUnlinkChanges(t *testing.T) {
+	for _, scenario := range []string{"bytes-restored-mtime", "permissions", "extra-link", "symlink-replacement"} {
+		t.Run(scenario, func(t *testing.T) {
+			preview, dir, external := deleteFaultFixture(t)
+			first, second := filepath.Join(dir, ".a"), filepath.Join(dir, ".b")
+			replacement := filepath.Join(filepath.Dir(dir), "replacement-sentinel")
+			if err := os.WriteFile(replacement, []byte("replacement survives"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if scenario == "symlink-replacement" {
+				if err := os.Remove(first); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(external, first); err != nil {
+					t.Fatal(err)
+				}
+				if err := unix.Linkat(unix.AT_FDCWD, first, unix.AT_FDCWD, second, 0); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.Link(first, second); err != nil {
+				t.Fatal(err)
+			}
+			original, err := os.Lstat(second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fresh, err := Build(context.Background(), preview.request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			preview = fresh.PreviewDelete(context.Background(), preview.view.Target.Source)
+			if preview.view.State != "ready" {
+				t.Fatal(preview.view.Reason)
+			}
+			fired := false
+			preview.checkpoint = func(phase, path string) error {
+				if fired || phase != "after-unlink-syscall" || path != ".a" {
+					return nil
+				}
+				fired = true
+				switch scenario {
+				case "bytes-restored-mtime":
+					if err := os.WriteFile(second, []byte("external mutation"), 0600); err != nil {
+						return err
+					}
+					return os.Chtimes(second, time.Now(), original.ModTime())
+				case "permissions":
+					return os.Chmod(second, 0640)
+				case "extra-link":
+					return os.Link(second, filepath.Join(filepath.Dir(dir), "extra-alias"))
+				case "symlink-replacement":
+					if err := os.Remove(second); err != nil {
+						return err
+					}
+					return os.Symlink(replacement, second)
+				}
+				return nil
+			}
+			out := preview.Apply(context.Background(), preview.view.Confirmation)
+			if !fired || out.ExitCode() != 1 || out.State != "partial" || out.Verified {
+				t.Fatalf("fired=%t state=%s removed=%v reason=%s", fired, out.State, out.Removed, out.Reason)
+			}
+			if _, err := os.Lstat(first); !os.IsNotExist(err) {
+				t.Fatal("first syscall did not remove its name", err)
+			}
+			if raw, err := os.ReadFile(filepath.Join(dir, "z")); err != nil || string(raw) != "retained resource" {
+				t.Fatal("later resource changed", err)
+			}
+			if raw, err := os.ReadFile(external); err != nil || string(raw) != "outside survives" {
+				t.Fatal("external sentinel changed", err)
+			}
+			if raw, err := os.ReadFile(replacement); err != nil || string(raw) != "replacement survives" {
+				t.Fatal("replacement target changed", err)
+			}
+			if scenario == "symlink-replacement" {
+				if target, err := os.Readlink(second); err != nil || target != replacement {
+					t.Fatal("replacement link was removed", err)
+				}
+			} else {
+				want := "retained resource"
+				if scenario == "bytes-restored-mtime" {
+					want = "external mutation"
+				}
+				if raw, err := os.ReadFile(second); err != nil || string(raw) != want {
+					t.Fatal("remaining alias was removed or changed", err)
+				}
+				if scenario == "extra-link" {
+					if raw, err := os.ReadFile(filepath.Join(filepath.Dir(dir), "extra-alias")); err != nil || string(raw) != "retained resource" {
+						t.Fatal("external added alias changed", err)
+					}
+				}
+			}
+		})
 	}
 }

@@ -110,7 +110,6 @@ func (s *Snapshot) PreviewDelete(ctx context.Context, id SourceID) *DeletePrevie
 	p := &DeletePreview{view: DeleteView{State: "refused", Reason: "selected source cannot be deleted", Limits: []string{
 		"Permanent deletion. No trash, recovery or undo. Remaining references and settings are not repaired. Running sessions may retain loaded content.",
 		"Discovery covers the seven listed native integrations and selected project only; other projects and machine-wide consumers are unverified.",
-		"Local filesystem control and no known manager ownership within bounded discovery do not prove intellectual-property ownership.",
 		"Exact no-follow inventory limits: 10000 entries, depth 128, 256 MiB per regular file, 1 GiB total hashed bytes. Exceeding a limit refuses deletion.",
 		"Links inside a bundle are unlinked without following targets. Internal hardlink aliases outside the bundle are not enumerated; deletion does not erase physical bytes.",
 		"Changes observed before unlink stop removal. Darwin name-based unlink is not atomic against arbitrary concurrent same-UID writers; external symlink targets are never traversed.",
@@ -158,15 +157,32 @@ func (s *Snapshot) PreviewDelete(ctx context.Context, id SourceID) *DeletePrevie
 			observations = append(observations, v)
 			protect = append(protect, deleteApplicationHomes(req)...)
 			if exact, found := native.Source(id); found {
-				c.References = native.References(id)
 				a := cloneAvailability(exact.Availability)
+				nativeIDs := map[ReferenceID]bool{}
+				facts := a.References[:0]
+				for _, fact := range a.References {
+					switch fact.Participation {
+					case ParticipationEligible, ParticipationExcluded, ParticipationUnknown:
+						nativeIDs[fact.Reference] = true
+						facts = append(facts, fact)
+					}
+				}
+				a.References = facts
+				if !nativeIDs[a.ReferenceID] {
+					a.ReferenceID = ""
+				}
+				for _, ref := range native.References(id) {
+					if nativeIDs[ref.ID] {
+						c.References = append(c.References, ref)
+					}
+				}
 				c.Availability = &a
-				c.Reason = fmt.Sprintf("%d proven references to this exact source", len(c.References))
+				c.Reason = fmt.Sprintf("%d proven native references to this exact source; availability remains application-specific", len(c.References))
 				if exact.Ownership.State == "managed" {
 					reason = "managed native content: " + c.Application + ": " + exact.Ownership.Reason
 				}
 			} else {
-				c.Reason = "zero proven references to this exact source"
+				c.Reason = "zero proven native references to this exact source"
 			}
 			for _, r := range c.Scope.Roots {
 				path := r.Resolved

@@ -520,6 +520,9 @@ func (model browserModel) helpBodyLines() []string {
 		action string
 	}{
 		{"↑ ↓ / j k", "Move selection or scroll"},
+		{"PgUp / PgDn", "Move one page"},
+		{"Home / End", "Move to the top or end"},
+		{"g / G", "Move to the top or end"},
 		{"Enter", "Open the focused source or problem; keep search"},
 		{"Esc / ←", "Return from reader, scope, problem, or help"},
 		{"Tab", "Switch Sources and Problems"},
@@ -537,9 +540,6 @@ func (model browserModel) helpBodyLines() []string {
 		{"f", "Cycle documented problem codes"},
 		{"r", "Refresh the collection explicitly"},
 		{"s", "Inspect full scope and active filters"},
-		{"PgUp / PgDn", "Move one page"},
-		{"Home / End", "Move to the top or end"},
-		{"g / G", "Move to the top or end"},
 		{"?", "Toggle this help"},
 		{"q", "Quit"},
 	}
