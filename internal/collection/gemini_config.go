@@ -23,6 +23,7 @@ const geminiValidatedVersion = "Gemini CLI 0.63.0"
 var geminiSettingsPlaceholder = regexp.MustCompile(`\$(?:\w+|\{[^}]+\})`)
 
 type geminiInputs struct {
+	managers             []ManagerEvidence
 	controlFacts         geminiControlFacts
 	overlay              map[string][]byte
 	scope                AgentScope

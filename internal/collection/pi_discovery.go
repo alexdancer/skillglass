@@ -47,8 +47,8 @@ func (builder *discoveryBuilder) discoverPiFile(ctx context.Context, root Discov
 	for _, p := range problems {
 		builder.addProblem(p)
 	}
-	// A standalone Markdown resource has no bundle deletion boundary. Comparison
-	// reports incomplete coverage instead of including its parent directory.
+	// A standalone resource is a file target, never its parent directory.
+	// Bundle comparison therefore reports incomplete coverage.
 	builder.sources[id] = Source{ID: id, Identity: identity, Directory: resolved, Name: manifest.Name, Description: manifest.Description, Manifest: manifest, References: []ReferenceID{rid}, Problems: problems, Ownership: EvidenceState{State: "unknown", Reason: "standalone Markdown resource has no established bundle ownership"}}
 }
 

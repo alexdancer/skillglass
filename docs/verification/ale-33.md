@@ -41,7 +41,7 @@ The scope and relevant source explanations disclose uncertainty for ignore-file 
 
 Native `--skill`, `--no-skills`, `--approve`, `--no-approve`, SDK overrides and extension-provided resources are session-specific inputs the viewer cannot observe. The subsequent [Pi controls record](ale-34.md) owns current writer capabilities, reload evidence and remaining session limits.
 
-A standalone Markdown file is its own source. It has no proven bundle ownership or deletion scope. It can be listed, read and explained. Existing bundle comparison reports incomplete coverage when given standalone files. It never scans or compares an entire parent directory on behalf of one file.
+A standalone Markdown file is its own source. Discovery alone does not establish ownership; the [shared deletion policy](ale-41.md#ownership-and-boundary-policy) governs explicit single-file removal. It can be listed, read and explained. Existing bundle comparison reports incomplete coverage when given standalone files. It never scans or compares an entire parent directory on behalf of one file.
 
 ## Public acceptance and terminal inspection
 

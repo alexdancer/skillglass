@@ -31,6 +31,7 @@ func buildCodex(ctx context.Context, request Request) (*Snapshot, error) {
 		return nil, err
 	}
 	snapshot.request = original // Refresh resolves native roots and registrations again.
+	snapshot.managers = append([]ManagerEvidence(nil), inputs.managers...)
 	snapshot.scope.Agent = &inputs.scope
 	for i := range snapshot.scope.Roots {
 		root := &snapshot.scope.Roots[i]

@@ -30,6 +30,7 @@ type codeafInputs struct {
 	scope           AgentScope
 	roots           map[RootID]codeafRoot
 	problems        []Problem
+	managers        []ManagerEvidence
 	enabled         map[string]bool
 	settingsUnknown bool
 }
@@ -138,6 +139,7 @@ func buildCodeAF(ctx context.Context, request Request) (*Snapshot, error) {
 		return nil, err
 	}
 	snapshot.request = original
+	snapshot.managers = append([]ManagerEvidence(nil), inputs.managers...)
 	snapshot.scope.Agent = &inputs.scope
 	for i := range snapshot.scope.Roots {
 		root := &snapshot.scope.Roots[i]

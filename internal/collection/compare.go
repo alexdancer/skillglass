@@ -282,6 +282,9 @@ func openAnchored(path string, directory bool) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
+	if filepath.Clean(path) == "/" {
+		return f, nil
+	}
 	parts := strings.Split(strings.TrimPrefix(filepath.Clean(path), "/"), "/")
 	for i, p := range parts {
 		flags := unix.O_RDONLY | unix.O_NOFOLLOW | unix.O_NONBLOCK | unix.O_CLOEXEC

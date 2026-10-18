@@ -86,7 +86,13 @@ func (inputs *codeafInputs) readPlugins(request Request) (user, project []codeaf
 	var registry struct {
 		Plugins map[string]json.RawMessage `json:"plugins"`
 	}
-	if !inputs.readJSON(registryPath, &registry) {
+	raw, err := nativeBytes(registryPath)
+	inputs.managers = append(inputs.managers, pluginRegistryManagers(registryPath, raw, err, 0, codeafEvidence(EvidenceObserved, "installed-plugin-registry", registryPath, "installPath", "bounded installation registry observation; ownership is independent of activation"))...)
+	if nativeAbsent(registryPath, err) {
+		return nil, nil
+	}
+	if err != nil || json.Unmarshal(raw, &registry) != nil {
+		inputs.problem(registryPath, "CodeAF plugin registry is unreadable, oversized or invalid")
 		return nil, nil
 	}
 	var ids []string

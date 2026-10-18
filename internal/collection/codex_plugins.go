@@ -80,6 +80,13 @@ func discoverCodexPlugins(request *Request, inputs *codexInputs, ancestors []str
 	facts := make(map[string]codexPluginFact)
 	cache := filepath.Join(request.codexHome, "plugins", "cache")
 	markets, err := os.ReadDir(cache)
+	coverage := ManagerEvidence{Manager: "plugin-cache", Boundary: cache, State: ManagerObserved, Evidence: codexEvidence(EvidenceObserved, "plugin-cache-inventory", cache, "", "versioned installation boundaries are observed independently of loader roots")}
+	if nativeAbsent(cache, err) {
+		coverage.State = ManagerAbsent
+	} else if err != nil {
+		coverage.State = ManagerUncertain
+	}
+	inputs.managers = append(inputs.managers, coverage)
 	if errors.Is(err, os.ErrNotExist) {
 		return facts
 	}
@@ -93,6 +100,7 @@ func discoverCodexPlugins(request *Request, inputs *codexInputs, ancestors []str
 		}
 		plugins, err := os.ReadDir(filepath.Join(cache, market.Name()))
 		if err != nil {
+			inputs.managers = append(inputs.managers, ManagerEvidence{Manager: "plugin-cache", Boundary: filepath.Join(cache, market.Name()), State: ManagerUncertain, Evidence: coverage.Evidence})
 			inputs.problem(cache, "plugin cache registrations could not be listed")
 			continue
 		}
@@ -103,6 +111,7 @@ func discoverCodexPlugins(request *Request, inputs *codexInputs, ancestors []str
 			directory := filepath.Join(cache, market.Name(), plugin.Name())
 			versions, err := os.ReadDir(directory)
 			if err != nil {
+				inputs.managers = append(inputs.managers, ManagerEvidence{Manager: plugin.Name() + "@" + market.Name(), Boundary: directory, State: ManagerUncertain, Evidence: coverage.Evidence})
 				inputs.problem(directory, "plugin versions could not be listed")
 				continue
 			}
@@ -111,6 +120,7 @@ func discoverCodexPlugins(request *Request, inputs *codexInputs, ancestors []str
 					continue
 				}
 				versionDir := filepath.Join(directory, version.Name())
+				inputs.managers = append(inputs.managers, ManagerEvidence{Manager: plugin.Name() + "@" + market.Name(), Boundary: versionDir, State: ManagerBoundary, Evidence: codexEvidence(EvidenceObserved, "managed-cache-installation", versionDir, "", "versioned plugin installation owns its whole directory, independently of declared resources or activation")})
 				root := filepath.Join(versionDir, "skills")
 				id := plugin.Name() + "@" + market.Name()
 				fact := codexPluginFact{participation: ParticipationUnknown, provenance: Provenance{Kind: "plugin", PluginID: id, Version: version.Name(), Evidence: codexEvidence(EvidenceUnknown, "plugin-cache", versionDir, "", "cache presence alone does not prove installation activation")}}

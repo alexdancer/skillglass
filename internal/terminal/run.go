@@ -19,6 +19,7 @@ const usage = `Usage:
   skillglass compare [SCOPE] [--json] LEFT_SOURCE_ID RIGHT_SOURCE_ID
   skillglass enable|disable|inherit --agent codex|claude-code|hermes|pi|opencode|gemini --scope global|project [SCOPE] [--confirm TOKEN] [--json] SOURCE_ID
   skillglass enable|disable|inherit --agents APP --agents APP --scope global|project [SCOPE] [--confirm TOKEN] [--json] SOURCE_ID
+  skillglass delete [SCOPE] [--confirm TOKEN] [--json] SOURCE_ID
   skillglass browse [SCOPE]
 
 Scope:
@@ -117,6 +118,8 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return runCompare(args[1:], stdout, stderr)
 	case "enable", "disable", "inherit":
 		return runChange(args[0], args[1:], stdout, stderr)
+	case "delete":
+		return runDelete(args[1:], stdout, stderr)
 	case "browse":
 		return runBrowse(args[1:], stdin, stdout, stderr)
 	default:

@@ -4,14 +4,14 @@
 
 The production browser uses **Quiet split**, the approved ALE-43 direction. It keeps the collection and the focused instructions in one visual context at wide widths, then reduces to one focused pane when space is limited. The design uses minimal dividers, rose navigation, sage source names, lavender content accents, quiet secondary text, and a visible selected-row surface.
 
-The collection snapshot and stable `SourceID` remain the domain authority. Browser state is limited to mode, focus, selected IDs, source tab, rendered or raw instruction view, comparison mark and result, pending control preview and outcome, filters, scroll positions, feedback, terminal size, and presentation theme.
+The collection snapshot and stable `SourceID` remain the domain authority. Browser state is limited to mode, focus, selected IDs, source tab, rendered or raw instruction view, comparison mark and result, pending mutation previews and outcomes, typed deletion confirmation, filters, scroll positions, feedback, terminal size, and presentation theme.
 
 ## Information hierarchy
 
 Every frame has three regions:
 
-1. **Chrome** in inventory and source/problem readers shows `Skillglass`, coverage, Sources and Problems, root count, active filters, and focused or selected identity. Comparison and agent control pages instead use task-specific headers for the pair or selected source and action.
-2. **Content** shows the current inventory, reader, problem, scope, help, comparison, or control view.
+1. **Chrome** in inventory and source/problem readers shows `Skillglass`, coverage, Sources and Problems, root count, active filters, and focused or selected identity. Comparison and mutation pages instead use task-specific headers for the pair or selected source and action.
+2. **Content** shows the current inventory, reader, problem, scope, help, comparison, or mutation view.
 3. **Footer** shows the shortest useful controls for that context, with `? help` and `q quit` retained in ordinary views at narrow widths.
 
 Help and Scope keep the underlying inventory or reader's mode and focused or selected identity in chrome, including hidden selections and Help opened from Scope.
@@ -57,7 +57,7 @@ Details contains, in order:
 - raw frontmatter and malformed raw manifest text when applicable;
 - the full supporting-resource inventory.
 
-`d` opens Details and `i` returns to Instructions. The [README's control instructions](README.md#build-and-use) own enable/disable keys, supported application scopes, preview confirmation and unsupported project requests. These letters remain query text in search. Arrow keys, `j`/`k`, `PgUp`/`PgDn`, `Home`/`End`, and `g`/`G` scroll the active reader.
+`d` opens Details and `i` returns to Instructions. The [README's control instructions](README.md#build-and-use) own settings and deletion keys, supported application scopes, preview confirmation and unsupported project requests. These letters remain query text in search. Arrow keys, `j`/`k`, `PgUp`/`PgDn`, `Home`/`End`, and `g`/`G` scroll the active reader.
 
 ## Problems, scope, and help
 
@@ -81,7 +81,7 @@ Help is a scrollable view. It documents movement, open and return, Sources and P
 | `d` / `i` | Show source Details or Instructions |
 | `v` | In reader, toggle rendered and raw instructions; in Sources, compare against the marked source |
 | `m` | In Sources, mark the focused source as comparison left |
-| Control keys | See the [README's control instructions](README.md#build-and-use) for supported readers, scope selection and confirmation |
+| Mutation keys | See the [README's control instructions](README.md#build-and-use) for settings controls, permanent deletion, scope selection and confirmation |
 | `a` | Cycle native configured availability |
 | `c` | Cycle all supported discovery contexts |
 | `o` | Cycle selected roots |
@@ -126,4 +126,4 @@ An empty selected scope says that no sources were found. A filtered empty state 
 
 The [README's refresh rules](README.md#build-and-use) own source and problem selection reconciliation, reader and Scope return targets, and context-specific feedback. Filtering alone does not clear a retained selection.
 
-Discovery completes before the interactive program starts and refresh is explicit. Comparison and confirmed settings changes run asynchronously. Operational discovery failures remain represented as collection problems and incomplete coverage.
+Discovery completes before the interactive program starts and refresh is explicit. Comparison, confirmed settings changes, and confirmed deletion run asynchronously. Operational discovery failures remain represented as collection problems and incomplete coverage.

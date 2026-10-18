@@ -40,6 +40,8 @@ func (model browserModel) View() tea.View {
 	switch model.mode {
 	case browserComparison:
 		lines = model.comparisonPage().layout().lines
+	case browserDeletePreview, browserDeleteConfirm, browserDeleteResult:
+		lines = model.deletePage().layout().lines
 	case browserGroupSelect, browserGroupScope, browserGroupPreview, browserGroupResult:
 		lines = model.groupPage().layout().lines
 	case browserChangeScope, browserChangePreview, browserChangeResult:
@@ -506,9 +508,10 @@ func (model browserModel) scopeBodyLines(width int) []string {
 
 func (model browserModel) renderHelp() []string {
 	header := model.chromeLines(browserHelp)
-	contentHeight := max(0, model.height-len(header)-1)
+	footer := model.helpFooterLines()
+	contentHeight := max(0, model.height-len(header)-len(footer))
 	page := paginate(model.helpBodyLines(), contentHeight, model.helpScroll)
-	return append(append(header, padLines(page.lines, contentHeight)...), model.helpFooter())
+	return append(append(header, padLines(page.lines, contentHeight)...), footer...)
 }
 
 func (model browserModel) helpBodyLines() []string {
@@ -518,6 +521,8 @@ func (model browserModel) helpBodyLines() []string {
 		action string
 	}{
 		{"↑ ↓ / j k", "Move selection or scroll"},
+		{"PgUp / PgDn", "Move one page"},
+		{"Home / End", "Move to the top or end"},
 		{"Enter", "Open the focused source or problem; keep search"},
 		{"Esc / ←", "Return from reader, scope, problem, or help"},
 		{"Tab", "Switch Sources and Problems"},
@@ -526,6 +531,7 @@ func (model browserModel) helpBodyLines() []string {
 		{"d / i", "Show source Details or Instructions"},
 		{"v", "In reader: toggle rendered and raw instructions; in Sources: compare marked source"},
 		{"m", "In Sources: mark the focused source as comparison left"},
+		{"X", "In any source reader: preview permanent deletion, then type the exact source-specific phrase"},
 		{"A / E", "In any source reader: disable or enable an explicitly selected ordered group"},
 		{"D / e", "In a supported native reader: disable or enable one application, then choose scope and confirm"},
 		{"a", "Cycle native configured availability"},
@@ -534,9 +540,6 @@ func (model browserModel) helpBodyLines() []string {
 		{"f", "Cycle documented problem codes"},
 		{"r", "Refresh the collection explicitly"},
 		{"s", "Inspect full scope and active filters"},
-		{"PgUp / PgDn", "Move one page"},
-		{"Home / End", "Move to the top or end"},
-		{"g / G", "Move to the top or end"},
 		{"?", "Toggle this help"},
 		{"q", "Quit"},
 	}
@@ -911,35 +914,29 @@ func (model browserModel) collectionFooter(target browserMode) string {
 	return model.footerWithHint(status+"  "+strings.TrimSuffix(action, " ? help q quit"), "? help  q quit")
 }
 
-func (model browserModel) readerFooter(page scrollPage) string {
-	if model.sourceTab == sourceDetails {
-		value := "i instructions  A/E group  Esc back"
-		if scope := model.snapshot.Scope(); scope.Agent != nil && supportsSkillControls(scope.Agent.Application) {
-			value = "i instructions  D Disable  e Enable  Esc back"
+func (model browserModel) readerFooter(_ scrollPage) string {
+	label, short := "i instructions", "i read"
+	if model.sourceTab != sourceDetails {
+		mode := "v raw"
+		if model.instructionView == instructionsRaw {
+			mode = "v rendered"
 		}
-		if model.width < 60 {
-			value = "i read  A/E group  Esc back"
-		}
-		if scope := model.snapshot.Scope(); scope.Agent != nil && supportsSkillControls(scope.Agent.Application) {
-			value = "i read  D Disable  e Enable  Esc back"
-		}
-		return model.footerWithHint(value, "? help  q quit")
+		label, short = "d details "+mode, "d details"
 	}
-	mode := "v raw"
-	if model.instructionView == instructionsRaw {
-		mode = "v rendered"
-	}
-	value := "d details  " + mode + "  A/E group  Esc back"
+	candidates := []string{label + "  X Delete  A/E group  Esc back", short + "  X Delete  Esc back", "X Delete  Esc back"}
 	if scope := model.snapshot.Scope(); scope.Agent != nil && supportsSkillControls(scope.Agent.Application) {
-		value = "d details  " + mode + "  D Disable  e Enable  A/E group"
+		candidates = []string{label + "  X Delete  D Disable  e Enable  A/E group  Esc back", label + "  X Delete  D Disable  e Enable  Esc back", short + "  X Delete  D Disable  e Enable", "X Delete  D Disable  e Enable", "X Delete  Esc back"}
 	}
-	if model.width < 60 {
-		value = "d details  A/E group  Esc back"
+	hint := "? help  q quit"
+	available := model.width - ansi.StringWidth(hint) - 3
+	value := candidates[len(candidates)-1]
+	for _, candidate := range candidates {
+		if ansi.StringWidth(candidate) <= available {
+			value = candidate
+			break
+		}
 	}
-	if scope := model.snapshot.Scope(); scope.Agent != nil && supportsSkillControls(scope.Agent.Application) {
-		value = "d details  D Disable  e Enable"
-	}
-	return model.footerWithHint(value, "? help  q quit")
+	return model.footerWithHint(value, hint)
 }
 
 func (model browserModel) problemDetailFooter(_ scrollPage) string {
@@ -964,8 +961,12 @@ func (model browserModel) scopeFooter() string {
 	return model.footerWithHint(value, "? help  q quit")
 }
 
-func (model browserModel) helpFooter() string {
-	return model.footer("Esc/←/? close  q quit")
+func (model browserModel) helpFooterLines() []string {
+	lines := wrapLine(" g / G  Move to the top or end", max(1, model.width))
+	for i := range lines {
+		lines[i] = model.palette().secondary(lines[i])
+	}
+	return append(lines, model.footer("Esc/←/? close  q quit"))
 }
 
 func (model browserModel) footer(value string) string {
@@ -1034,7 +1035,7 @@ func (model browserModel) maxScopeScroll() int {
 }
 
 func (model browserModel) helpPageSize() int {
-	return max(1, model.height-len(model.chromeLines(browserHelp))-1)
+	return max(1, model.height-len(model.chromeLines(browserHelp))-len(model.helpFooterLines()))
 }
 
 func (model browserModel) maxHelpScroll() int {

@@ -19,6 +19,19 @@ func (inputs *piInputs) addRoot(request *Request, path string, context Reference
 			return
 		}
 	}
+	if origin == "pi-inactive-cache" {
+		inputs.managers = append(inputs.managers, ManagerEvidence{Manager: "package-storage", Boundary: path, State: ManagerBoundary, Evidence: fact.provenance.Evidence})
+	} else if origin == "pi-package" {
+		switch deleteBoundaryContains(fact.base, path) {
+		case deleteRelated:
+			inputs.managers = append(inputs.managers, ManagerEvidence{Manager: fact.provenance.PluginID, Boundary: path, State: ManagerBoundary, Evidence: fact.provenance.Evidence})
+		case deleteUnresolved:
+			evidence := fact.provenance.Evidence
+			evidence.Kind = EvidenceUnknown
+			evidence.Reason = "Pi resource relationship to registered package " + fact.base + " cannot be inspected"
+			inputs.managers = append(inputs.managers, ManagerEvidence{Manager: fact.provenance.PluginID, Boundary: path, State: ManagerUncertain, Evidence: evidence})
+		}
+	}
 	info, err := os.Stat(path)
 	file := err == nil && !info.IsDir()
 	request.Roots = append(request.Roots, DiscoveryRoot{ID: id, Path: path, Context: context, Origin: origin, Optional: optional, piMode: mode, piFile: file})
@@ -30,9 +43,9 @@ func buildPi(ctx context.Context, request Request) (*Snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	inputs := piInputs{facts: make(map[RootID]piRootFact), scope: AgentScope{Application: "pi", ValidatedVersion: piValidatedVersion, VersionEvidence: "docs/verification/ale-33.md", Evidence: piEvidence(EvidenceInferred, "version-specific-adapter", "", "", "rules validated with installed native Pi resource manager and skill loader; current running sessions are not inspected"), Gaps: []string{"Running CLI --skill, --no-skills, trust overrides, custom SDK loaders and extension-provided resources are not observed.", "Complex minimatch braces/extglobs, package manifest glob expansion and ignore-file rules remain unknown; bounded discovery reports those cases.", "Non-exact ? and character-class patterns involving astral text remain unknown, including conservative uncertainty under astral candidate ancestors.", "Legacy global npm installations and remote package version satisfaction are not inferred from a cache folder.", "Within one native root, discovery order follows the recorded macOS filesystem ordering; other platforms remain unvalidated.", "Standalone Markdown resources can be read; bundle comparison has incomplete coverage and deletion is unsupported.", "Package writers and deletion are unavailable; exact resource controls require a confirmed preview."}}}
+	inputs := piInputs{facts: make(map[RootID]piRootFact), scope: AgentScope{Application: "pi", ValidatedVersion: piValidatedVersion, VersionEvidence: "docs/verification/ale-33.md", Evidence: piEvidence(EvidenceInferred, "version-specific-adapter", "", "", "rules validated with installed native Pi resource manager and skill loader; current running sessions are not inspected"), Gaps: []string{"Running CLI --skill, --no-skills, trust overrides, custom SDK loaders and extension-provided resources are not observed.", "Complex minimatch braces/extglobs, package manifest glob expansion and ignore-file rules remain unknown; bounded discovery reports those cases.", "Non-exact ? and character-class patterns involving astral text remain unknown, including conservative uncertainty under astral candidate ancestors.", "Legacy global npm installations and remote package version satisfaction are not inferred from a cache folder.", "Within one native root, discovery order follows the recorded macOS filesystem ordering; other platforms remain unvalidated.", "Standalone Markdown resources can be read; bundle comparison has incomplete coverage.", "Package writers are unavailable; exact resource controls require a confirmed preview."}}}
 	inputs.overlay = request.piSettingsOverlay
-	inputs.global = inputs.settings(filepath.Join(agentDir, "settings.json"), "global")
+	inputs.global = inputs.settings(filepath.Join(agentDir, "settings.json"), "global", request.home)
 	inputs.trust = inputs.projectTrust(request.Project, agentDir)
 	ancestors, err := piAncestors(request.Project)
 	if err != nil {
@@ -40,7 +53,7 @@ func buildPi(ctx context.Context, request Request) (*Snapshot, error) {
 	}
 	inputs.project = piSettings{}
 	if request.Project.Selected {
-		inputs.project = inputs.settings(filepath.Join(request.Project.Path, ".pi", "settings.json"), "project")
+		inputs.project = inputs.settings(filepath.Join(request.Project.Path, ".pi", "settings.json"), "project", request.home)
 	}
 	// Trust gating is a distinct fact from parsing project settings for inspection.
 	trustEvidence := piEvidence(EvidenceInferred, "project-trust", filepath.Join(agentDir, "trust.json"), "nearest ancestor decision, then defaultProjectTrust", "project participation is "+inputs.trust+"; session and extension trust decisions are unknown")
@@ -88,6 +101,8 @@ func buildPi(ctx context.Context, request Request) (*Snapshot, error) {
 		return nil, err
 	}
 	snapshot.request = original
+	snapshot.managers = append([]ManagerEvidence(nil), inputs.managers...)
+	snapshot.managerReaders = append([]managerReader(nil), inputs.managerReaders...)
 	snapshot.scope.Agent = &inputs.scope
 	roots := make(map[RootID]DiscoveryRoot)
 	for _, r := range request.Roots {
@@ -437,59 +452,46 @@ func (inputs *piInputs) addPackages(request *Request, agentDir string) {
 			problem.nativeLocal = true
 			inputs.packageProblems = append(inputs.packageProblems, piPackageProblem{problem: problem, source: p.Source, settings: filepath.Join(entry.base, "settings.json")})
 		}
-		root := piPath(p.Source, entry.base, request.home)
-		identity := root
-		managed := false
-		uncertain := entry.uncertain
-		if strings.HasPrefix(p.Source, "npm:") {
-			name := strings.TrimPrefix(p.Source, "npm:")
-			if at := strings.LastIndex(name, "@"); at > 0 {
-				name = name[:at]
-				uncertain = true
-			}
-			root = filepath.Join(entry.base, "npm", "node_modules", name)
-			identity = "npm:" + name
-			managed = true
-		} else if strings.HasPrefix(p.Source, "git:") {
-			git := strings.TrimPrefix(p.Source, "git:")
-			if strings.Contains(git, "://") || strings.Contains(git, ":") || strings.HasPrefix(git, "/") {
-				packageProblem(entry.base, "Pi remote package source form is not validated for offline resolution")
-				continue
-			}
-			if at := strings.LastIndex(git, "@"); at > 0 {
-				git = git[:at]
-				uncertain = true
-			}
-			root = filepath.Join(entry.base, "git", git)
-			identity = "git:" + git
-			managed = true
-		} else if strings.Contains(p.Source, "://") || strings.HasPrefix(p.Source, "git@") || strings.Contains(p.Source, ":") {
-			packageProblem(entry.base, "Pi package source is not a validated local, npm: or git: registration")
+		root, identity, _, versionUncertain, locationError := piPackageLocation(p.Source, entry.base, request.home)
+		if locationError != "" {
+			packageProblem(entry.base, locationError)
 			continue
 		}
+		uncertain := entry.uncertain || versionUncertain
 		if seen[identity] {
 			continue
 		}
 		if entry.trust == "allowed" {
 			seen[identity] = true
 		}
-		if !pathWithin(entry.base, root) && managed {
-			packageProblem(entry.base, "Pi package registration escapes managed storage")
-			continue
-		}
 		fact := piRootFact{rank: 4, base: root, path: filepath.Join(entry.base, "settings.json"), trust: entry.trust, uncertain: uncertain, packageFilter: p.hasSkills, packagePatterns: p.Skills, delta: p.Autoload != nil && !*p.Autoload, provenance: Provenance{Kind: "plugin", PluginID: p.Source, Evidence: piEvidence(EvidenceObserved, "package-registration", filepath.Join(entry.base, "settings.json"), "packages", "Pi package registration observed; package owns its resources")}}
 		if fact.delta {
 			fact.uncertain = true
 			packageProblem(fact.path, "Pi autoload=false package deltas need additional native validation")
 		}
-		raw, err := nativeBytes(filepath.Join(root, "package.json"))
+		manifestPath := filepath.Join(root, "package.json")
+		coverage := startManagerRead(&inputs.managerReaders, "pi-package-manifest", p.Source, manifestPath, root, piEvidence(EvidenceObserved, "package-manifest", manifestPath, "pi.skills", ""))
+		raw, err := nativeBytes(manifestPath)
+		if err == nil {
+			coverage.result.SHA256 = managerInputDigest(raw)
+		}
 		var manifest struct {
 			Version string                      `json:"version"`
 			Pi      *map[string]json.RawMessage `json:"pi"`
 		}
-		if !nativeAbsent(filepath.Join(root, "package.json"), err) && (err != nil || json.Unmarshal(raw, &manifest) != nil) {
+		var fields map[string]json.RawMessage
+		valid := err == nil && json.Unmarshal(raw, &fields) == nil && fields != nil && json.Unmarshal(raw, &manifest) == nil
+		if value, present := fields["pi"]; present && string(value) == "null" {
+			valid = false
+		}
+		if nativeAbsent(manifestPath, err) {
+			coverage.absent()
+		} else if valid {
+			coverage.complete(raw)
+		} else {
 			fact.uncertain = true
-			packageProblem(filepath.Join(root, "package.json"), "Pi package manifest is unreadable or invalid")
+			packageProblem(manifestPath, "Pi package manifest is unreadable or invalid")
+			coverage.uncertain("Pi package resource membership cannot be interpreted within this registered package")
 		}
 		fact.provenance.Version = manifest.Version
 		skillRoots := []string{"skills"}
@@ -501,7 +503,8 @@ func (inputs *piInputs) addPackages(request *Request, agentDir string) {
 				entries, valid = piResourceArray(value)
 				if !valid {
 					fact.uncertain = true
-					packageProblem(filepath.Join(root, "package.json"), "Pi package skills must be an array of strings")
+					packageProblem(manifestPath, "Pi package skills must be an array of strings")
+					coverage.uncertain("Pi package resource declarations are partial or invalid")
 				}
 			}
 			switch {
@@ -520,14 +523,17 @@ func (inputs *piInputs) addPackages(request *Request, agentDir string) {
 			}
 			if piPattern(value) && strings.ContainsAny(value, "*?") {
 				fact.uncertain = true
-				packageProblem(filepath.Join(root, "package.json"), "Pi package manifest glob expansion is not independently validated; inventory may be partial")
+				packageProblem(manifestPath, "Pi package manifest glob expansion is not independently validated; inventory may be partial")
+				coverage.uncertain("Pi package glob membership is unverified")
 			}
 		}
 		// Manifest filters define package membership before user resource filters.
 		if len(manifestPatterns) > 0 {
 			fact.uncertain = true
-			packageProblem(filepath.Join(root, "package.json"), "Pi package manifest filters are not yet independently validated")
+			packageProblem(manifestPath, "Pi package manifest filters are not yet independently validated")
+			coverage.uncertain("Pi package filter membership is unverified")
 		}
+		coverage.finish(&inputs.managers)
 		for _, value := range skillRoots {
 			if piPattern(value) {
 				if strings.ContainsAny(value, "*?") {
@@ -544,4 +550,45 @@ func (inputs *piInputs) addPackages(request *Request, agentDir string) {
 			inputs.addRoot(request, piPath(value, root, request.home), ContextManaged, "pi-package", "pi", fact, false)
 		}
 	}
+}
+
+// Discovery and ownership coverage use the same source-location interpretation.
+func piPackageLocation(source, base, home string) (root, identity string, managed, uncertain bool, reason string) {
+	root = piPath(source, base, home)
+	identity = root
+	switch {
+	case strings.HasPrefix(source, "npm:"):
+		name := strings.TrimPrefix(source, "npm:")
+		if at := strings.LastIndex(name, "@"); at > 0 {
+			name = name[:at]
+			uncertain = true
+		}
+		if name == "" {
+			reason = "Pi npm package name is missing"
+			return
+		}
+		root = filepath.Join(base, "npm", "node_modules", name)
+		identity = "npm:" + name
+		managed = true
+	case strings.HasPrefix(source, "git:"):
+		name := strings.TrimPrefix(source, "git:")
+		if strings.Contains(name, ":") || strings.HasPrefix(name, "/") || name == "" {
+			reason = "Pi remote package source form is not validated for offline resolution"
+			return
+		}
+		if at := strings.LastIndex(name, "@"); at > 0 {
+			name = name[:at]
+			uncertain = true
+		}
+		root = filepath.Join(base, "git", name)
+		identity = "git:" + name
+		managed = true
+	case strings.Contains(source, ":") || strings.HasPrefix(source, "git@"):
+		reason = "Pi package source is not a validated local, npm: or git: registration"
+		return
+	}
+	if managed && !pathWithin(base, root) {
+		reason = "Pi package registration escapes managed storage"
+	}
+	return
 }
