@@ -132,6 +132,11 @@ func discoverHermesPlugins(request *Request, inputs *hermesInputs) {
 						plugin.reason = "declarative portable plugin registration; native namespace derived from registry key"
 					}
 				}
+				ownership := ManagerBoundary
+				if !plugin.admitted {
+					ownership = ManagerUncertain
+				}
+				inputs.managers = append(inputs.managers, ManagerEvidence{Manager: plugin.key, Boundary: child, State: ownership, Evidence: hermesEvidence(EvidenceObserved, "plugin-installation", manifest, "", "plugin installation ownership is independent of runtime enablement; external skill links remain separate")})
 				safe, safeKnown := inputs.envEnabled("HERMES_SAFE_MODE")
 				projectEnabled, projectKnown := inputs.envEnabled("HERMES_ENABLE_PROJECT_PLUGINS")
 				flagsKnown := safeKnown && (!project || projectKnown)
@@ -190,10 +195,12 @@ func discoverHermesPlugins(request *Request, inputs *hermesInputs) {
 		walk(root, "", 0)
 	}
 	userPlugins := filepath.Join(inputs.home, "plugins")
+	inputs.managers = append(inputs.managers, ManagerEvidence{Manager: "plugins", Boundary: userPlugins, State: ManagerBoundary, Evidence: hermesEvidence(EvidenceObserved, "plugin-storage", userPlugins, "", "conventional plugin storage owns contained content independently of activation")})
 	request.Roots = append(request.Roots, DiscoveryRoot{ID: RootID(stableID("root_hermes_plugin_inventory", userPlugins)), Path: userPlugins, Context: ContextManaged, Origin: "hermes-plugin-inventory", Optional: true})
 	scan(userPlugins, false)
 	if request.Project.Selected {
 		projectPlugins := filepath.Join(request.Project.Path, ".hermes", "plugins")
+		inputs.managers = append(inputs.managers, ManagerEvidence{Manager: "project-plugins", Boundary: projectPlugins, State: ManagerBoundary, Evidence: hermesEvidence(EvidenceObserved, "plugin-storage", projectPlugins, "", "selected project plugin storage owns contained content independently of activation")})
 		request.Roots = append(request.Roots, DiscoveryRoot{ID: RootID(stableID("root_hermes_plugin_inventory", projectPlugins)), Path: projectPlugins, Context: ContextManaged, Origin: "hermes-plugin-inventory", Optional: true})
 		scan(projectPlugins, true)
 	}

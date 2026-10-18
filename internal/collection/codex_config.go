@@ -28,6 +28,7 @@ type codexConfig struct {
 	} `toml:"plugins"`
 }
 type codexInputs struct {
+	managers       []ManagerEvidence
 	scope          AgentScope
 	effective      []codexChoice
 	selectedLayer  string

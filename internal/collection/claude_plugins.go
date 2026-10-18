@@ -38,6 +38,7 @@ func discoverClaudePlugins(request *Request, inputs *claudeInputs) map[RootID][]
 		Plugins map[string][]claudeInstallation `json:"plugins"`
 	}
 	raw, err := nativeBytes(registry)
+	inputs.managers = append(inputs.managers, pluginRegistryManagers(registry, raw, err, 2, claudeEvidence(EvidenceObserved, "installed-plugin-registry", registry, "installPath", "registered whole installation boundaries; activation does not transfer ownership"))...)
 	if !nativeAbsent(registry, err) && (err != nil || json.Unmarshal(raw, &installed) != nil || installed.Version != 2 || installed.Plugins == nil) {
 		inputs.problem(registry, "plugin installation registry is unreadable or unsupported")
 		installed.Plugins = nil
@@ -46,6 +47,7 @@ func discoverClaudePlugins(request *Request, inputs *claudeInputs) map[RootID][]
 	directories := map[string]map[string]bool{}
 	observations := map[string][]PluginRecord{}
 	observe := func(path, id string, record PluginRecord) {
+		inputs.managers = append(inputs.managers, ManagerEvidence{Manager: id, Boundary: path, State: ManagerBoundary, Evidence: claudeEvidence(EvidenceObserved, "plugin-installation", record.InputPath, "", "observed cache or registered local source owns the whole installation")})
 		if directories[path] == nil {
 			directories[path] = map[string]bool{}
 		}
@@ -91,6 +93,7 @@ func discoverClaudePlugins(request *Request, inputs *claudeInputs) map[RootID][]
 	cache := filepath.Join(request.claudeHome, "plugins", "cache")
 	markets, err := os.ReadDir(cache)
 	if err != nil && !os.IsNotExist(err) {
+		inputs.managers = append(inputs.managers, ManagerEvidence{Manager: "plugin-cache", Boundary: cache, State: ManagerUncertain, Evidence: claudeEvidence(EvidenceUnknown, "plugin-cache-inventory", cache, "", "plugin cache could not be listed")})
 		inputs.problem(cache, "plugin cache could not be listed")
 	}
 	// The cache has exactly marketplace/plugin/version levels. It is never an activation registry.
@@ -101,6 +104,7 @@ func discoverClaudePlugins(request *Request, inputs *claudeInputs) map[RootID][]
 		marketDir := filepath.Join(cache, market.Name())
 		names, err := os.ReadDir(marketDir)
 		if err != nil {
+			inputs.managers = append(inputs.managers, ManagerEvidence{Manager: market.Name(), Boundary: marketDir, State: ManagerUncertain, Evidence: claudeEvidence(EvidenceUnknown, "plugin-cache-inventory", marketDir, "", "plugin cache could not be listed")})
 			inputs.problem(marketDir, "plugin cache could not be listed")
 			continue
 		}
@@ -111,6 +115,7 @@ func discoverClaudePlugins(request *Request, inputs *claudeInputs) map[RootID][]
 			nameDir := filepath.Join(marketDir, name.Name())
 			versions, err := os.ReadDir(nameDir)
 			if err != nil {
+				inputs.managers = append(inputs.managers, ManagerEvidence{Manager: name.Name(), Boundary: nameDir, State: ManagerUncertain, Evidence: claudeEvidence(EvidenceUnknown, "plugin-cache-inventory", nameDir, "", "plugin versions could not be listed")})
 				inputs.problem(nameDir, "plugin versions could not be listed")
 				continue
 			}
@@ -322,7 +327,10 @@ func claudeLocalPluginSources(request *Request, inputs *claudeInputs) map[string
 	result := map[string][]claudeLocalPluginSource{}
 	path := filepath.Join(request.claudeHome, "plugins", "known_marketplaces.json")
 	raw, err := nativeBytes(path)
+	coverage := ManagerEvidence{Manager: "local-marketplaces", State: ManagerObserved, Evidence: claudeEvidence(EvidenceObserved, "local-marketplace-registry", path, "", "local source ownership inputs observed independently of activation")}
 	if nativeAbsent(path, err) {
+		coverage.State = ManagerAbsent
+		inputs.managers = append(inputs.managers, coverage)
 		return result
 	}
 	var markets map[string]struct {
@@ -331,9 +339,15 @@ func claudeLocalPluginSources(request *Request, inputs *claudeInputs) map[string
 		LastUpdated     json.RawMessage `json:"lastUpdated"`
 	}
 	if err != nil || json.Unmarshal(raw, &markets) != nil || markets == nil {
+		coverage.State = ManagerUncertain
+		coverage.Evidence.Kind = EvidenceUnknown
+		coverage.Evidence.Reason = "local marketplace registry cannot be interpreted; external installation boundaries cannot be established"
+		inputs.managers = append(inputs.managers, coverage)
 		inputs.problem(path, "known plugin marketplaces could not be interpreted")
 		return result
 	}
+	coverage.SHA256 = managerInputDigest(raw)
+	inputs.managers = append(inputs.managers, coverage)
 	names := make([]string, 0, len(markets))
 	for name := range markets {
 		names = append(names, name)
@@ -354,6 +368,7 @@ func claudeLocalPluginSources(request *Request, inputs *claudeInputs) map[string
 		}
 		directory := market.Source.Path
 		if !filepath.IsAbs(directory) || !sameClaudePath(directory, market.InstallLocation) {
+			inputs.managers = append(inputs.managers, ManagerEvidence{Manager: name, State: ManagerUncertain, Evidence: claudeEvidence(EvidenceUnknown, "local-marketplace-location", path, "", "local marketplace location cannot be bounded")})
 			inputs.scope.Gaps = append(inputs.scope.Gaps, "unverified local marketplace location: "+name)
 			continue
 		}
@@ -367,12 +382,14 @@ func claudeLocalPluginSources(request *Request, inputs *claudeInputs) map[string
 			}
 		}
 		if err != nil || json.Unmarshal(data, &manifest) != nil || manifest.Name != name {
+			inputs.managers = append(inputs.managers, ManagerEvidence{Manager: name, Boundary: directory, State: ManagerUncertain, Evidence: claudeEvidence(EvidenceUnknown, "local-marketplace-manifest", manifestPath, "", "local plugin declarations cannot be interpreted within this marketplace")})
 			inputs.scope.Gaps = append(inputs.scope.Gaps, "local marketplace lacks matching manifest: "+name)
 			continue
 		}
 		for _, plugin := range manifest.Plugins {
 			relative, supported := claudeManifestString(plugin.Source)
 			if !supported || filepath.IsAbs(relative) {
+				inputs.managers = append(inputs.managers, ManagerEvidence{Manager: plugin.Name + "@" + name, State: ManagerUncertain, Evidence: claudeEvidence(EvidenceUnknown, "local-plugin-source", manifestPath, "", "unsupported plugin source cannot establish an installation boundary")})
 				inputs.scope.Gaps = append(inputs.scope.Gaps, "unverified local plugin source form: "+plugin.Name+"@"+name)
 				continue
 			}

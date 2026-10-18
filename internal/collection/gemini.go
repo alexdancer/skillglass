@@ -50,6 +50,7 @@ func buildGemini(ctx context.Context, request Request) (*Snapshot, error) {
 		return nil, err
 	}
 	snapshot.request = original
+	snapshot.managers = append([]ManagerEvidence(nil), in.managers...)
 	snapshot.geminiControls = &in
 	snapshot.scope.Agent = &in.scope
 	roots := make(map[RootID]DiscoveryRoot)

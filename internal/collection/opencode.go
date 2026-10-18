@@ -69,6 +69,7 @@ func buildOpencode(ctx context.Context, request Request) (*Snapshot, error) {
 		return nil, err
 	}
 	snapshot.request = original
+	snapshot.managers = []ManagerEvidence{{Manager: "cache", Boundary: in.cache, State: ManagerBoundary, Evidence: opencodeEvidence(EvidenceObserved, "cache-ownership", in.cache, "", "native manager owns the whole cache independently of skill loader roots")}}
 	roots := map[RootID]DiscoveryRoot{}
 	for _, root := range request.Roots {
 		roots[root.ID] = root

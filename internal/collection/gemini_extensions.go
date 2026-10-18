@@ -19,6 +19,13 @@ type geminiExtension struct {
 func discoverGeminiExtensions(in *geminiInputs, add func(string, ReferenceContext, string, int, ParticipationState, Evidence, Provenance)) {
 	directory := filepath.Join(in.home, ".gemini", "extensions")
 	entries, err := os.ReadDir(directory)
+	coverage := ManagerEvidence{Manager: "extensions", Boundary: directory, State: ManagerObserved, Evidence: geminiEvidence(EvidenceObserved, "extension-registry", directory, "", "extension installation boundaries are separate from skill loader roots and activation")}
+	if nativeAbsent(directory, err) {
+		coverage.State = ManagerAbsent
+	} else if err != nil {
+		coverage.State = ManagerUncertain
+	}
+	in.managers = append(in.managers, coverage)
 	if os.IsNotExist(err) {
 		return
 	}
@@ -59,8 +66,13 @@ func discoverGeminiExtensions(in *geminiInputs, add func(string, ReferenceContex
 	counts := make(map[string]int)
 	for _, entry := range entries {
 		path := filepath.Join(directory, entry.Name())
+		installation := path
 		info, err := os.Stat(path)
-		if err != nil || !info.IsDir() {
+		if err != nil {
+			in.managers = append(in.managers, ManagerEvidence{Manager: entry.Name(), Boundary: path, State: ManagerUncertain, Evidence: geminiEvidence(EvidenceUnknown, "extension-installation", path, "", "installation cannot be inspected")})
+			continue
+		}
+		if !info.IsDir() {
 			continue
 		}
 		linked := false
@@ -93,6 +105,13 @@ func discoverGeminiExtensions(in *geminiInputs, add func(string, ReferenceContex
 		valid := !uninspected && err == nil && json.Unmarshal(raw, &manifest) == nil && manifest.Name != "" && manifest.Version != "" && geminiExtensionName.MatchString(manifest.Name)
 		if valid {
 			counts[manifest.Name]++
+		}
+		if real, err := filepath.EvalSymlinks(installation); err == nil && geminiManagedLocation(filepath.Join(installation, "skills"), real, "plugin", in.home) {
+			state := ManagerBoundary
+			if !valid {
+				state = ManagerUncertain
+			}
+			in.managers = append(in.managers, ManagerEvidence{Manager: entry.Name(), Boundary: installation, State: state, Evidence: geminiEvidence(EvidenceObserved, "extension-installation", metadataPath, "", "installed extension boundary; linked external sources remain separate")})
 		}
 		registrations = append(registrations, registration{path, manifest, valid, uninspected, linked})
 	}

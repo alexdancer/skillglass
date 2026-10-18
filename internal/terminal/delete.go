@@ -75,12 +75,23 @@ func deletePreviewLines(v collection.DeleteView) []string {
 	for _, ref := range v.References {
 		lines = append(lines, "Reference: "+ref.DiscoveredPath+" -> "+ref.ResolvedPath)
 	}
+	lines = append(lines, "Known manifest dependencies in independent sources (left untouched):")
+	lines = append(lines, deleteDependencyLines(v.Dependencies)...)
 	lines = append(lines, "Bounded native consumers and provenance:")
 	for _, c := range v.Consumers {
 		lines = append(lines, fmt.Sprintf("%s: coverage %s | %d exact-source references | %s", controlApplication(c.Application), c.Scope.Completeness, len(c.References), c.Reason))
 		for _, root := range c.Scope.Roots {
 			lines = append(lines, "Root ("+string(root.State)+", "+root.Origin+"): "+root.Requested)
 		}
+		for _, manager := range c.Managers {
+			lines = append(lines, "Manager evidence ("+string(manager.State)+"): "+manager.Manager+" | "+manager.Boundary+" | "+manager.Evidence.InputPath+" | "+manager.Evidence.Reason)
+		}
+		for _, problem := range c.Problems {
+			if problem.LimitsCoverage {
+				lines = append(lines, "Discovery limit: "+problem.Path+" | "+problem.Summary)
+			}
+		}
+		lines = append(lines, deleteDependencyLines(c.Dependencies)...)
 		if c.Scope.Agent != nil {
 			for _, gap := range c.Scope.Agent.Gaps {
 				lines = append(lines, "Unverified scope: "+gap)
@@ -110,6 +121,21 @@ func deletePreviewLines(v collection.DeleteView) []string {
 		lines = append(lines, "Preview only. No content or settings changed. Confirmation is required.", "Confirm with --confirm "+v.Confirmation)
 	}
 	return safeChangeLines(lines)
+}
+func deleteDependencyLines(dependencies []collection.DeleteDependency) []string {
+	var lines []string
+	for _, dependency := range dependencies {
+		lines = append(lines, "Dependent manifest: "+dependency.Manifest+" -> "+dependency.Resolved, "Independent source: "+string(dependency.Source), "Resolution depends on removed entry: "+dependency.RemovedPath+"; the dependent bundle and its links remain untouched and may become unavailable.")
+		for _, ref := range dependency.References {
+			lines = append(lines, "Dependent reference ("+string(ref.Context)+"): "+ref.DiscoveredPath+" -> "+ref.ResolvedPath)
+		}
+		if dependency.Availability != nil {
+			for _, fact := range dependency.Availability.References {
+				lines = append(lines, "Dependent provenance: "+fact.Provenance.Kind+" | "+fact.Provenance.Evidence.InputPath+" | "+fact.Provenance.Evidence.Reason)
+			}
+		}
+	}
+	return lines
 }
 func deleteOutcomeLines(out collection.DeleteOutcome) []string {
 	lines := []string{"Permanent delete result: " + out.State, "Reason: " + out.Reason, "Exact target: " + out.View.Target.Path, fmt.Sprintf("Verified removal: %t", out.Verified)}

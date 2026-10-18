@@ -31,6 +31,7 @@ type hermesInputs struct {
 	uncertain              bool
 	problems               []Problem
 	plugins                map[RootID]hermesPlugin
+	managers               []ManagerEvidence
 }
 
 func hermesEvidence(kind EvidenceKind, rule, path, setting, reason string) Evidence {
@@ -265,6 +266,7 @@ func buildHermes(ctx context.Context, request Request) (*Snapshot, error) {
 		return nil, err
 	}
 	snapshot.request = original
+	snapshot.managers = append([]ManagerEvidence(nil), inputs.managers...)
 	snapshot.scope.Agent = &inputs.scope
 	roots := make(map[RootID]DiscoveryRoot)
 	for _, root := range request.Roots {

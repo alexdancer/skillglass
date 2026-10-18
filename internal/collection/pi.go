@@ -19,6 +19,17 @@ func (inputs *piInputs) addRoot(request *Request, path string, context Reference
 			return
 		}
 	}
+	if origin == "pi-inactive-cache" {
+		inputs.managers = append(inputs.managers, ManagerEvidence{Manager: "package-storage", Boundary: path, State: ManagerBoundary, Evidence: fact.provenance.Evidence})
+	} else if origin == "pi-package" {
+		base, baseErr := filepath.EvalSymlinks(fact.base)
+		resource, resourceErr := filepath.EvalSymlinks(path)
+		if baseErr == nil && resourceErr == nil && pathWithin(base, resource) {
+			inputs.managers = append(inputs.managers, ManagerEvidence{Manager: fact.provenance.PluginID, Boundary: path, State: ManagerBoundary, Evidence: fact.provenance.Evidence})
+		} else if baseErr != nil || resourceErr != nil {
+			inputs.managers = append(inputs.managers, ManagerEvidence{Manager: fact.provenance.PluginID, Boundary: path, State: ManagerUncertain, Evidence: fact.provenance.Evidence})
+		}
+	}
 	info, err := os.Stat(path)
 	file := err == nil && !info.IsDir()
 	request.Roots = append(request.Roots, DiscoveryRoot{ID: id, Path: path, Context: context, Origin: origin, Optional: optional, piMode: mode, piFile: file})
@@ -88,6 +99,7 @@ func buildPi(ctx context.Context, request Request) (*Snapshot, error) {
 		return nil, err
 	}
 	snapshot.request = original
+	snapshot.managers = append([]ManagerEvidence(nil), inputs.managers...)
 	snapshot.scope.Agent = &inputs.scope
 	roots := make(map[RootID]DiscoveryRoot)
 	for _, r := range request.Roots {

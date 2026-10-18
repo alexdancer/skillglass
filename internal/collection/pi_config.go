@@ -48,6 +48,7 @@ type piPackageProblem struct {
 	source, settings string
 }
 type piInputs struct {
+	managers        []ManagerEvidence
 	overlay         map[string][]byte
 	packageProblems []piPackageProblem
 	scope           AgentScope

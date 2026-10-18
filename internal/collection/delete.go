@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -26,6 +27,9 @@ type DeleteConsumer struct {
 	Application  string                   `json:"application"`
 	Scope        Scope                    `json:"scope"`
 	References   []Reference              `json:"references"`
+	Dependencies []DeleteDependency       `json:"manifest_dependencies,omitempty"`
+	Managers     []ManagerEvidence        `json:"manager_evidence"`
+	Problems     []Problem                `json:"discovery_problems,omitempty"`
 	Availability *AvailabilityExplanation `json:"availability,omitempty"`
 	Reason       string                   `json:"reason"`
 }
@@ -39,17 +43,18 @@ type DeleteEntry struct {
 	stamp      deleteStamp
 }
 type DeleteView struct {
-	State        string           `json:"state"`
-	Reason       string           `json:"reason"`
-	Target       DeleteTarget     `json:"target"`
-	Ownership    DeleteOwnership  `json:"ownership"`
-	Project      ProjectContext   `json:"project"`
-	References   []Reference      `json:"references"`
-	Consumers    []DeleteConsumer `json:"consumers"`
-	Contents     []DeleteEntry    `json:"contents"`
-	Limits       []string         `json:"limits"`
-	Confirmation string           `json:"confirmation,omitempty"`
-	Phrase       string           `json:"confirmation_phrase,omitempty"`
+	State        string             `json:"state"`
+	Reason       string             `json:"reason"`
+	Target       DeleteTarget       `json:"target"`
+	Ownership    DeleteOwnership    `json:"ownership"`
+	Project      ProjectContext     `json:"project"`
+	References   []Reference        `json:"references"`
+	Dependencies []DeleteDependency `json:"manifest_dependencies,omitempty"`
+	Consumers    []DeleteConsumer   `json:"consumers"`
+	Contents     []DeleteEntry      `json:"contents"`
+	Limits       []string           `json:"limits"`
+	Confirmation string             `json:"confirmation,omitempty"`
+	Phrase       string             `json:"confirmation_phrase,omitempty"`
 }
 type DeleteOutcome struct {
 	View         DeleteView `json:"context"`
@@ -89,12 +94,16 @@ func (p *DeletePreview) View() DeleteView {
 	for i, ref := range p.view.References {
 		view.References[i] = cloneReference(ref)
 	}
+	view.Dependencies = cloneDeleteDependencies(p.view.Dependencies)
 	view.Contents = append([]DeleteEntry(nil), p.view.Contents...)
 	view.Limits = append([]string(nil), p.view.Limits...)
 	view.Consumers = append([]DeleteConsumer(nil), p.view.Consumers...)
 	for i := range view.Consumers {
 		consumer := &view.Consumers[i]
 		consumer.Scope = cloneScope(consumer.Scope)
+		consumer.Managers = append([]ManagerEvidence(nil), consumer.Managers...)
+		consumer.Problems = cloneProblems(consumer.Problems)
+		consumer.Dependencies = cloneDeleteDependencies(consumer.Dependencies)
 		consumer.References = append([]Reference(nil), consumer.References...)
 		for j, ref := range consumer.References {
 			consumer.References[j] = cloneReference(ref)
@@ -132,14 +141,18 @@ func (s *Snapshot) PreviewDelete(ctx context.Context, id SourceID) *DeletePrevie
 	p.view.Target = DeleteTarget{id, source.Directory, kind, source.Identity}
 	p.view.References = s.References(id)
 	p.view.Phrase = "delete " + string(id)
+	entries, ancestors, ownership, inventoryErr := inventoryDelete(ctx, p.view.Target)
+	p.view.Ownership = ownership
+	p.view.Contents = entries
+	p.ancestors = ancestors
+	p.view.Dependencies = deleteDependencies(s, p.view.Target, false)
 	var observations []View
 	var inputs []changeFact
 	reason := ""
-	protect := []string{}
-	managed := []string{}
-	if source.Ownership.State == "managed" {
-		reason = "selected content is managed: " + source.Ownership.Reason
+	if inventoryErr != nil {
+		reason = inventoryErr.Error()
 	}
+	protect := []string{}
 	for _, capability := range applicationCatalog {
 		c := DeleteConsumer{Application: capability.Application, References: []Reference{}}
 		req, err := groupRequest(p.request, capability.Application)
@@ -155,36 +168,16 @@ func (s *Snapshot) PreviewDelete(ctx context.Context, id SourceID) *DeletePrevie
 			c.Scope = native.Scope()
 			v := native.Query(Filters{Context: FilterAll}, QuerySources)
 			observations = append(observations, v)
-			managed = append(managed, native.managedPaths...)
+			c.Managers = append([]ManagerEvidence(nil), native.managers...)
+			c.Problems = cloneProblems(v.Problems)
+			c.Dependencies = deleteDependencies(native, p.view.Target, true)
 			protect = append(protect, deleteApplicationHomes(req)...)
 			if exact, found := native.Source(id); found {
-				a := cloneAvailability(exact.Availability)
-				nativeIDs := map[ReferenceID]bool{}
-				facts := a.References[:0]
-				for _, fact := range a.References {
-					switch fact.Participation {
-					case ParticipationEligible, ParticipationExcluded, ParticipationUnknown:
-						nativeIDs[fact.Reference] = true
-						facts = append(facts, fact)
-					}
-				}
-				a.References = facts
-				if !nativeIDs[a.ReferenceID] {
-					a.ReferenceID = ""
-				}
-				for _, ref := range native.References(id) {
-					if nativeIDs[ref.ID] {
-						c.References = append(c.References, ref)
-					}
-				}
+				a, refs := deleteNativeReferences(native, exact)
+				c.References = refs
 				c.Availability = &a
-				c.Reason = fmt.Sprintf("%d proven native references to this exact source; availability remains application-specific", len(c.References))
-				if exact.Ownership.State == "managed" {
-					reason = "managed native content: " + c.Application + ": " + exact.Ownership.Reason
-				}
-			} else {
-				c.Reason = "zero proven native references to this exact source"
 			}
+			c.Reason = fmt.Sprintf("%d proven native references to this exact source; %d dependent manifests in independent sources; availability remains application-specific", len(c.References), len(c.Dependencies))
 			for _, r := range c.Scope.Roots {
 				path := r.Resolved
 				if path == "" {
@@ -193,11 +186,51 @@ func (s *Snapshot) PreviewDelete(ctx context.Context, id SourceID) *DeletePrevie
 				if (r.Origin != "" || !deleteBoundaryEqual(path, source.Directory)) && !(kind == "standalone" && deleteBoundaryEqual(path, source.Directory)) {
 					protect = append(protect, path)
 				}
-				if r.Context == ContextManaged || r.Context == ContextSystem {
-					managed = append(managed, path)
+				if r.Context == ContextSystem {
+					e := Evidence{Kind: EvidenceObserved, Rule: "system-storage", InputPath: path, Reason: "native system content is not user-owned"}
+					c.Managers = append(c.Managers, ManagerEvidence{Manager: "system", Boundary: path, State: ManagerBoundary, Evidence: e})
 				}
-				if (r.State == RootUnreadable || r.State == RootIncomplete) && deletePathsOverlap(source.Directory, path) {
-					reason = "relevant native discovery scope is unverified: " + r.Requested
+			}
+			sort.Slice(c.Managers, func(i, j int) bool {
+				a, _ := json.Marshal(c.Managers[i])
+				b, _ := json.Marshal(c.Managers[j])
+				return string(a) < string(b)
+			})
+			for _, manager := range c.Managers {
+				relevant := manager.Boundary == "" || deletePathsOverlap(source.Directory, manager.Boundary)
+				if relevant && manager.State == ManagerUncertain {
+					reason = "manager ownership evidence is uncertain: " + c.Application + ": " + manager.Evidence.InputPath + ": " + manager.Evidence.Reason
+					p.view.Ownership.State, p.view.Ownership.Reason = "uncertain", reason
+				}
+				if relevant && manager.State == ManagerBoundary {
+					reason = "managed or system boundary: " + manager.Boundary
+					p.view.Ownership.State, p.view.Ownership.Reason = "managed", reason
+				}
+				if manager.State != ManagerUncertain && manager.Evidence.InputPath != "" {
+					fact, err := observeChangePath(manager.Evidence.InputPath)
+					if err == nil {
+						inputs = append(inputs, fact)
+						observed := fact
+						if fact.Resolved != "" && fact.Resolved != fact.Path {
+							resolved, e := observeChangePath(fact.Resolved)
+							if e == nil {
+								inputs = append(inputs, resolved)
+								observed = resolved
+							} else if relevant {
+								reason = "manager input cannot be sealed: " + fact.Resolved
+							}
+						}
+						if relevant && ((manager.State == ManagerAbsent && fact.Exists) || (manager.SHA256 != "" && managerInputDigest(observed.Bytes) != manager.SHA256)) {
+							reason = "manager input changed during discovery: " + manager.Evidence.InputPath
+						}
+					} else if relevant {
+						reason = "manager input cannot be sealed: " + manager.Evidence.InputPath
+					}
+				}
+			}
+			for _, problem := range v.Problems {
+				if problem.LimitsCoverage && problem.Code != ProblemNativeInput && filepath.IsAbs(problem.Path) && deletePathsOverlap(source.Directory, problem.Path) {
+					reason = "relevant discovery evidence is unverified: " + problem.Path + ": " + problem.Summary
 				}
 			}
 			for _, other := range v.Sources {
@@ -227,18 +260,6 @@ func (s *Snapshot) PreviewDelete(ctx context.Context, id SourceID) *DeletePrevie
 			reason = "unsafe boundary encompasses a protected home, collection or project: " + path
 		}
 	}
-	for _, path := range managed {
-		if path != "" && deletePathsOverlap(source.Directory, deleteCanonical(path)) {
-			reason = "managed or system boundary: " + path
-		}
-	}
-	entries, ancestors, ownership, err := inventoryDelete(ctx, p.view.Target)
-	p.view.Ownership = ownership
-	p.view.Contents = entries
-	p.ancestors = ancestors
-	if err != nil {
-		reason = err.Error()
-	}
 	if reason != "" {
 		p.view.Reason = reason
 		return p
@@ -251,9 +272,8 @@ func (s *Snapshot) PreviewDelete(ctx context.Context, id SourceID) *DeletePrevie
 		Trees     []deleteStamp
 		Ancestors []deleteStamp
 		Discovery []View
-		Managed   []string
 		Inputs    []changeFact
-	}{"delete-v1", p.view, deleteStamps(entries), ancestors, observations, managed, inputs})
+	}{"delete-v2", p.view, deleteStamps(entries), ancestors, observations, inputs})
 	if err != nil {
 		p.view.State = "refused"
 		p.view.Reason = "evidence cannot be sealed: " + err.Error()

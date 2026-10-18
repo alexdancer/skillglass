@@ -385,7 +385,7 @@ type Snapshot struct {
 	references       map[ReferenceID]Reference
 	referenceOrder   []ReferenceID
 	problems         []Problem
-	managedPaths     []string
+	managers         []ManagerEvidence
 	hermesControls   hermesControlFacts
 	piControls       *piInputs
 	geminiControls   *geminiInputs
