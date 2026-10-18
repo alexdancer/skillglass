@@ -508,9 +508,10 @@ func (model browserModel) scopeBodyLines(width int) []string {
 
 func (model browserModel) renderHelp() []string {
 	header := model.chromeLines(browserHelp)
-	contentHeight := max(0, model.height-len(header)-1)
+	footer := model.helpFooterLines()
+	contentHeight := max(0, model.height-len(header)-len(footer))
 	page := paginate(model.helpBodyLines(), contentHeight, model.helpScroll)
-	return append(append(header, padLines(page.lines, contentHeight)...), model.helpFooter())
+	return append(append(header, padLines(page.lines, contentHeight)...), footer...)
 }
 
 func (model browserModel) helpBodyLines() []string {
@@ -522,7 +523,6 @@ func (model browserModel) helpBodyLines() []string {
 		{"↑ ↓ / j k", "Move selection or scroll"},
 		{"PgUp / PgDn", "Move one page"},
 		{"Home / End", "Move to the top or end"},
-		{"g / G", "Move to the top or end"},
 		{"Enter", "Open the focused source or problem; keep search"},
 		{"Esc / ←", "Return from reader, scope, problem, or help"},
 		{"Tab", "Switch Sources and Problems"},
@@ -961,8 +961,12 @@ func (model browserModel) scopeFooter() string {
 	return model.footerWithHint(value, "? help  q quit")
 }
 
-func (model browserModel) helpFooter() string {
-	return model.footer("Esc/←/? close  q quit")
+func (model browserModel) helpFooterLines() []string {
+	lines := wrapLine(" g / G  Move to the top or end", max(1, model.width))
+	for i := range lines {
+		lines[i] = model.palette().secondary(lines[i])
+	}
+	return append(lines, model.footer("Esc/←/? close  q quit"))
 }
 
 func (model browserModel) footer(value string) string {
@@ -1031,7 +1035,7 @@ func (model browserModel) maxScopeScroll() int {
 }
 
 func (model browserModel) helpPageSize() int {
-	return max(1, model.height-len(model.chromeLines(browserHelp))-1)
+	return max(1, model.height-len(model.chromeLines(browserHelp))-len(model.helpFooterLines()))
 }
 
 func (model browserModel) maxHelpScroll() int {

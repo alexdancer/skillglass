@@ -188,8 +188,12 @@ func (s *Snapshot) PreviewDelete(ctx context.Context, id SourceID) *DeletePrevie
 				if path == "" {
 					path = r.Requested
 				}
-				if (r.Origin != "" || !deleteBoundaryEqual(path, source.Directory)) && !(kind == "standalone" && deleteBoundaryEqual(path, source.Directory)) {
-					protect = append(protect, path)
+				equal := deleteBoundaryEqual(path, source.Directory)
+				if (r.Origin != "" || equal != deleteRelated) && !(kind == "standalone" && equal == deleteRelated) {
+					relation := deleteBoundaryContains(source.Directory, path)
+					if relation == deleteRelated || (relation == deleteUnresolved && r.Origin != "") {
+						reason = "unsafe boundary encompasses or cannot exclude a protected collection: " + path
+					}
 				}
 				if r.Context == ContextSystem {
 					e := Evidence{Kind: EvidenceObserved, Rule: "system-storage", InputPath: path, Reason: "native system content is not user-owned"}
@@ -202,11 +206,12 @@ func (s *Snapshot) PreviewDelete(ctx context.Context, id SourceID) *DeletePrevie
 				return string(a) < string(b)
 			})
 			for _, manager := range c.Managers {
-				relevant := manager.Boundary == "" || deletePathsOverlap(source.Directory, manager.Boundary)
+				relation := deletePathsOverlap(source.Directory, manager.Boundary)
+				relevant := manager.Boundary == "" || relation != deleteUnrelated
 				if manager.State == ManagerUncertain && len(manager.UncertainBoundaries) > 0 {
 					relevant = false
 					for _, boundary := range manager.UncertainBoundaries {
-						if deletePathsOverlap(source.Directory, boundary) {
+						if deletePathsOverlap(source.Directory, boundary) != deleteUnrelated {
 							relevant = true
 							break
 						}
@@ -217,38 +222,33 @@ func (s *Snapshot) PreviewDelete(ctx context.Context, id SourceID) *DeletePrevie
 					p.view.Ownership.State, p.view.Ownership.Reason = "uncertain", reason
 				}
 				if relevant && manager.State == ManagerBoundary {
-					reason = "managed or system boundary: " + manager.Boundary
-					p.view.Ownership.State, p.view.Ownership.Reason = "managed", reason
+					if relation == deleteUnresolved {
+						reason = "manager boundary relationship is unresolved: " + manager.Boundary
+						p.view.Ownership.State, p.view.Ownership.Reason = "uncertain", reason
+					} else {
+						reason = "managed or system boundary: " + manager.Boundary
+						p.view.Ownership.State, p.view.Ownership.Reason = "managed", reason
+					}
 				}
 				if (manager.State != ManagerUncertain || manager.SHA256 != "") && manager.Evidence.InputPath != "" {
-					fact, err := observeChangePath(manager.Evidence.InputPath)
-					if err == nil {
-						inputs = append(inputs, fact)
-						observed := fact
-						if fact.Resolved != "" && fact.Resolved != fact.Path {
-							resolved, e := observeChangePath(fact.Resolved)
-							if e == nil {
-								inputs = append(inputs, resolved)
-								observed = resolved
-							} else if relevant {
-								reason = "manager input cannot be sealed: " + fact.Resolved
-							}
+					facts, err := observeDeleteInput(manager.Evidence.InputPath)
+					inputs = append(inputs, facts...)
+					if err != nil {
+						if relevant {
+							reason = "manager input cannot be sealed: " + manager.Evidence.InputPath
 						}
-						if relevant && ((manager.State == ManagerAbsent && fact.Exists) || (manager.SHA256 != "" && managerInputDigest(observed.Bytes) != manager.SHA256)) {
-							reason = "manager input changed during discovery: " + manager.Evidence.InputPath
-						}
-					} else if relevant {
-						reason = "manager input cannot be sealed: " + manager.Evidence.InputPath
+					} else if relevant && ((manager.State == ManagerAbsent && facts[0].Exists) || (manager.SHA256 != "" && managerInputDigest(facts[len(facts)-1].Bytes) != manager.SHA256)) {
+						reason = "manager input changed during discovery: " + manager.Evidence.InputPath
 					}
 				}
 			}
 			for _, problem := range v.Problems {
-				if problem.LimitsCoverage && problem.Code != ProblemNativeInput && filepath.IsAbs(problem.Path) && deletePathsOverlap(source.Directory, problem.Path) {
+				if problem.LimitsCoverage && problem.Code != ProblemNativeInput && filepath.IsAbs(problem.Path) && deletePathsOverlap(source.Directory, problem.Path) == deleteRelated {
 					reason = "relevant discovery evidence is unverified: " + problem.Path + ": " + problem.Summary
 				}
 			}
 			for _, other := range v.Sources {
-				if other.ID != id && deleteBoundaryContains(source.Directory, other.Directory) {
+				if other.ID != id && deleteBoundaryContains(source.Directory, other.Directory) != deleteUnrelated {
 					reason = "selected boundary encloses another independent source: " + other.Directory
 				}
 			}
@@ -257,11 +257,10 @@ func (s *Snapshot) PreviewDelete(ctx context.Context, id SourceID) *DeletePrevie
 					if layer.Path == "" {
 						continue
 					}
-					fact, e := observeChangePath(layer.Path)
+					facts, e := observeDeleteInput(layer.Path)
+					inputs = append(inputs, facts...)
 					if e != nil {
 						reason = "native input cannot be sealed: " + layer.Path
-					} else {
-						inputs = append(inputs, fact)
 					}
 				}
 			}
@@ -270,7 +269,7 @@ func (s *Snapshot) PreviewDelete(ctx context.Context, id SourceID) *DeletePrevie
 	}
 	protect = append(protect, p.request.Project.Path)
 	for _, path := range protect {
-		if path != "" && deleteBoundaryContains(source.Directory, path) {
+		if path != "" && deleteBoundaryContains(source.Directory, path) != deleteUnrelated {
 			reason = "unsafe boundary encompasses a protected home, collection or project: " + path
 		}
 	}
@@ -305,20 +304,18 @@ func deleteStamps(entries []DeleteEntry) []deleteStamp {
 	}
 	return out
 }
-func deleteCanonical(path string) string {
-	path = filepath.Clean(path)
-	suffix := ""
-	for {
-		if resolved, err := filepath.EvalSymlinks(path); err == nil {
-			return filepath.Join(resolved, suffix)
-		}
-		parent := filepath.Dir(path)
-		if parent == path {
-			return filepath.Join(path, suffix)
-		}
-		suffix = filepath.Join(filepath.Base(path), suffix)
-		path = parent
+func observeDeleteInput(path string) ([]changeFact, error) {
+	fact, err := observeChangePath(path)
+	facts := []changeFact{fact}
+	if err != nil || !fact.Exists || fact.Resolved == fact.Path {
+		return facts, err
 	}
+	endpoint, err := observeChangePath(fact.Resolved)
+	facts = append(facts, endpoint)
+	if err == nil && (!endpoint.Exists || endpoint.Symlink != "") {
+		err = fmt.Errorf("resolved input endpoint changed: %s", fact.Resolved)
+	}
+	return facts, err
 }
 func deleteContains(parent, child string) bool {
 	if parent == "" || child == "" {
@@ -328,25 +325,47 @@ func deleteContains(parent, child string) bool {
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-// Object ancestry also covers case aliases on case-insensitive Darwin filesystems.
-// Uninspectable unrelated scope remains disclosed by native discovery; lexical
-// overlap still refuses when the inaccessible path could enclose this target.
-func deleteBoundaryContains(parent, child string) bool {
+type deleteRelation uint8
+
+const (
+	deleteUnresolved deleteRelation = iota
+	deleteUnrelated
+	deleteRelated
+)
+
+func deleteBoundaryContains(parent, child string) deleteRelation {
 	if parent == "" || child == "" {
-		return false
+		return deleteUnrelated
 	}
 	parentLocation, parentErr := groupLocationAt(parent)
 	childLocation, childErr := groupLocationAt(child)
-	if parentErr == nil && childErr == nil {
-		return childLocation.within(parentLocation)
+	if parentErr != nil || childErr != nil {
+		return deleteUnresolved
 	}
-	return deleteContains(deleteCanonical(parent), deleteCanonical(child))
+	if childLocation.within(parentLocation) {
+		return deleteRelated
+	}
+	return deleteUnrelated
 }
-func deleteBoundaryEqual(a, b string) bool {
-	return deleteBoundaryContains(a, b) && deleteBoundaryContains(b, a)
+func deleteBoundaryEqual(a, b string) deleteRelation {
+	forward, reverse := deleteBoundaryContains(a, b), deleteBoundaryContains(b, a)
+	if forward == deleteUnrelated || reverse == deleteUnrelated {
+		return deleteUnrelated
+	}
+	if forward == deleteUnresolved || reverse == deleteUnresolved {
+		return deleteUnresolved
+	}
+	return deleteRelated
 }
-func deletePathsOverlap(a, b string) bool {
-	return deleteBoundaryContains(a, b) || deleteBoundaryContains(b, a)
+func deletePathsOverlap(a, b string) deleteRelation {
+	forward, reverse := deleteBoundaryContains(a, b), deleteBoundaryContains(b, a)
+	if forward == deleteRelated || reverse == deleteRelated {
+		return deleteRelated
+	}
+	if forward == deleteUnresolved || reverse == deleteUnresolved {
+		return deleteUnresolved
+	}
+	return deleteUnrelated
 }
 func deleteApplicationHomes(r Request) []string {
 	paths := []string{r.home, r.codexHome, r.claudeHome, r.hermesHome, r.codeafProfile}
