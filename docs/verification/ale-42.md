@@ -4,7 +4,7 @@
 
 ## Delivered artifact evidence
 
-The acceptance runner accepts an absolute executable through `SKILLGLASS_BIN`. Without it, the runner retains its offline build behavior. TestMain copies supplied bytes to an external temporary directory and verifies equality. `artifact-identity.json` identifies both the delivered and staged files. Every finalized fixture command checks the staged digest. The tmux payload launcher independently checks the expected artifact digest immediately before recording and launching its payload. Invocation receipts retain actual executable paths, artifact hashes, environments, policies, and completions. The original installation pathname is not executed after staging.
+The acceptance runner accepts an absolute executable through `SKILLGLASS_BIN`. Without it, the runner retains its offline build behavior. TestMain copies supplied bytes to an external temporary directory and verifies equality. `artifact-identity.json` identifies both the delivered and staged files. Finalized product launches check the immutable staged product path and digest independently of the mutable test dispatch target. The tmux payload launcher independently checks the finalized dispatched executable digest immediately before recording and launching its payload. Probe controls retain their own executable identity; they never substitute probe bytes for product identity. Invocation receipts retain actual executable paths, artifact hashes, environments, policies, and completions. The original installation pathname is not executed after staging.
 
 Two fresh builds with the same source state, cached dependencies, flags, and Go toolchain are compared byte for byte. This establishes repeatability only within that tested environment. The coordinator's run report owns exact paths, digests, check results, terminal review, and remaining gate status. A pending review or suite is not delivery certification.
 
@@ -55,7 +55,7 @@ SKILLGLASS_BIN="$TMPDIR/install-a/skillglass" ./tests/acceptance/run.sh /ABSOLUT
 /opt/homebrew/bin/gofmt -l cmd internal tests/acceptance tests/launchrecord
 env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go vet ./...
 : "${SKILLGLASS_TEST_EXEC:?Supply the proved contained collection-test launcher}"
-env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go test -count=1 -mod=readonly -timeout=20m -exec "$SKILLGLASS_TEST_EXEC" ./...
+env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go test -count=1 -mod=readonly -timeout=20m -exec "$SKILLGLASS_TEST_EXEC" ./cmd/... ./internal/... ./tests/launchrecord ./tests/acceptance/cmd/...
 python3 -m unittest discover -s tests/agent_loop -v
 python3 -m unittest discover -s tests/native -v
 python3 -m unittest discover -s tests/native_verification -v
@@ -65,7 +65,8 @@ python3 -m py_compile tools/claude_containment.py tools/verify_claude.py tools/v
   tools/codex_containment.py tools/codex_probe.py tools/verify_codex_control.py tools/verify_codex_project.py tests/native_verification/test_verify_codex_control.py \
   tools/opencode_controls_probe.py tools/opencode_tool_probe.py tools/verify_opencode_controls.py
 shellcheck tests/acceptance/run.sh tools/build-local.sh
-sh -n tests/acceptance/run.sh tools/build-local.sh
+sh -n tests/acceptance/run.sh
+sh -n tools/build-local.sh
 git diff --check
 ```
 

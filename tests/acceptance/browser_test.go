@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/alexdancer/skillglass/tests/launchrecord"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/creack/pty"
 )
@@ -908,6 +909,7 @@ func runTmuxProduct(t *testing.T, tmux string, fx fixture, socket string, payloa
 	commandArgs = append(commandArgs, "-c", payloadLaunch.Cwd, strings.Join(parts, " "))
 	command := fx.wrap(exec.Command(tmux, commandArgs...))
 	command.payloadProfile = []byte(payloadLaunch.Profile)
+	command.payloadIdentity = launchrecord.File{Path: payloadLaunch.Executable, SHA256: payloadLaunch.BinarySHA256}
 	command.Dir, command.Env = fx.project, fx.environment()
 	started := time.Now()
 	utilityLaunch := recordLaunch(t, command.Cmd)

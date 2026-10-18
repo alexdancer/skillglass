@@ -27,6 +27,7 @@ var (
 	tmuxSocketDirectory  string
 	skillglassBinary     string
 	productDigest        string
+	stagedProductPath    string
 	skillglassExecutable string
 	rawSkillglassBinary  string
 	isolationProbeBinary string
@@ -139,6 +140,7 @@ func TestMain(testMain *testing.M) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	stagedProductPath = identity.Path
 	productDigest = identity.SHA256
 	if expected := os.Getenv("SKILLGLASS_EXPECTED_SHA256"); expected != "" && expected != productDigest {
 		fmt.Fprintln(os.Stderr, "runner/delivered artifact mismatch")
