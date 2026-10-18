@@ -106,6 +106,14 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 func inspectionJSONRequested(args []string) bool {
 	machine := false
 	for i := 0; i < len(args); i++ {
+		if i == 0 && !strings.HasPrefix(args[i], "-") {
+			continue
+		}
+		// Match flag.FlagSet's boundary: after a positional operand or --,
+		// filenames must not select or override the output mode.
+		if args[i] == "--" || args[i] == "-" || !strings.HasPrefix(args[i], "-") {
+			break
+		}
 		name, value, hasValue := strings.Cut(args[i], "=")
 		switch name {
 		case "--json", "-json":
