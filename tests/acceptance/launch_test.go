@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -48,6 +49,16 @@ func (command *fixtureCommand) begin() error {
 			}
 		}
 	}
+	if executable == skillglassBinary || (filepath.Base(executable) == "tmux" && len(profile) != 0) {
+		identity, err := launchrecord.Identify(skillglassBinary)
+		if err != nil {
+			return err
+		}
+		if identity.SHA256 != productDigest {
+			return fmt.Errorf("product artifact changed: got %s want %s", identity.SHA256, productDigest)
+		}
+	}
+	var err error
 	var artifacts []string
 	if filepath.Base(executable) == "tmux" {
 		for i, arg := range command.Args {
@@ -66,12 +77,11 @@ func (command *fixtureCommand) begin() error {
 			if len(command.payloadProfile) != 0 {
 				profileMode = " --deferred-profile"
 			}
-			command.Args[last] = "exec " + shellQuote(fixtureLaunchBinary) + " --directory " + shellQuote(filepath.Join(command.fixture.tmuxTemporary, "invocations")) + " --profile " + shellQuote(base64.StdEncoding.EncodeToString(profile)) + profileMode + " --artifact " + shellQuote(skillglassBinary) + " -- /bin/sh -c " + shellQuote(payload)
+			command.Args[last] = "exec " + shellQuote(fixtureLaunchBinary) + " --directory " + shellQuote(filepath.Join(command.fixture.tmuxTemporary, "invocations")) + " --profile " + shellQuote(base64.StdEncoding.EncodeToString(profile)) + profileMode + " --expected-artifact-sha256 " + shellQuote(productDigest) + " --artifact " + shellQuote(skillglassBinary) + " -- /bin/sh -c " + shellQuote(payload)
 			artifacts = []string{fixtureLaunchBinary, skillglassBinary}
 			break
 		}
 	}
-	var err error
 	command.record, err = launchrecord.Begin(command.Cmd, invocationDirectory(), nil, artifacts...)
 	return err
 }

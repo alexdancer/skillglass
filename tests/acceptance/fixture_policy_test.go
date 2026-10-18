@@ -66,6 +66,9 @@ func (fx fixture) fixturePolicy(t *testing.T, writer bool) string {
 (allow file-read* (require-any %s))
 (deny process-exec (require-not (require-any %s)))
 `, writeRule, executableLiterals, ancestorReadLiterals(allowed), sandboxString(allowed), sandboxString(filepath.Join(fx.base, "excluded", "system-inputs")), sandboxString(filepath.Join(fx.base, "excluded", "controlled-system")), sandboxString(filepath.Join(fx.base, "excluded", "modeled-system")), sandboxString(account.HomeDir), executableLiterals, executableLiterals)
+	for _, path := range fx.deniedReads {
+		policy += fmt.Sprintf("(deny file-read-data (literal %s))\n", sandboxString(path))
+	}
 	policy += absentSystemPolicy()
 	policy += fmt.Sprintf("(deny file-read* (subpath %s) (with errno ENOENT))\n", sandboxString(filepath.Join(fx.base, "excluded", "system-inputs")))
 	policy += fmt.Sprintf("(deny file-read* (subpath %s) (with errno ENOENT))\n", sandboxString(filepath.Join(fx.base, "excluded", "controlled-system")))

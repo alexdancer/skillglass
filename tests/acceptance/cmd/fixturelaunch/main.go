@@ -24,6 +24,7 @@ func run() int {
 	directory := flag.String("directory", "", "")
 	encoded := flag.String("profile", "", "")
 	artifact := flag.String("artifact", "", "")
+	expected := flag.String("expected-artifact-sha256", "", "")
 	deferred := flag.Bool("deferred-profile", false, "policy is applied by the payload rather than inherited")
 	flag.Parse()
 	args := flag.Args()
@@ -50,6 +51,13 @@ func run() int {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 125
+	}
+	if *expected != "" {
+		identity, err := launchrecord.Identify(*artifact)
+		if err != nil || identity.SHA256 != *expected {
+			fmt.Fprintln(os.Stderr, "finalized payload artifact mismatch", err)
+			return 125
+		}
 	}
 	record, err := launchrecord.Begin(command, *directory, profile, *artifact, self)
 	if err != nil {
