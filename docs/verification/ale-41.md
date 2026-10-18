@@ -29,7 +29,7 @@ These checks establish local filesystem control and absence of known manager own
 
 ## Consent and removal results
 
-CLI preview without `--confirm` exits nonzero and never writes. The complete deterministic token binds the exact source, canonical target, ancestors, tree, ownership, native inputs, discovery roots, consumers, and provenance. Another invocation accepts that token only while the facts remain unchanged. Empty, wrong, stale, and already-used confirmation cannot apply. The browser uses the held preview and requires typing `delete FULL_SOURCE_ID`; bare `y`, empty Enter, and Escape cannot remove content. Leaving the preview discards consent.
+The [README](../../README.md#build-and-use) owns CLI and browser confirmation usage and exit statuses. The complete deterministic token binds the exact source, canonical target, ancestors, tree, ownership, native inputs, discovery roots, consumers, and provenance. Another invocation accepts that token only while the facts remain unchanged. Each held preview allows only one Apply attempt, including unsuccessful attempts; this is not a persistent cross-process token-use ledger. Leaving the preview discards consent.
 
 Apply reconstructs native discovery and exact target facts before removal. It uses anchored descriptors, no-follow child opens, parent-child identity checks, membership checks, and postorder `unlinkat`. It never runs recursive ambient-path deletion or retries newly observed names. Cancellation is checked between operations. CLI interrupt and termination signals request cancellation; a hard process kill or power loss cannot produce a final result. An advisory parent lock coordinates cooperating viewer deletion processes.
 
@@ -55,17 +55,8 @@ The retry regressions exercise actual EACCES beneath a registered CodeAF alias, 
 
 `internal/collection/delete_fault_test.go` supplies deterministic checkpoints where the public executable cannot reliably interrupt a syscall. It covers first-operation failure, partial interruption, cancellation, symlink substitution before validation, child and anchored-directory rename, new membership, root replacement, and the final validation/unlink gap. The gap fixture proves that a substituted symlink can itself be unlinked while its external target and the moved original remain intact; the result is partial and unverified. The preview is also tested for single use after wrong confirmation. Additional shared-inode checkpoints prove changed bytes with restored modification time, changed permissions, unexpected extra links, and replacement symlink text cannot be adopted after an own unlink.
 
-Reproduce the checks from the repository root:
-
-```sh
-GOPROXY=off GOSUMDB=off go test ./internal/... -count=1
-GOPROXY=off GOSUMDB=off go vet ./...
-SKILLGLASS_TEST_RUN=TestALE41 tests/acceptance/run.sh /absolute/path/to/evidence
-tests/acceptance/run.sh /absolute/path/to/full-evidence
-```
-
-The acceptance runner builds the executable offline, constrains HOME/project/environment to disposable fixtures, and retains commands, outputs, sandbox policies, launch receipts, and terminal captures. It never deletes installed skills or changes live agent settings.
+Follow the [combined-suite procedure](ale-24.md#reproduce-the-acceptance-evidence) for checks, the contained collection-test launcher, fixture ancestry, evidence capture, and the acceptance runner. Set `SKILLGLASS_TEST_RUN=TestALE41` for focused deletion coverage; a filtered pass does not establish a full-suite pass. Deletion fixtures must never use installed skills or live agent settings.
 
 The ACL layout and rights are grounded in the installed macOS SDK's `sys/attr.h` and `sys/kauth.h`. A disposable probe confirms the attrreference payload offset, `kauth_filesec` magic, 44-byte header, and 24-byte entries. Ordinary `chmod` does not expose malformed binary ACL injection, so malformed kernel payloads are not an executable fixture. Unknown encodings fail closed in the bounded parser.
 
-The aggregate acceptance deadline is 25 minutes. Earlier full-run attempts took 1149.429 and 1161.180 seconds against the former 20-minute bound and are inconclusive, not passing evidence for this candidate. The finite increase allows the expanded regression suite and host contention; individual operation and PTY deadlines remain unchanged.
+Earlier full-run attempts took 1149.429 and 1161.180 seconds against the former timeout and remain inconclusive, not passing evidence for this candidate. The expanded suite changed only the aggregate runner deadline, not individual operation or PTY deadlines; the [combined-suite procedure](ale-24.md#reproduce-the-acceptance-evidence) identifies the authoritative timeout source.

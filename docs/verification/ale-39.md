@@ -30,7 +30,7 @@ A plugin manifest or its marketplace entry can declare one folder or an ordered 
 
 Ordinary imported skills do not inherit Codex disable selectors or another application's invocation policy. Winning definitions are offered automatically and through `/skill` conversation attachment in the inspected source. Existing attachments and session state are unknown. Removing an attachment does not stop later automatic discovery or model selection. A viewer refresh rereads files but does not refresh an existing CodeAF process; the native guide describes a scan at launch.
 
-Persistent CodeAF-only per-skill enable, disable and project override are unsupported. Every source exposes explicit unsupported capability reasons through the shared JSON explanation, including plugin and shared-source consumers for later aggregate previews. Changing Claude's whole-plugin setting is a broader cross-application action. Deleting a shared source affects its other consumers. Neither operation is offered as a CodeAF-only workaround, and all writers remain unavailable.
+Persistent CodeAF-only per-skill enable, disable and project override are unsupported. Every source exposes explicit unsupported capability reasons through the shared JSON explanation, including plugin and shared-source consumers for later aggregate previews. Changing Claude's whole-plugin setting is a broader cross-application action. Deleting a shared source affects its other consumers. Neither operation is offered as a CodeAF-only workaround. CodeAF-specific settings writers remain unavailable; the [README](../../README.md#build-and-use) owns source-wide deletion usage.
 
 ## Reproduce
 

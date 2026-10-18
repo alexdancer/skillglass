@@ -53,13 +53,13 @@ Skillglass currently supports:
 - source, problem, context, root, and text filtering;
 - human and JSON list, problem, read, explain, and comparison commands;
 - native availability evidence and filtering;
-- supported scoped controls using a preview, explicit confirmation, freshness validation, and persisted-result verification;
+- supported scoped controls and permanent deletion through the [documented confirmation workflows](README.md#build-and-use);
 - a responsive keyboard browser with source instructions, details, problems, scope, help, and explicit refresh;
 - rendered Markdown with an exact escaped raw view;
 - recursive supporting-resource inventory without content execution;
 - useful partial results and explicit incomplete coverage.
 
-Skillglass does not currently watch the filesystem, decide ownership or availability without evidence, change settings outside the [supported control scopes](README.md#build-and-use), delete content, or synchronize with a remote service.
+Skillglass does not currently watch the filesystem, decide ownership or availability without evidence, change settings outside the [supported control scopes](README.md#build-and-use), or synchronize with a remote service.
 
 ## Success criteria
 

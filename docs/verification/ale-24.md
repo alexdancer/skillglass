@@ -49,7 +49,7 @@ evidence="$(pwd)/.agent-loop/ale-24-evidence-$(date +%Y%m%d-%H%M%S)"
 test ! -e "$evidence" && ./tests/acceptance/run.sh "$evidence"
 ```
 
-The runner uses a 20-minute Go package timeout for the combined application suite. `SKILLGLASS_TEST_RUN` optionally selects a quoted Go test-name regular expression; its default `.` runs the full suite. A filtered run records its selection and does not claim aggregate isolation-summary artifacts when the isolation test was not selected.
+The runner records the combined application suite's Go package timeout in `build.txt`; [run.sh](../../tests/acceptance/run.sh) owns that bound. `SKILLGLASS_TEST_RUN` optionally selects a quoted Go test-name regular expression; its default `.` runs the full suite. A filtered run records its selection and does not claim aggregate isolation-summary artifacts when the isolation test was not selected.
 
 Inspect `cases.json`, raw PTY bytes, driven keys, pane dimensions, and current tmux cells. The acceptance driver builds the public executable and launches it with synthetic HOME, XDG, project, temporary, and current directories. Inspect fixture before/after manifests alongside command and browser receipts: read-only journeys must preserve sources and settings; mutation journeys must show only their intended changes and preserve unrelated state. The [inherited containment boundary](ale-23.md#runtime-containment-boundary) defines runtime restrictions, positive controls, and their limits.
 
