@@ -115,6 +115,7 @@ func (s *Snapshot) PreviewDelete(ctx context.Context, id SourceID) *DeletePrevie
 		"Links inside a bundle are unlinked without following targets. Internal hardlink aliases outside the bundle are not enumerated; deletion does not erase physical bytes.",
 		"Changes observed before unlink stop removal. Darwin name-based unlink is not atomic against arbitrary concurrent same-UID writers; external symlink targets are never traversed.",
 	}}}
+	p.view.Target.Source = id
 	if s == nil {
 		return p
 	}
@@ -172,7 +173,7 @@ func (s *Snapshot) PreviewDelete(ctx context.Context, id SourceID) *DeletePrevie
 				if path == "" {
 					path = r.Requested
 				}
-				if (r.Origin != "" || path != source.Directory) && !(kind == "standalone" && path == source.Directory) {
+				if (r.Origin != "" || !deleteBoundaryEqual(path, source.Directory)) && !(kind == "standalone" && deleteBoundaryEqual(path, source.Directory)) {
 					protect = append(protect, path)
 				}
 				if r.Context == ContextManaged || r.Context == ContextSystem {
@@ -183,7 +184,7 @@ func (s *Snapshot) PreviewDelete(ctx context.Context, id SourceID) *DeletePrevie
 				}
 			}
 			for _, other := range v.Sources {
-				if other.ID != id && deleteContains(source.Directory, other.Directory) {
+				if other.ID != id && deleteBoundaryContains(source.Directory, other.Directory) {
 					reason = "selected boundary encloses another independent source: " + other.Directory
 				}
 			}
@@ -211,7 +212,7 @@ func (s *Snapshot) PreviewDelete(ctx context.Context, id SourceID) *DeletePrevie
 	}
 	protect = append(protect, p.request.Project.Path)
 	for _, path := range protect {
-		if path != "" && deleteContains(source.Directory, deleteCanonical(path)) {
+		if path != "" && deleteBoundaryContains(source.Directory, path) {
 			reason = "unsafe boundary encompasses a protected home, collection or project: " + path
 		}
 	}
@@ -280,8 +281,26 @@ func deleteContains(parent, child string) bool {
 	rel, err := filepath.Rel(parent, child)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
+
+// Object ancestry also covers case aliases on case-insensitive Darwin filesystems.
+// Uninspectable unrelated scope remains disclosed by native discovery; lexical
+// overlap still refuses when the inaccessible path could enclose this target.
+func deleteBoundaryContains(parent, child string) bool {
+	if parent == "" || child == "" {
+		return false
+	}
+	parentLocation, parentErr := groupLocationAt(parent)
+	childLocation, childErr := groupLocationAt(child)
+	if parentErr == nil && childErr == nil {
+		return childLocation.within(parentLocation)
+	}
+	return deleteContains(deleteCanonical(parent), deleteCanonical(child))
+}
+func deleteBoundaryEqual(a, b string) bool {
+	return deleteBoundaryContains(a, b) && deleteBoundaryContains(b, a)
+}
 func deletePathsOverlap(a, b string) bool {
-	return deleteContains(a, deleteCanonical(b)) || deleteContains(deleteCanonical(b), a)
+	return deleteBoundaryContains(a, b) || deleteBoundaryContains(b, a)
 }
 func deleteApplicationHomes(r Request) []string {
 	paths := []string{r.home, r.codexHome, r.claudeHome, r.hermesHome, r.codeafProfile}
@@ -307,6 +326,14 @@ func (p *DeletePreview) Apply(ctx context.Context, confirmation string) DeleteOu
 	}
 	p.used = true
 	if p.seal == "" || confirmation == "" || confirmation != p.seal {
+		prefix := "delete:" + string(p.view.Target.Source) + ":"
+		if strings.HasPrefix(confirmation, prefix) {
+			digest, err := hex.DecodeString(strings.TrimPrefix(confirmation, prefix))
+			if err == nil && len(digest) == sha256.Size {
+				out.State = "stale"
+				out.Reason = "confirmation is stale or does not match the current exact target facts; request a new preview"
+			}
+		}
 		return out
 	}
 	if err := ctx.Err(); err != nil {

@@ -409,3 +409,155 @@ func TestALE41PublicIncompleteUnrelatedScope(t *testing.T) {
 	r = changeCommand(t, fx, "", append(append(args, "--confirm", p.Confirmation), id)...)
 	assertExit(t, r, 0)
 }
+
+func TestALE41PublicACLProof(t *testing.T) {
+	for _, scenario := range []string{"home-deny-delete", "read-only-target", "write-grant", "external-target-write", "stale-ancestor-read", "stale-target-read"} {
+		t.Run(scenario, func(t *testing.T) {
+			fx, id, target := ale40Fixture(t, false)
+			dir := filepath.Dir(target)
+			acl := func(path, rule string) {
+				t.Helper()
+				cmd := exec.Command("/bin/chmod", "+a", rule, path)
+				if raw, err := cmd.CombinedOutput(); err != nil {
+					t.Fatal(string(raw), err)
+				}
+				t.Cleanup(func() {
+					if _, err := os.Lstat(path); err == nil {
+						if raw, err := exec.Command("/bin/chmod", "-N", path).CombinedOutput(); err != nil {
+							t.Error(string(raw), err)
+						}
+					}
+				})
+			}
+			switch scenario {
+			case "home-deny-delete":
+				acl(fx.home, "everyone deny delete")
+			case "read-only-target":
+				acl(dir, "everyone allow read")
+			case "write-grant":
+				acl(dir, "everyone allow write")
+			case "external-target-write":
+				external := filepath.Join(fx.base, "allowed", "external-acl")
+				writeFile(t, external, []byte("external ACL sentinel"), 0600)
+				acl(external, "everyone allow write")
+				if err := os.Symlink(external, filepath.Join(dir, "outside")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before := treeManifest(t, fx.base)
+			p := ale41Preview(t, fx, id)
+			if scenario == "write-grant" {
+				if p.State != "refused" || !strings.Contains(p.Reason, "ACL grants mutation") {
+					t.Fatal(p.State, p.Reason)
+				}
+				assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+				return
+			}
+			if p.State != "ready" {
+				t.Fatal(p.State, p.Reason)
+			}
+			if strings.HasPrefix(scenario, "stale-") {
+				path := fx.home
+				if scenario == "stale-target-read" {
+					path = dir
+				}
+				acl(path, "everyone allow read")
+				before = treeManifest(t, fx.base)
+				r := ale41Delete(t, fx, id, p.Confirmation, "", 1)
+				var out collection.DeleteOutcome
+				decodeJSON(t, r.stdout, &out)
+				if out.State != "stale" {
+					t.Fatal(out.State, out.Reason)
+				}
+				assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+				return
+			}
+			r := ale41Delete(t, fx, id, p.Confirmation, "", 0)
+			var out collection.DeleteOutcome
+			decodeJSON(t, r.stdout, &out)
+			if !out.Verified || out.State != "removed" {
+				t.Fatal(out.State, out.Reason)
+			}
+			if _, err := os.Lstat(dir); !os.IsNotExist(err) {
+				t.Fatal("selected content remains", err)
+			}
+			if scenario == "external-target-write" {
+				if raw := readBytes(t, filepath.Join(fx.base, "allowed", "external-acl")); string(raw) != "external ACL sentinel" {
+					t.Fatal("external target changed")
+				}
+			}
+		})
+	}
+}
+
+func TestALE41PublicCaseAliases(t *testing.T) {
+	for _, managed := range []bool{false, true} {
+		t.Run(map[bool]string{false: "direct-custom", true: "managed"}[managed], func(t *testing.T) {
+			fx, _ := codexFixture(t)
+			root := filepath.Join(fx.base, "allowed", "case-root")
+			if managed {
+				root = filepath.Join(fx.home, ".codex/plugins/cache/demo/1/skills")
+			}
+			manifest := codexSkill(t, root, "case-bundle", "case-alias")
+			alias := filepath.Join(root, "CASE-BUNDLE")
+			actual, err := os.Stat(filepath.Dir(manifest))
+			if err != nil {
+				t.Fatal(err)
+			}
+			aliasInfo, err := os.Stat(alias)
+			if err != nil || !os.SameFile(actual, aliasInfo) {
+				t.Skip("filesystem has no case alias for this fixture")
+			}
+			r := fx.run(t, "list", "--root", alias, "--json")
+			var view collection.View
+			decodeJSON(t, r.stdout, &view)
+			if len(view.Sources) != 1 {
+				t.Fatal("exact source missing")
+			}
+			id := string(view.Sources[0].ID)
+			args := []string{"delete", "--root", alias, "--json"}
+			before := treeManifest(t, fx.base)
+			r = changeCommand(t, fx, "", append(args, id)...)
+			assertExit(t, r, 1)
+			var p collection.DeleteView
+			decodeJSON(t, r.stdout, &p)
+			if managed {
+				if p.State != "refused" {
+					t.Fatal("case alias bypassed manager", p.Reason)
+				}
+				assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+				return
+			}
+			if p.State != "ready" {
+				t.Fatal(p.State, p.Reason)
+			}
+			r = changeCommand(t, fx, "", append(append(args, "--confirm", p.Confirmation), id)...)
+			assertExit(t, r, 0)
+			if _, err := os.Lstat(filepath.Dir(manifest)); !os.IsNotExist(err) {
+				t.Fatal("canonical directory remains", err)
+			}
+		})
+	}
+}
+
+func TestALE41PublicCodeAFSelectedSource(t *testing.T) {
+	fx, id, target := ale40Fixture(t, false)
+	args := []string{"delete", "--agent", "codeaf", "--project", fx.project, "--json"}
+	r := changeCommand(t, fx, "", append(args, id)...)
+	assertExit(t, r, 1)
+	var p collection.DeleteView
+	decodeJSON(t, r.stdout, &p)
+	if p.State != "ready" {
+		t.Fatal(p.State, p.Reason)
+	}
+	r = changeCommand(t, fx, "", append(append(args, "--confirm", p.Confirmation), id)...)
+	assertExit(t, r, 0)
+	var out collection.DeleteOutcome
+	decodeJSON(t, r.stdout, &out)
+	if !out.Verified || out.State != "removed" {
+		t.Fatal(out.State, out.Reason)
+	}
+	if _, err := os.Lstat(filepath.Dir(target)); !os.IsNotExist(err) {
+		t.Fatal("selected CodeAF source remains", err)
+	}
+}

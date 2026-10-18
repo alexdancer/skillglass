@@ -6,7 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/alexdancer/skillglass/internal/collection"
 )
@@ -30,16 +33,18 @@ func runDelete(args []string, stdout, stderr io.Writer) int {
 		writeError(stderr, errors.New("delete requires exactly one SOURCE_ID after the flags"))
 		return 2
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 	snapshot, code := buildSnapshot(options, stderr)
 	if snapshot == nil {
 		return code
 	}
-	preview := snapshot.PreviewDelete(context.Background(), collection.SourceID(flags.Arg(0)))
+	preview := snapshot.PreviewDelete(ctx, collection.SourceID(flags.Arg(0)))
 	var value any = preview.View()
 	lines := deletePreviewLines(preview.View())
 	exit := 1
 	if confirmation.set {
-		out := preview.Apply(context.Background(), confirmation.value)
+		out := preview.Apply(ctx, confirmation.value)
 		value = out
 		lines = deleteOutcomeLines(out)
 		exit = out.ExitCode()

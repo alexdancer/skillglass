@@ -27,6 +27,7 @@ const deleteFileLimit int64 = 256 << 20
 const deleteByteLimit int64 = 1 << 30
 
 type deleteStamp struct {
+	ACL                                          string
 	Path                                         string
 	Device                                       int32
 	Inode                                        uint64
@@ -40,19 +41,66 @@ type deleteStamp struct {
 }
 
 func deleteStat(path string, st unix.Stat_t) deleteStamp {
-	return deleteStamp{path, st.Dev, st.Ino, st.Btim.Sec, st.Btim.Nsec, st.Mode, st.Uid, st.Gid, st.Flags, st.Nlink, st.Size, st.Mtim.Sec, st.Mtim.Nsec, st.Ctim.Sec, st.Ctim.Nsec}
+	return deleteStamp{"", path, st.Dev, st.Ino, st.Btim.Sec, st.Btim.Nsec, st.Mode, st.Uid, st.Gid, st.Flags, st.Nlink, st.Size, st.Mtim.Sec, st.Mtim.Nsec, st.Ctim.Sec, st.Ctim.Nsec}
 }
 func deleteObject(a, b deleteStamp) bool {
 	return a.Device == b.Device && a.Inode == b.Inode && a.BirthSec == b.BirthSec && a.BirthNano == b.BirthNano && a.Mode == b.Mode && a.UID == b.UID && a.GID == b.GID && a.Flags == b.Flags
 }
-func deleteACLAbsent(fd int) bool {
+func deleteStatMatches(expected, actual deleteStamp) bool {
+	actual.ACL = expected.ACL
+	return expected == actual
+}
+
+// Darwin ATTR_CMN_EXTENDED_SECURITY returns an attrreference to kauth_filesec.
+// Layout, bounds and rights come from sys/attr.h and sys/kauth.h. No principal's
+// identity is guessed: any mutation grant refuses, including an owner grant.
+func deleteACLProof(fd int) (string, error) {
 	attributes := struct {
 		Count, Reserved                       uint16
 		Common, Volume, Directory, File, Fork uint32
 	}{Count: 5, Common: 0x00400000}
-	var result [12]byte
+	var result [4096]byte
 	_, _, errno := syscall.Syscall6(syscall.SYS_FGETATTRLIST, uintptr(fd), uintptr(unsafe.Pointer(&attributes)), uintptr(unsafe.Pointer(&result[0])), uintptr(len(result)), 0, 0)
-	return errno == 0 && binary.LittleEndian.Uint32(result[:4]) == 12 && binary.LittleEndian.Uint32(result[8:]) == 0
+	if errno != 0 {
+		return "", fmt.Errorf("ACL metadata cannot be inspected: %w", errno)
+	}
+	size := int(binary.LittleEndian.Uint32(result[:4]))
+	if size < 12 || size > len(result) {
+		return "", errors.New("unknown ACL attribute size")
+	}
+	length := int(binary.LittleEndian.Uint32(result[8:12]))
+	if length == 0 {
+		return "absent", nil
+	}
+	offset := int(int32(binary.LittleEndian.Uint32(result[4:8]))) + 4
+	if offset < 12 || length < 44 || offset > size || length > size-offset {
+		return "", errors.New("unknown ACL attribute reference")
+	}
+	acl := result[offset : offset+length]
+	if binary.LittleEndian.Uint32(acl[:4]) != 0x012cc16d {
+		return "", errors.New("unknown ACL security format")
+	}
+	count := binary.LittleEndian.Uint32(acl[36:40])
+	flags := binary.LittleEndian.Uint32(acl[40:44])
+	if count > 128 || length != 44+int(count)*24 || flags & ^uint32(1<<17) != 0 {
+		return "", errors.New("unsupported ACL count or inheritance flags")
+	}
+	const knownRights uint32 = 0x3ffe | 1<<20 | 1<<21 | 1<<22 | 1<<23 | 1<<24
+	const mutationRights uint32 = 1<<2 | 1<<4 | 1<<5 | 1<<6 | 1<<8 | 1<<10 | 1<<12 | 1<<13 | 1<<21 | 1<<23
+	for i := 0; i < int(count); i++ {
+		entry := acl[44+i*24 : 44+(i+1)*24]
+		flags := binary.LittleEndian.Uint32(entry[16:20])
+		rights := binary.LittleEndian.Uint32(entry[20:24])
+		kind := flags & 0xf
+		if flags & ^uint32(0x1ff) != 0 || (kind != 1 && kind != 2) || rights & ^knownRights != 0 {
+			return "", errors.New("unsupported ACL entry flags or rights")
+		}
+		if kind == 1 && rights&mutationRights != 0 {
+			return "", errors.New("ACL grants mutation rights; local exclusive control is unverified")
+		}
+	}
+	sum := sha256.Sum256(acl)
+	return hex.EncodeToString(sum[:]), nil
 }
 func deleteOwned(st unix.Stat_t, fd int, symlink bool) error {
 	if st.Uid != uint32(os.Geteuid()) {
@@ -64,8 +112,8 @@ func deleteOwned(st unix.Stat_t, fd int, symlink bool) error {
 	if st.Flags&(unix.UF_IMMUTABLE|unix.UF_APPEND|unix.SF_IMMUTABLE|unix.SF_APPEND) != 0 {
 		return errors.New("immutable or append-only flags prevent safe removal")
 	}
-	if !deleteACLAbsent(fd) {
-		return errors.New("ACL ownership metadata is present or cannot be inspected safely")
+	if _, err := deleteACLProof(fd); err != nil {
+		return err
 	}
 	return nil
 }
@@ -118,8 +166,9 @@ func inventoryDelete(ctx context.Context, target DeleteTarget) ([]DeleteEntry, [
 		}
 		var st unix.Stat_t
 		err = unix.Fstat(int(f.Fd()), &st)
-		if err == nil && !deleteACLAbsent(int(f.Fd())) {
-			err = errors.New("ancestor ACL metadata is present or unverified")
+		acl, aclErr := deleteACLProof(int(f.Fd()))
+		if err == nil {
+			err = aclErr
 		}
 		f.Close()
 		if err != nil {
@@ -129,6 +178,7 @@ func inventoryDelete(ctx context.Context, target DeleteTarget) ([]DeleteEntry, [
 			return fail(errors.New("unsafe immutable or append-only boundary ancestor"))
 		}
 		stamp := deleteStat(path, st)
+		stamp.ACL = acl
 		stamp.Size = 0
 		stamp.Links = 0
 		stamp.ModifySec = 0
@@ -212,6 +262,11 @@ func inventoryDelete(ctx context.Context, target DeleteTarget) ([]DeleteEntry, [
 		if err := deleteOwned(st, int(f.Fd()), kind == unix.S_IFLNK); err != nil {
 			return fmt.Errorf("%s: %w", relative, err)
 		}
+		acl, err := deleteACLProof(int(f.Fd()))
+		if err != nil {
+			return err
+		}
+		stamp.ACL = acl
 		entry := DeleteEntry{Path: relative, Size: st.Size, Links: st.Nlink, stamp: stamp}
 		switch kind {
 		case unix.S_IFDIR:
@@ -252,6 +307,24 @@ func inventoryDelete(ctx context.Context, target DeleteTarget) ([]DeleteEntry, [
 			if err != nil {
 				return err
 			}
+			if relative == "." {
+				found := false
+				for _, child := range names {
+					if child == "SKILL.md" {
+						found = true
+					}
+				}
+				if !found {
+					return errors.New("selected directory no longer has a bundle manifest")
+				}
+				var manifest unix.Stat_t
+				if err := unix.Fstatat(int(f.Fd()), "SKILL.md", &manifest, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+					return err
+				}
+				if kind := manifest.Mode & unix.S_IFMT; kind != unix.S_IFREG && kind != unix.S_IFLNK {
+					return errors.New("bundle manifest entry is not a regular file or symlink")
+				}
+			}
 			if relative != "." {
 				for _, child := range names {
 					if child == "SKILL.md" {
@@ -273,14 +346,18 @@ func inventoryDelete(ctx context.Context, target DeleteTarget) ([]DeleteEntry, [
 		if err := unix.Fstat(int(f.Fd()), &after); err != nil {
 			return err
 		}
-		if stamp != deleteStat(relative, after) {
+		if !deleteStatMatches(stamp, deleteStat(relative, after)) {
 			return errors.New("entry changed during exact inventory")
+		}
+		finalACL, err := deleteACLProof(int(f.Fd()))
+		if err != nil || finalACL != stamp.ACL {
+			return errors.New("ACL changed during exact inventory")
 		}
 		var binding unix.Stat_t
 		if err := unix.Fstatat(parent, name, &binding, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 			return err
 		}
-		if stamp != deleteStat(relative, binding) {
+		if !deleteStatMatches(stamp, deleteStat(relative, binding)) {
 			return errors.New("entry binding changed during exact inventory")
 		}
 		return nil
@@ -289,7 +366,7 @@ func inventoryDelete(ctx context.Context, target DeleteTarget) ([]DeleteEntry, [
 		return fail(err)
 	}
 	owner.State = "local-user-controlled"
-	owner.Reason = "effective UID owns target and all entries; private boundary parent, trusted ancestors, no writable grants, ACLs, unsafe flags, special entries or crossed devices"
+	owner.Reason = "effective UID owns target and all entries; private boundary parent, trusted ancestors, no writable grants, unsupported ACLs, unsafe flags, special entries or crossed devices"
 	return entries, ancestors, owner, nil
 }
 
@@ -340,12 +417,12 @@ func (p *DeletePreview) remove(ctx context.Context, out DeleteOutcome) DeleteOut
 			}
 			var current unix.Stat_t
 			err = unix.Fstat(int(held.Fd()), &current)
-			acl := deleteACLAbsent(int(held.Fd()))
+			acl, aclErr := deleteACLProof(int(held.Fd()))
 			held.Close()
 			if err != nil {
 				return err
 			}
-			if !acl || !deleteObject(ancestor, deleteStat(ancestor.Path, current)) {
+			if aclErr != nil || acl != ancestor.ACL || !deleteObject(ancestor, deleteStat(ancestor.Path, current)) {
 				return errors.New("ancestor ownership or binding changed")
 			}
 		}
@@ -362,7 +439,14 @@ func (p *DeletePreview) remove(ctx context.Context, out DeleteOutcome) DeleteOut
 					return err
 				}
 				names, err := deleteNames(f)
+				acl, aclErr := deleteACLProof(int(f.Fd()))
 				f.Close()
+				if aclErr != nil {
+					return aclErr
+				}
+				if acl != b.stamp.ACL {
+					return errors.New("directory ACL changed before removal")
+				}
 				if err != nil {
 					return err
 				}
@@ -402,7 +486,7 @@ func (p *DeletePreview) remove(ctx context.Context, out DeleteOutcome) DeleteOut
 		if err := unix.Fstatat(int(dir.Fd()), name, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 			return err
 		}
-		if e.stamp != deleteStat(relative, st) {
+		if !deleteStatMatches(e.stamp, deleteStat(relative, st)) {
 			return fmt.Errorf("planned entry changed: %s", relative)
 		}
 		f, err := deleteOpenAt(int(dir.Fd()), name, st.Mode&unix.S_IFMT)
@@ -410,15 +494,26 @@ func (p *DeletePreview) remove(ctx context.Context, out DeleteOutcome) DeleteOut
 			return err
 		}
 		defer f.Close()
+		heldPath := ""
+		if e.Kind == "directory" {
+			heldPath, err = deleteFDPath(f)
+			if err != nil {
+				return err
+			}
+		}
 		var held unix.Stat_t
 		if err = unix.Fstat(int(f.Fd()), &held); err != nil {
 			return err
 		}
-		if e.stamp != deleteStat(relative, held) {
+		if !deleteStatMatches(e.stamp, deleteStat(relative, held)) {
 			return errors.New("entry changed during removal open")
 		}
 		if err = deleteOwned(held, int(f.Fd()), e.Kind == "symlink"); err != nil {
 			return err
+		}
+		acl, err := deleteACLProof(int(f.Fd()))
+		if err != nil || acl != e.stamp.ACL {
+			return errors.New("entry ACL changed before removal")
 		}
 		bindings = append(bindings, deleteBinding{dir, name, e.stamp})
 		defer func() { bindings = bindings[:len(bindings)-1] }()
@@ -466,8 +561,12 @@ func (p *DeletePreview) remove(ctx context.Context, out DeleteOutcome) DeleteOut
 		if err := unix.Fstatat(int(dir.Fd()), name, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 			return err
 		}
-		if !deleteObject(e.stamp, deleteStat(relative, st)) || e.Kind != "directory" && e.stamp != deleteStat(relative, st) {
+		if !deleteObject(e.stamp, deleteStat(relative, st)) || e.Kind != "directory" && !deleteStatMatches(e.stamp, deleteStat(relative, st)) {
 			return fmt.Errorf("planned entry changed before unlink: %s", relative)
+		}
+		acl, err = deleteACLProof(int(f.Fd()))
+		if err != nil || acl != e.stamp.ACL {
+			return errors.New("entry ACL changed before unlink")
 		}
 		if err := checkpoint("after-unlink-validation", relative); err != nil {
 			return err
@@ -483,7 +582,7 @@ func (p *DeletePreview) remove(ctx context.Context, out DeleteOutcome) DeleteOut
 			return fmt.Errorf("unlink succeeded but original object cannot be verified: %s", relative)
 		}
 		// Holding the object distinguishes removal of a substituted name from unlinking the consented object.
-		if !deleteUnlinked(f, e.Kind, filepath.Join(p.view.Target.Path, relative), st, held) {
+		if !deleteUnlinked(f, e.Kind, heldPath, st, held) {
 			out.Unverified = append(out.Unverified, relative)
 			return fmt.Errorf("unlink succeeded but original object link removal is unverified: %s", relative)
 		}
@@ -586,23 +685,27 @@ func (p *DeletePreview) inspectRemoval(parent *os.File, expected map[string]Dele
 	out.Replacements = deleteUniquePaths(out.Replacements)
 }
 
-func deleteUnlinked(f *os.File, kind, expectedPath string, before, after unix.Stat_t) bool {
-	if kind != "directory" {
-		return after.Nlink < before.Nlink
-	}
+func deleteFDPath(f *os.File) (string, error) {
 	var path [1024]byte
 	_, _, errno := syscall.Syscall(syscall.SYS_FCNTL, f.Fd(), uintptr(unix.F_GETPATH), uintptr(unsafe.Pointer(&path[0])))
-	if errno == syscall.ENOENT {
-		return true
-	}
 	if errno != 0 {
-		return false
+		return "", errno
 	}
 	end := 0
 	for end < len(path) && path[end] != 0 {
 		end++
 	}
-	return string(path[:end]) == expectedPath
+	if end == len(path) {
+		return "", errors.New("descriptor path exceeds bounded platform result")
+	}
+	return string(path[:end]), nil
+}
+func deleteUnlinked(f *os.File, kind, expectedPath string, before, after unix.Stat_t) bool {
+	if kind != "directory" {
+		return after.Nlink < before.Nlink
+	}
+	path, err := deleteFDPath(f)
+	return errors.Is(err, syscall.ENOENT) || err == nil && path == expectedPath
 }
 
 func deleteUniquePaths(paths []string) []string {
