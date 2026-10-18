@@ -91,12 +91,12 @@ func TestOrdinaryFixtureBoundary(t *testing.T) {
 	}
 	socket := "fixture-boundary-" + filepath.Base(fx.base)
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-	runContainedTmux(t, tmux, fx, socket, "new-session", "-d", "-x", "80", "-y", "24", "-s", "boundary", "exec /bin/bash -c "+shellQuote(tmuxBootstrapCommand))
+	runContainedTmux(t, tmux, fx, socket, &containedTmuxPayload{executable: "/bin/bash", command: "exec /bin/bash -c " + shellQuote(tmuxBootstrapCommand)}, "new-session", "-d", "-x", "80", "-y", "24", "-s", "boundary")
 	waitForPaneTitle(t, tmux, fx, socket, "boundary:0.0", tmuxBootstrapTitle)
-	runContainedTmux(t, tmux, fx, socket, "set-option", "-g", "remain-on-exit", "on")
-	runContainedTmux(t, tmux, fx, socket, "new-window", "-t", "boundary", "-n", "probe", "exec /bin/sh -c "+shellQuote("/bin/cat "+shellQuote(allowed)+" "+shellQuote(excluded)+"; printf 'BOUNDARY_FINISHED\\n'; /bin/sleep 1"))
+	runContainedTmux(t, tmux, fx, socket, nil, "set-option", "-g", "remain-on-exit", "on")
+	runContainedTmux(t, tmux, fx, socket, &containedTmuxPayload{executable: "/bin/sh", command: "exec /bin/sh -c " + shellQuote("/bin/cat "+shellQuote(allowed)+" "+shellQuote(excluded)+"; printf 'BOUNDARY_FINISHED\\n'; /bin/sleep 1")}, "new-window", "-t", "boundary", "-n", "probe")
 	_ = waitForPaneAt(t, tmux, fx, socket, "boundary:probe.0", false, "BOUNDARY_FINISHED")
-	frame := runContainedTmux(t, tmux, fx, socket, "capture-pane", "-p", "-S", "-100", "-J", "-t", "boundary:probe.0")
+	frame := runContainedTmux(t, tmux, fx, socket, nil, "capture-pane", "-p", "-S", "-100", "-J", "-t", "boundary:probe.0")
 	writeEvidence(t, "fixture-boundary/tmux.txt", []byte(frame))
 	if !strings.Contains(frame, "OWNED_ALLOWED_CANARY") || !strings.Contains(frame, "No such file or directory") || strings.Contains(frame, "OWNED_SYSTEM_CANARY") {
 		t.Errorf("tmux child must inherit controlled absence: %s", frame)

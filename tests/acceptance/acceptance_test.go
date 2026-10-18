@@ -19,11 +19,15 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/alexdancer/skillglass/tests/launchrecord"
 )
 
 var (
 	tmuxSocketDirectory  string
 	skillglassBinary     string
+	productDigest        string
+	stagedProductPath    string
 	skillglassExecutable string
 	rawSkillglassBinary  string
 	isolationProbeBinary string
@@ -131,6 +135,37 @@ func TestMain(testMain *testing.M) {
 		os.RemoveAll(builtBinaryDir)
 		os.Exit(1)
 	}
+	identity, err := launchrecord.Identify(skillglassBinary)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	stagedProductPath = identity.Path
+	productDigest = identity.SHA256
+	if expected := os.Getenv("SKILLGLASS_EXPECTED_SHA256"); expected != "" && expected != productDigest {
+		fmt.Fprintln(os.Stderr, "runner/delivered artifact mismatch")
+		os.Exit(1)
+	}
+	delivered := os.Getenv("SKILLGLASS_BIN")
+	if delivered == "" {
+		delivered = skillglassBinary
+	}
+	delivery, err := launchrecord.Identify(delivered)
+	if err != nil || delivery.SHA256 != productDigest {
+		fmt.Fprintln(os.Stderr, "delivered/staged artifact mismatch", err)
+		os.Exit(1)
+	}
+	if root := os.Getenv("SKILLGLASS_EVIDENCE"); root != "" {
+		raw, err := json.MarshalIndent(map[string]any{"delivered": delivery, "staged": identity}, "", "  ")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(filepath.Join(root, "artifact-identity.json"), raw, 0600); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}
 	skillglassExecutable = skillglassBinary
 	rawSkillglassBinary, err = filepath.EvalSymlinks(skillglassBinary)
 	if err != nil {
@@ -149,6 +184,7 @@ func TestMain(testMain *testing.M) {
 }
 
 type fixture struct {
+	deniedReads    []string
 	claudeSafeMode bool
 	policy         string
 	base           string

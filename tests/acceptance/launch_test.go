@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -15,9 +16,10 @@ import (
 
 type fixtureCommand struct {
 	*exec.Cmd
-	fixture        fixture
-	record         *launchrecord.Record
-	payloadProfile []byte
+	fixture         fixture
+	record          *launchrecord.Record
+	payloadProfile  []byte
+	payloadIdentity launchrecord.File
 }
 
 func invocationDirectory() string {
@@ -48,6 +50,16 @@ func (command *fixtureCommand) begin() error {
 			}
 		}
 	}
+	if executable == stagedProductPath || (filepath.Base(executable) == "tmux" && len(profile) != 0) {
+		identity, err := launchrecord.Identify(stagedProductPath)
+		if err != nil {
+			return err
+		}
+		if identity.SHA256 != productDigest {
+			return fmt.Errorf("product artifact changed: got %s want %s", identity.SHA256, productDigest)
+		}
+	}
+	var err error
 	var artifacts []string
 	if filepath.Base(executable) == "tmux" {
 		for i, arg := range command.Args {
@@ -60,18 +72,20 @@ func (command *fixtureCommand) begin() error {
 			if len(profile) == 0 {
 				return errors.New("uncontained tmux payload")
 			}
+			if command.payloadIdentity.Path == "" || command.payloadIdentity.SHA256 == "" {
+				return errors.New("tmux payload identity missing")
+			}
 			last := len(command.Args) - 1
 			payload := command.Args[last]
 			profileMode := ""
 			if len(command.payloadProfile) != 0 {
 				profileMode = " --deferred-profile"
 			}
-			command.Args[last] = "exec " + shellQuote(fixtureLaunchBinary) + " --directory " + shellQuote(filepath.Join(command.fixture.tmuxTemporary, "invocations")) + " --profile " + shellQuote(base64.StdEncoding.EncodeToString(profile)) + profileMode + " --artifact " + shellQuote(skillglassBinary) + " -- /bin/sh -c " + shellQuote(payload)
-			artifacts = []string{fixtureLaunchBinary, skillglassBinary}
+			command.Args[last] = "exec " + shellQuote(fixtureLaunchBinary) + " --directory " + shellQuote(filepath.Join(command.fixture.tmuxTemporary, "invocations")) + " --profile " + shellQuote(base64.StdEncoding.EncodeToString(profile)) + profileMode + " --expected-artifact-sha256 " + shellQuote(command.payloadIdentity.SHA256) + " --artifact " + shellQuote(command.payloadIdentity.Path) + " -- /bin/sh -c " + shellQuote(payload)
+			artifacts = []string{fixtureLaunchBinary, command.payloadIdentity.Path}
 			break
 		}
 	}
-	var err error
 	command.record, err = launchrecord.Begin(command.Cmd, invocationDirectory(), nil, artifacts...)
 	return err
 }

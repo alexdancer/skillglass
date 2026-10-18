@@ -10,16 +10,30 @@ test_timeout=25m
 artifact_dir=$(mktemp -d "${TMPDIR:-/tmp}/skillglass-acceptance.XXXXXX")
 trap 'rm -rf "$artifact_dir"' EXIT HUP INT TERM
 
-skillglass="$artifact_dir/skillglass"
+skillglass=${SKILLGLASS_BIN:-"$artifact_dir/skillglass"}
+supplied=false
+if [ -n "${SKILLGLASS_BIN:-}" ]; then
+ case "$skillglass" in /*) ;; *) echo "SKILLGLASS_BIN must be absolute" >&2; exit 2 ;; esac
+ [ -f "$skillglass" ] && [ -x "$skillglass" ] || { echo "SKILLGLASS_BIN must be an executable file" >&2; exit 2; }
+ supplied=true
+fi
 probe="$artifact_dir/isolationprobe"
+build_command="$go_binary build -mod=readonly -trimpath -o CASE_ROOT/bin/skillglass ./cmd/skillglass"
+if [ "$supplied" = true ]; then build_command="not run; supplied artifact"; fi
 
 cd "$repository"
-GOPROXY=off GOSUMDB=off "$go_binary" build -mod=readonly -trimpath -o "$skillglass" ./cmd/skillglass
+if [ "$supplied" = false ]; then
+ GOPROXY=off GOSUMDB=off "$go_binary" build -mod=readonly -trimpath -o "$skillglass" ./cmd/skillglass
+fi
 GOPROXY=off GOSUMDB=off "$go_binary" build -mod=readonly -trimpath -o "$probe" ./tests/acceptance/cmd/isolationprobe
+
+binary_sha256=$(shasum -a 256 "$skillglass" | awk '{print $1}')
 
 if [ -n "$evidence" ]; then
 	mkdir -p "$evidence/binary"
 	cp "$skillglass" "$evidence/binary/skillglass"
+	copy_sha256=$(shasum -a 256 "$evidence/binary/skillglass" | awk '{print $1}')
+	[ "$copy_sha256" = "$binary_sha256" ] || { echo "Evidence artifact identity mismatch" >&2; exit 1; }
 	go_version=$("$go_binary" version)
 	binary_sha256=$(shasum -a 256 "$skillglass" | awk '{print $1}')
 	candidate_head=$(git rev-parse HEAD)
@@ -34,7 +48,8 @@ if [ -n "$evidence" ]; then
 		printf 'candidate_head=%s\n' "$candidate_head"
 		printf 'worktree_clean=%s\n' "$worktree_clean"
 		printf 'binary_sha256=%s\n' "$binary_sha256"
-		printf 'runtime_network=GOPROXY=off GOSUMDB=off\n'
+		printf 'module_network=GOPROXY=off GOSUMDB=off\nruntime_network=denied by fixture sandbox profiles\n'
+		printf 'supplied_artifact=%s\ndelivered_path=%s\n' "$supplied" "$skillglass"
 		printf 'test=go test -mod=readonly ./tests/acceptance -count=1 -v -timeout=%s -run %s\n' "$test_timeout" "$test_run"
 		printf 'test_timeout=%s\n' "$test_timeout"
 		printf 'test_run=%s\n' "$test_run"
@@ -44,12 +59,15 @@ if [ -n "$evidence" ]; then
   "candidate_head": "$candidate_head",
   "worktree_clean": $worktree_clean,
   "go_version": "$go_version",
-  "build_command": "$go_binary build -mod=readonly -trimpath -o CASE_ROOT/bin/skillglass ./cmd/skillglass",
+  "build_command": "$build_command",
   "binary_sha256": "$binary_sha256",
-  "runtime_network": "GOPROXY=off GOSUMDB=off"
+  "supplied_artifact": $supplied,
+  "module_network": "GOPROXY=off GOSUMDB=off",
+  "runtime_network": "denied by fixture sandbox profiles"
 }
 EOF
 	if SKILLGLASS_BIN="$skillglass" \
+		SKILLGLASS_EXPECTED_SHA256="$binary_sha256" \
 		SKILLGLASS_ISOLATION_PROBE="$probe" \
 		SKILLGLASS_EVIDENCE="$evidence" \
 		GOPROXY=off \
@@ -61,6 +79,10 @@ EOF
 		status=$?
 		cat "$evidence/go-test.txt"
 		exit "$status"
+	fi
+	if grep -q -- "--- SKIP:" "$evidence/go-test.txt"; then
+		echo "Acceptance prerequisites skipped; see go-test.txt" >&2
+		exit 1
 	fi
 	if [ "$test_run" = "." ] || [ -f "$evidence/isolation/controls.json" ]; then
 		cp "$evidence/isolation/controls.json" "$evidence/containment.json"
@@ -76,8 +98,18 @@ EOF
 	exit 0
 fi
 
-SKILLGLASS_BIN="$skillglass" \
-	SKILLGLASS_ISOLATION_PROBE="$probe" \
-	GOPROXY=off \
-	GOSUMDB=off \
-	"$go_binary" test -mod=readonly ./tests/acceptance -count=1 -v -timeout="$test_timeout" -run "$test_run"
+if SKILLGLASS_BIN="$skillglass" \
+ SKILLGLASS_EXPECTED_SHA256="$binary_sha256" \
+ SKILLGLASS_ISOLATION_PROBE="$probe" \
+ GOPROXY=off GOSUMDB=off \
+ "$go_binary" test -mod=readonly ./tests/acceptance -count=1 -v -timeout="$test_timeout" -run "$test_run" >"$artifact_dir/go-test.txt" 2>&1; then
+ cat "$artifact_dir/go-test.txt"
+else
+ status=$?
+ cat "$artifact_dir/go-test.txt"
+ exit "$status"
+fi
+if grep -q -- "--- SKIP:" "$artifact_dir/go-test.txt"; then
+ echo "Acceptance prerequisites skipped" >&2
+ exit 1
+fi
