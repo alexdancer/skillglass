@@ -1,0 +1,215 @@
+diff --git a/codex-rs/config/src/skills_config.rs b/codex-rs/config/src/skills_config.rs
+index 9a8a338..a4191da 100644
+--- a/codex-rs/config/src/skills_config.rs
++++ b/codex-rs/config/src/skills_config.rs
+@@ -155,13 +155,15 @@ pub fn bundled_skills_enabled_from_stack(config_layer_stack: &ConfigLayerStack)
+     skills.bundled.unwrap_or_default().enabled
+ }
+ 
+-/// Resolves skill enablement rules from user and session configuration layers.
++/// Resolves skill enablement rules from enabled user, project, and session layers.
+ pub fn skill_config_rules_from_stack(config_layer_stack: &ConfigLayerStack) -> SkillConfigRules {
+     let mut entries = Vec::new();
+-    for layer in config_layer_stack.all_layers_low_to_high() {
++    for layer in config_layer_stack.layers_low_to_high() {
+         if !matches!(
+             layer.name,
+-            ConfigLayerSource::User { .. } | ConfigLayerSource::SessionFlags
++            ConfigLayerSource::User { .. }
++                | ConfigLayerSource::Project { .. }
++                | ConfigLayerSource::SessionFlags
+         ) {
+             continue;
+         }
+diff --git a/codex-rs/config/src/skills_config_tests.rs b/codex-rs/config/src/skills_config_tests.rs
+index 4d9a31e..7a852f5 100644
+--- a/codex-rs/config/src/skills_config_tests.rs
++++ b/codex-rs/config/src/skills_config_tests.rs
+@@ -52,6 +52,187 @@ enabled = {enabled}
+     )
+ }
+ 
++fn project_layer(project_dir: &std::path::Path, config: &str) -> ConfigLayerEntry {
++    ConfigLayerEntry::new(
++        ConfigLayerSource::Project {
++            dot_codex_folder: project_dir.join(".codex").abs(),
++        },
++        toml::from_str(config).expect("valid project config"),
++    )
++}
++
++fn skill_rules(layers: Vec<ConfigLayerEntry>) -> SkillConfigRules {
++    let stack = ConfigLayerStack::new(
++        layers,
++        Default::default(),
++        ConfigRequirementsToml::default(),
++    )
++    .expect("valid config stack");
++    skill_config_rules_from_stack(&stack)
++}
++
++#[test]
++fn project_rule_disables_selected_path() {
++    let root = TempDir::new().expect("temp dir");
++    let target = PathUri::from_abs_path(&root.path().join("skills/target/SKILL.md").abs());
++    let rules = skill_rules(vec![project_layer(
++        root.path(),
++        &path_toggle_config(&root.path().join("skills/target/SKILL.md"), false),
++    )]);
++
++    assert_eq!(
++        rules.resolve_disabled_paths([("target", &target)]),
++        [target].into_iter().collect()
++    );
++}
++
++#[test]
++fn project_name_rule_reenables_user_disabled_path() {
++    let root = TempDir::new().expect("temp dir");
++    let target_path = root.path().join("skills/target/SKILL.md");
++    let target = PathUri::from_abs_path(&target_path.abs());
++    let user_only = skill_rules(vec![user_layer(
++        &root,
++        &path_toggle_config(&target_path, false),
++    )]);
++    let rules = skill_rules(vec![
++        user_layer(&root, &path_toggle_config(&target_path, false)),
++        project_layer(
++            root.path(),
++            "[[skills.config]]\nname = 'target'\nenabled = true\n",
++        ),
++    ]);
++
++    assert_eq!(
++        user_only.resolve_disabled_paths([("target", &target)]),
++        [target.clone()].into_iter().collect()
++    );
++    assert_eq!(
++        rules.resolve_disabled_paths([("target", &target)]),
++        Default::default()
++    );
++}
++
++#[test]
++fn project_rule_removal_restores_user_rule_and_preserves_unrelated_rules() {
++    let root = TempDir::new().expect("temp dir");
++    let target_path = root.path().join("skills/target/SKILL.md");
++    let inherited_path = root.path().join("skills/inherited/SKILL.md");
++    let unrelated_path = root.path().join("skills/unrelated/SKILL.md");
++    let target = PathUri::from_abs_path(&target_path.abs());
++    let inherited = PathUri::from_abs_path(&inherited_path.abs());
++    let unrelated = PathUri::from_abs_path(&unrelated_path.abs());
++    let user =
++        path_toggle_config(&target_path, false) + &path_toggle_config(&inherited_path, false);
++    let retained = path_toggle_config(&unrelated_path, false);
++    let before = skill_rules(vec![
++        user_layer(&root, &user),
++        project_layer(
++            root.path(),
++            &(retained.clone() + &path_toggle_config(&target_path, true)),
++        ),
++    ]);
++    let after = skill_rules(vec![
++        user_layer(&root, &user),
++        project_layer(root.path(), &retained),
++    ]);
++    let skills = [
++        ("target", &target),
++        ("inherited", &inherited),
++        ("unrelated", &unrelated),
++    ];
++
++    assert_eq!(
++        before.resolve_disabled_paths(skills),
++        [inherited.clone(), unrelated.clone()].into_iter().collect()
++    );
++    assert_eq!(
++        after.resolve_disabled_paths(skills),
++        [target, inherited, unrelated].into_iter().collect()
++    );
++}
++
++#[test]
++fn disabled_project_rules_cannot_change_user_rules() {
++    let root = TempDir::new().expect("temp dir");
++    let denied_path = root.path().join("skills/denied/SKILL.md");
++    let allowed_path = root.path().join("skills/allowed/SKILL.md");
++    let denied = PathUri::from_abs_path(&denied_path.abs());
++    let allowed = PathUri::from_abs_path(&allowed_path.abs());
++    let project = ConfigLayerEntry::new_disabled(
++        ConfigLayerSource::Project {
++            dot_codex_folder: root.path().join(".codex").abs(),
++        },
++        toml::from_str::<toml::Value>(
++            &(path_toggle_config(&denied_path, true) + &path_toggle_config(&allowed_path, false)),
++        )
++        .expect("valid project config"),
++        "project is untrusted",
++    );
++    let rules = skill_rules(vec![
++        user_layer(&root, &path_toggle_config(&denied_path, false)),
++        project,
++    ]);
++
++    assert_eq!(
++        rules.resolve_disabled_paths([("denied", &denied), ("allowed", &allowed)]),
++        [denied].into_iter().collect()
++    );
++}
++
++#[test]
++fn session_rules_override_project_rules_in_both_directions() {
++    let root = TempDir::new().expect("temp dir");
++    let denied_path = root.path().join("skills/denied/SKILL.md");
++    let allowed_path = root.path().join("skills/allowed/SKILL.md");
++    let denied = PathUri::from_abs_path(&denied_path.abs());
++    let allowed = PathUri::from_abs_path(&allowed_path.abs());
++    let rules = skill_rules(vec![
++        project_layer(
++            root.path(),
++            &(path_toggle_config(&denied_path, true) + &path_toggle_config(&allowed_path, false)),
++        ),
++        ConfigLayerEntry::new(
++            ConfigLayerSource::SessionFlags,
++            toml::from_str::<toml::Value>(
++                &(path_toggle_config(&denied_path, false)
++                    + &path_toggle_config(&allowed_path, true)),
++            )
++            .expect("valid session config"),
++        ),
++    ]);
++
++    assert_eq!(
++        rules.resolve_disabled_paths([("denied", &denied), ("allowed", &allowed)]),
++        [denied].into_iter().collect()
++    );
++}
++
++#[test]
++fn nested_project_rules_override_parent_rules_and_preserve_inherited_rules() {
++    let root = TempDir::new().expect("temp dir");
++    let target_path = root.path().join("skills/target/SKILL.md");
++    let inherited_path = root.path().join("skills/inherited/SKILL.md");
++    let target = PathUri::from_abs_path(&target_path.abs());
++    let inherited = PathUri::from_abs_path(&inherited_path.abs());
++    let rules = skill_rules(vec![
++        project_layer(
++            root.path(),
++            &(path_toggle_config(&target_path, false)
++                + &path_toggle_config(&inherited_path, false)),
++        ),
++        project_layer(
++            &root.path().join("nested"),
++            &path_toggle_config(&target_path, true),
++        ),
++    ]);
++
++    assert_eq!(
++        rules.resolve_disabled_paths([("target", &target), ("inherited", &inherited)]),
++        [inherited].into_iter().collect()
++    );
++}
++
+ #[test]
+ fn bundled_skills_follow_effective_configuration() {
+     let codex_home = TempDir::new().expect("temp dir");
