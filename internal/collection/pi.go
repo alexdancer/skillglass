@@ -22,12 +22,14 @@ func (inputs *piInputs) addRoot(request *Request, path string, context Reference
 	if origin == "pi-inactive-cache" {
 		inputs.managers = append(inputs.managers, ManagerEvidence{Manager: "package-storage", Boundary: path, State: ManagerBoundary, Evidence: fact.provenance.Evidence})
 	} else if origin == "pi-package" {
-		base, baseErr := filepath.EvalSymlinks(fact.base)
-		resource, resourceErr := filepath.EvalSymlinks(path)
-		if baseErr == nil && resourceErr == nil && pathWithin(base, resource) {
+		switch deleteBoundaryContains(fact.base, path) {
+		case deleteRelated:
 			inputs.managers = append(inputs.managers, ManagerEvidence{Manager: fact.provenance.PluginID, Boundary: path, State: ManagerBoundary, Evidence: fact.provenance.Evidence})
-		} else if baseErr != nil || resourceErr != nil {
-			inputs.managers = append(inputs.managers, ManagerEvidence{Manager: fact.provenance.PluginID, Boundary: path, State: ManagerUncertain, Evidence: fact.provenance.Evidence})
+		case deleteUnresolved:
+			evidence := fact.provenance.Evidence
+			evidence.Kind = EvidenceUnknown
+			evidence.Reason = "Pi resource relationship to registered package " + fact.base + " cannot be inspected"
+			inputs.managers = append(inputs.managers, ManagerEvidence{Manager: fact.provenance.PluginID, Boundary: path, State: ManagerUncertain, Evidence: evidence})
 		}
 	}
 	info, err := os.Stat(path)
@@ -41,7 +43,7 @@ func buildPi(ctx context.Context, request Request) (*Snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	inputs := piInputs{facts: make(map[RootID]piRootFact), scope: AgentScope{Application: "pi", ValidatedVersion: piValidatedVersion, VersionEvidence: "docs/verification/ale-33.md", Evidence: piEvidence(EvidenceInferred, "version-specific-adapter", "", "", "rules validated with installed native Pi resource manager and skill loader; current running sessions are not inspected"), Gaps: []string{"Running CLI --skill, --no-skills, trust overrides, custom SDK loaders and extension-provided resources are not observed.", "Complex minimatch braces/extglobs, package manifest glob expansion and ignore-file rules remain unknown; bounded discovery reports those cases.", "Non-exact ? and character-class patterns involving astral text remain unknown, including conservative uncertainty under astral candidate ancestors.", "Legacy global npm installations and remote package version satisfaction are not inferred from a cache folder.", "Within one native root, discovery order follows the recorded macOS filesystem ordering; other platforms remain unvalidated.", "Standalone Markdown resources can be read; bundle comparison has incomplete coverage and deletion is unsupported.", "Package writers and deletion are unavailable; exact resource controls require a confirmed preview."}}}
+	inputs := piInputs{facts: make(map[RootID]piRootFact), scope: AgentScope{Application: "pi", ValidatedVersion: piValidatedVersion, VersionEvidence: "docs/verification/ale-33.md", Evidence: piEvidence(EvidenceInferred, "version-specific-adapter", "", "", "rules validated with installed native Pi resource manager and skill loader; current running sessions are not inspected"), Gaps: []string{"Running CLI --skill, --no-skills, trust overrides, custom SDK loaders and extension-provided resources are not observed.", "Complex minimatch braces/extglobs, package manifest glob expansion and ignore-file rules remain unknown; bounded discovery reports those cases.", "Non-exact ? and character-class patterns involving astral text remain unknown, including conservative uncertainty under astral candidate ancestors.", "Legacy global npm installations and remote package version satisfaction are not inferred from a cache folder.", "Within one native root, discovery order follows the recorded macOS filesystem ordering; other platforms remain unvalidated.", "Standalone Markdown resources can be read; bundle comparison has incomplete coverage.", "Package writers are unavailable; exact resource controls require a confirmed preview."}}}
 	inputs.overlay = request.piSettingsOverlay
 	inputs.global = inputs.settings(filepath.Join(agentDir, "settings.json"), "global", request.home)
 	inputs.trust = inputs.projectTrust(request.Project, agentDir)

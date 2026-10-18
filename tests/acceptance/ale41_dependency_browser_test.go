@@ -63,6 +63,7 @@ func TestALE41BrowserManifestImpactAndManagerRevalidation(t *testing.T) {
 				}).cells
 			}
 			text := transcript.String()
+			assertPiDeleteScopeCopy(t, text)
 			writeEvidence(t, "tmux/ale41-impact/"+managerInput+"/preview.txt", []byte(text))
 			for _, needle := range []string{"Dependent manifest:", "dependent/SKILL.md", "Independent source:", "Dependent provenance:", "Type confirmation on the next screen:"} {
 				if !paneContains(text, needle) {
