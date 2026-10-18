@@ -12,7 +12,7 @@ You supply the judgment. Skillglass supplies source identity, evidence reads and
 
 ## Start
 
-Run `skillglass companion --json` and `skillglass help`. Continue only with companion version `1.0.0` and review contract `1`. If the executable is missing or incompatible, report the mismatch and ask the user to locate a compatible build. Reading and review do not install anything.
+Run `skillglass setup --check --json`, `skillglass companion --json` and `skillglass help`. Continue only with companion version `1.0.0` and review contract `1`. If the command is missing, moved or incompatible, report the mismatch and ask the user to place a compatible executable named `skillglass` on this application's PATH. The check verifies the exact bundled files and contract; an installed skill does not pin a binary pathname. Reading and review do not install anything.
 
 For a direct read or enable/disable request, follow [references/direct.md](references/direct.md). For a collection review, continue below and read [references/proposals.md](references/proposals.md) before creating a draft.
 

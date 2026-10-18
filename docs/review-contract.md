@@ -3,7 +3,9 @@
 The executable bundles `skillglass-review` 1.0.0 in `internal/companion`. Run
 `skillglass companion --json` for its version, complete files and exact SHA-256
 hashes, or `companion --file SKILL.md` for instructions. The bundle has no runtime
-repository path dependency. Displaying it performs no installation. The
+repository path dependency. Displaying it performs no installation. Explicit user-level
+setup is documented in [companion setup](companion-setup.md); reads and review
+commands never install the companion. The
 [portable proposal reference](../internal/companion/skillglass-review/references/proposals.md)
 owns the authoring format and approval steps. The [direct command reference](../internal/companion/skillglass-review/references/direct.md)
 teaches ordinary reads and confirmed single-source controls.

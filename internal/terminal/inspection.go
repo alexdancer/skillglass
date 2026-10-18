@@ -17,6 +17,9 @@ import (
 // Run preserves human output and gives inspection commands a single JSON result,
 // including errors that occur before a request or snapshot can be constructed.
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "setup" {
+		return runSetup(args[1:], stdout, stderr)
+	}
 	if len(args) > 0 && args[0] == "review" {
 		return runReview(args[1:], stdout, stderr)
 	}
