@@ -155,6 +155,7 @@ func (s *Snapshot) PreviewDelete(ctx context.Context, id SourceID) *DeletePrevie
 			c.Scope = native.Scope()
 			v := native.Query(Filters{Context: FilterAll}, QuerySources)
 			observations = append(observations, v)
+			managed = append(managed, native.managedPaths...)
 			protect = append(protect, deleteApplicationHomes(req)...)
 			if exact, found := native.Source(id); found {
 				a := cloneAvailability(exact.Availability)
@@ -217,12 +218,6 @@ func (s *Snapshot) PreviewDelete(ctx context.Context, id SourceID) *DeletePrevie
 					}
 				}
 			}
-			for _, problem := range v.Problems {
-				text := strings.ToLower(problem.Path + " " + problem.Summary + " " + problem.Detail)
-				if problem.LimitsCoverage && (strings.Contains(text, "plugin") || strings.Contains(text, "package") || strings.Contains(text, "registry") || strings.Contains(text, "managed")) {
-					reason = "manager evidence is ambiguous: " + problem.Path + ": " + problem.Summary
-				}
-			}
 		}
 		p.view.Consumers = append(p.view.Consumers, c)
 	}
@@ -256,8 +251,9 @@ func (s *Snapshot) PreviewDelete(ctx context.Context, id SourceID) *DeletePrevie
 		Trees     []deleteStamp
 		Ancestors []deleteStamp
 		Discovery []View
+		Managed   []string
 		Inputs    []changeFact
-	}{"delete-v1", p.view, deleteStamps(entries), ancestors, observations, inputs})
+	}{"delete-v1", p.view, deleteStamps(entries), ancestors, observations, managed, inputs})
 	if err != nil {
 		p.view.State = "refused"
 		p.view.Reason = "evidence cannot be sealed: " + err.Error()

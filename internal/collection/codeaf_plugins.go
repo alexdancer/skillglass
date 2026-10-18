@@ -110,6 +110,7 @@ func (inputs *codeafInputs) readPlugins(request Request) (user, project []codeaf
 				inputs.problem(registryPath, "plugin installPath must be absolute: "+id)
 				continue
 			}
+			inputs.managedPaths = append(inputs.managedPaths, root)
 			scope := strings.TrimSpace(install.Scope)
 			isProject := scope == "project" || scope == "local"
 			if isProject && (!request.Project.Selected || !codeafSamePlace(install.ProjectPath, request.Project.Path)) {
