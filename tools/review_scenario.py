@@ -5,6 +5,8 @@ This is an evaluation controller, not a model runner. Product launches use the
 proved shared sandbox and receipts. Model prompts/transcripts are evaluator-owned.
 """
 import argparse
+from contextlib import contextmanager
+import fcntl
 import hashlib
 import json
 import os
@@ -215,14 +217,30 @@ def artifact_path(state, name):
     return destination
 
 
+@contextmanager
+def session_lock(state):
+    # Every controller mutation participates; keep the lock outside snapshots.
+    output = Path(state['output']).resolve(strict=True)
+    if output.is_relative_to(Path(state['fixture']).resolve(strict=True)):
+        raise RuntimeError('session lock must be outside the fixture')
+    descriptor = os.open(output / 'session.lock',
+                         os.O_CREAT | os.O_RDWR | os.O_CLOEXEC | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(descriptor)
+
+
 def put(args):
     state = load_session(args)
     value = json.load(sys.stdin)
-    destination = artifact_path(state, args.name)
-    with destination.open('x') as output:
-        json.dump(value, output, indent=2)
-        output.write('\n')
-    print(json.dumps({'path': str(destination), 'sha256': digest(destination)}))
+    with session_lock(state):
+        destination = artifact_path(state, args.name)
+        with destination.open('x') as output:
+            json.dump(value, output, indent=2)
+            output.write('\n')
+        print(json.dumps({'path': str(destination), 'sha256': digest(destination)}))
 
 
 def run(args):
@@ -235,44 +253,46 @@ def run(args):
     if not arguments or arguments[0] not in allowed or any(
             value.split('=')[0] in ('--confirm', '-confirm') for value in arguments):
         raise ValueError('scenario surface permits read-only public operations and previews only')
-    call = Path(state['output']) / ('call-' + uuid.uuid4().hex)
-    call.mkdir()
-    fixture = Path(state['fixture'])
-    before = manifest(fixture, artifacts=True)
-    argv = ['/usr/bin/sandbox-exec', '-f', state['profile'], state['product'], *arguments]
-    receipt = {'argv': argv, 'cwd': state['cwd'], 'environment': state['environment'],
-               'binary_sha256': state['product_sha256'], 'profile_sha256': state['profile_sha256']}
-    seal(call / 'invocation.json', (json.dumps(receipt, indent=2) + '\n').encode())
-    result = subprocess.run(argv, cwd=state['cwd'], env=state['environment'],
-                            capture_output=True, timeout=30)
-    (call / 'stdout').write_bytes(result.stdout)
-    (call / 'stderr').write_bytes(result.stderr)
-    after = manifest(fixture, artifacts=True)
-    (call / 'tree-before.json').write_text(json.dumps(before, indent=2) + '\n')
-    (call / 'tree-after.json').write_text(json.dumps(after, indent=2) + '\n')
-    if before != after:
-        raise RuntimeError('read-only product operation changed the fixture')
-    saved = None
-    if args.save:
-        saved = artifact_path(state, args.save)
-        with saved.open('xb') as output:
-            output.write(result.stdout)
-    seal(call / 'result.json', (json.dumps({'exit_code': result.returncode,
-         'no_write': True, 'saved': str(saved) if saved else None,
-         'receipt_sha256': digest(call / 'invocation.json')}, indent=2) + '\n').encode())
-    sys.stdout.buffer.write(result.stdout)
-    sys.stderr.buffer.write(result.stderr)
-    print(json.dumps({'receipt': str(call), 'saved': str(saved) if saved else None,
-                      'exit_code': result.returncode, 'no_write': True}), file=sys.stderr)
-    return result.returncode
+    with session_lock(state):
+        call = Path(state['output']) / ('call-' + uuid.uuid4().hex)
+        call.mkdir()
+        fixture = Path(state['fixture'])
+        before = manifest(fixture, artifacts=True)
+        argv = ['/usr/bin/sandbox-exec', '-f', state['profile'], state['product'], *arguments]
+        receipt = {'argv': argv, 'cwd': state['cwd'], 'environment': state['environment'],
+                   'binary_sha256': state['product_sha256'], 'profile_sha256': state['profile_sha256']}
+        seal(call / 'invocation.json', (json.dumps(receipt, indent=2) + '\n').encode())
+        result = subprocess.run(argv, cwd=state['cwd'], env=state['environment'],
+                                capture_output=True, timeout=30)
+        (call / 'stdout').write_bytes(result.stdout)
+        (call / 'stderr').write_bytes(result.stderr)
+        after = manifest(fixture, artifacts=True)
+        (call / 'tree-before.json').write_text(json.dumps(before, indent=2) + '\n')
+        (call / 'tree-after.json').write_text(json.dumps(after, indent=2) + '\n')
+        if before != after:
+            raise RuntimeError('read-only product operation changed the fixture')
+        saved = None
+        if args.save:
+            saved = artifact_path(state, args.save)
+            with saved.open('xb') as output:
+                output.write(result.stdout)
+        seal(call / 'result.json', (json.dumps({'exit_code': result.returncode,
+             'no_write': True, 'saved': str(saved) if saved else None,
+             'receipt_sha256': digest(call / 'invocation.json')}, indent=2) + '\n').encode())
+        sys.stdout.buffer.write(result.stdout)
+        sys.stderr.buffer.write(result.stderr)
+        print(json.dumps({'receipt': str(call), 'saved': str(saved) if saved else None,
+                          'exit_code': result.returncode, 'no_write': True}), file=sys.stderr)
+        return result.returncode
 
 
 def status(args):
     state = load_session(args)
-    current = manifest(Path(state['fixture']))
-    print(json.dumps({'product_tree_unchanged': current == state['initial_manifest'],
-                      'initial_manifest': state['initial_manifest'], 'current_manifest': current}, indent=2))
-    return int(current != state['initial_manifest'])
+    with session_lock(state):
+        current = manifest(Path(state['fixture']))
+        print(json.dumps({'product_tree_unchanged': current == state['initial_manifest'],
+                          'initial_manifest': state['initial_manifest'], 'current_manifest': current}, indent=2))
+        return int(current != state['initial_manifest'])
 
 
 def main():
