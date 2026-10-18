@@ -31,7 +31,7 @@ disposable homes and projects under the shared containment policy. It covers:
 Run these cases alongside the proposal and grouped-control regressions with
 `SKILLGLASS_TEST_RUN='TestALE(40|46|47)' tests/acceptance/run.sh ABSOLUTE_EVIDENCE`.
 Use external temporary directories and the offline environment from the
-[production verification guide](production-verification.md). Supporting Go
+[repository verification guide](ale-24.md#reproduce-the-acceptance-evidence). Supporting Go
 packages must use the proved contained launcher documented there. No installed
 agent session is invoked and persisted configuration does not prove adoption.
 
