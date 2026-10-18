@@ -37,6 +37,9 @@ func runCompare(args []string, stdout, stderr io.Writer) int {
 	}
 	report, err := snapshot.Compare(context.Background(), collection.SourceID(flags.Arg(0)), collection.SourceID(flags.Arg(1)))
 	if err != nil {
+		if options.jsonOutput {
+			return writeInspectionFailure("compare", snapshot, err, 1, stdout, stderr)
+		}
 		writeError(stderr, err)
 		return 1
 	}
@@ -44,10 +47,11 @@ func runCompare(args []string, stdout, stderr io.Writer) int {
 		err = json.NewEncoder(stdout).Encode(struct {
 			Operation       string                 `json:"operation"`
 			Scope           collection.Scope       `json:"scope"`
+			Problems        []collection.Problem   `json:"problems"`
 			LeftReferences  []collection.Reference `json:"left_references"`
 			RightReferences []collection.Reference `json:"right_references"`
 			Report          collection.Comparison  `json:"report"`
-		}{"compare", snapshot.Scope(), snapshot.References(report.Left), snapshot.References(report.Right), report})
+		}{"compare", snapshot.Scope(), snapshot.Problems(), snapshot.References(report.Left), snapshot.References(report.Right), report})
 	} else {
 		var output strings.Builder
 		output.WriteString(strings.Join(comparisonLines(report), "\n") + "\n\nDiscovery scope (separate from comparison coverage):\n")

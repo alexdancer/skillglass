@@ -175,6 +175,9 @@ func runList(args []string, stdout, stderr io.Writer) int {
 	}
 	filters, err := optionFilters(snapshot, options, *search)
 	if err != nil {
+		if options.jsonOutput {
+			return writeInspectionFailure("list", snapshot, err, 2, stdout, stderr)
+		}
 		writeError(stderr, err)
 		io.WriteString(stderr, usage)
 		return 2
@@ -226,6 +229,9 @@ func runProblems(args []string, stdout, stderr io.Writer) int {
 	}
 	filters, err := optionFilters(snapshot, options, *search)
 	if err != nil {
+		if options.jsonOutput {
+			return writeInspectionFailure("problems", snapshot, err, 2, stdout, stderr)
+		}
 		writeError(stderr, err)
 		io.WriteString(stderr, usage)
 		return 2

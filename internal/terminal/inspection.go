@@ -45,7 +45,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if scope, ok := envelope["scope"].(map[string]any); ok {
 		discovery, _ = scope["completeness"].(string)
 	}
-	if operation == "read" || operation == "explain" {
+	if discovery != "not-started" && (operation == "read" || operation == "explain") {
 		selected = "failed"
 		if source, ok := envelope["source"].(map[string]any); ok {
 			manifest, _ := source["manifest"].(map[string]any)
@@ -57,7 +57,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if resource, ok := envelope["resource_read"].(map[string]any); ok {
 		selected, _ = resource["coverage"].(string)
 	}
-	if operation == "compare" {
+	if discovery != "not-started" && operation == "compare" {
 		selected = "failed"
 	}
 	if report, ok := envelope["report"].(map[string]any); ok {
@@ -70,7 +70,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	if code != 0 {
 		outcome = "partial"
-		if discovery == "not-started" || selected == "failed" || selected == "incomplete" {
+		if code == 2 || discovery == "not-started" || selected == "failed" || selected == "incomplete" {
 			outcome = "failed"
 		}
 		message, _ := envelope["error"].(string)
@@ -97,6 +97,24 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return 1
 	}
 	if _, err := stdout.Write(raw); err != nil {
+		writeError(stderr, err)
+		return 1
+	}
+	return code
+}
+
+func writeInspectionFailure(operation string, snapshot *collection.Snapshot, failure error, code int, stdout, stderr io.Writer) int {
+	raw, err := encodeJSON(map[string]any{
+		"operation": operation,
+		"scope":     snapshot.Scope(),
+		"problems":  snapshot.Problems(),
+		"error":     failure.Error(),
+		"help":      usage,
+	})
+	if err == nil {
+		_, err = stdout.Write(raw)
+	}
+	if err != nil {
 		writeError(stderr, err)
 		return 1
 	}
