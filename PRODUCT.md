@@ -51,7 +51,7 @@ Skillglass currently supports:
 - explicit custom and project-associated discovery roots;
 - independent source identity and complete reference provenance;
 - source, problem, context, root, and text filtering;
-- human and JSON list, problem, read, explain, and comparison commands;
+- human and JSON inspection commands, including [explicit supporting-resource reads](docs/cli-json.md#supporting-evidence);
 - native availability evidence and filtering;
 - supported scoped controls and permanent deletion through the [documented confirmation workflows](README.md#build-and-use);
 - a responsive keyboard browser with source instructions, details, problems, scope, help, and explicit refresh;

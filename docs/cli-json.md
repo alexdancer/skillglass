@@ -2,7 +2,9 @@
 
 The ordinary CLI supports direct use by agents without the companion skill. Run
 `skillglass help` for human help or `skillglass help --json` for machine help.
-All options precede positional source IDs and resource paths.
+All options precede positional source IDs and resource paths. The first positional
+operand or `--` ends option parsing; resource names such as `--json=false` are
+literal paths and cannot change the selected output mode.
 
 ```sh
 skillglass list --agent codex --project /path/to/project --json
@@ -14,11 +16,9 @@ skillglass explain --agent codex --project /path/to/project --json SOURCE_ID
 Use the same explicit scope for discovery and subsequent reads. `list` includes
 disabled sources by default. Copy exact `sources[].id` values, never select by
 name. `source_path`, `identity`, `reference_ids`, and `references` preserve
-provenance. Proven shared directory references have one source ID; independent
-same-name copies remain separate sources. IDs bind filesystem objects rather
-than names or byte equality. A removed/replaced source is not silently rebound:
-rediscover it, review the replacement, and use its current ID. Content edits
-inside a surviving directory do not change that directory's source ID.
+provenance. The [README](../README.md#build-and-use) owns source identity and
+discovery rules. If a selected source is absent or replaced, rediscover it,
+review the replacement, and use its current ID.
 
 ## Compatibility
 
