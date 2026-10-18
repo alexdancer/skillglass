@@ -307,30 +307,20 @@ func inventoryDelete(ctx context.Context, target DeleteTarget) ([]DeleteEntry, [
 			if err != nil {
 				return err
 			}
+			var manifest unix.Stat_t
+			manifestErr := unix.Fstatat(int(f.Fd()), "SKILL.md", &manifest, unix.AT_SYMLINK_NOFOLLOW)
+			if manifestErr != nil && !errors.Is(manifestErr, unix.ENOENT) {
+				return manifestErr
+			}
 			if relative == "." {
-				found := false
-				for _, child := range names {
-					if child == "SKILL.md" {
-						found = true
-					}
-				}
-				if !found {
+				if manifestErr != nil {
 					return errors.New("selected directory no longer has a bundle manifest")
-				}
-				var manifest unix.Stat_t
-				if err := unix.Fstatat(int(f.Fd()), "SKILL.md", &manifest, unix.AT_SYMLINK_NOFOLLOW); err != nil {
-					return err
 				}
 				if kind := manifest.Mode & unix.S_IFMT; kind != unix.S_IFREG && kind != unix.S_IFLNK {
 					return errors.New("bundle manifest entry is not a regular file or symlink")
 				}
-			}
-			if relative != "." {
-				for _, child := range names {
-					if child == "SKILL.md" {
-						return fmt.Errorf("boundary contains another bundle manifest: %s", relative)
-					}
-				}
+			} else if manifestErr == nil {
+				return fmt.Errorf("boundary contains another bundle manifest: %s", relative)
 			}
 			for _, child := range names {
 				rel := child

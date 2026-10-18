@@ -118,6 +118,9 @@ func (model browserModel) deletePage() pagedView {
 	} else {
 		v := model.deletePreview.View()
 		body = deletePreviewLines(v)
+		if v.State != "ready" {
+			help = []string{"↑↓ scroll", "PgUp/PgDn", "Enter back", "Esc cancel", "q quit"}
+		}
 		if model.mode == browserDeleteConfirm && (ansi.StringWidth("Type: "+v.Phrase) > model.width || ansi.StringWidth("Input: "+model.deleteInput) > model.width) {
 			body = append([]string{"Type: " + v.Phrase, "Input: " + model.deleteInput}, body...)
 		}
