@@ -49,6 +49,7 @@ type piPackageProblem struct {
 }
 type piInputs struct {
 	managers        []ManagerEvidence
+	managerReaders  []managerReader
 	overlay         map[string][]byte
 	packageProblems []piPackageProblem
 	scope           AgentScope
@@ -61,18 +62,27 @@ type piInputs struct {
 func (inputs *piInputs) problem(path, reason string) {
 	inputs.problems = append(inputs.problems, makeProblem(ProblemNativeInput, path, reason, nil, true))
 }
-func (inputs *piInputs) settings(path, scope string) piSettings {
+func (inputs *piInputs) settings(path, scope, home string) piSettings {
 	s := piSettings{path: path}
+	coverage := startManagerRead(&inputs.managerReaders, "pi-settings", "package-registrations", path, "", piEvidence(EvidenceObserved, "package-settings", path, "packages", ""))
+	defer coverage.finish(&inputs.managers)
+	ownershipUncertain := false
+	var uncertainPackages []string
 	layer := PermissionLayer{Path: path, Scope: scope, State: "absent", Reason: "optional settings file is absent", Evidence: piEvidence(EvidenceObserved, "settings-layer", path, "skills, packages", "read-only settings observation")}
 	defer func() { inputs.scope.ConfigLayers = append(inputs.scope.ConfigLayers, layer) }()
 	raw, err := nativeBytes(path)
+	if err == nil {
+		coverage.result.SHA256 = managerInputDigest(raw)
+	}
 	if replacement, ok := inputs.overlay[path]; ok {
 		raw, err = replacement, nil
 		if len(raw) == 0 {
+			coverage.absent()
 			return s
 		}
 	}
 	if nativeAbsent(path, err) {
+		coverage.absent()
 		return s
 	}
 	var data map[string]json.RawMessage
@@ -80,9 +90,11 @@ func (inputs *piInputs) settings(path, scope string) piSettings {
 		s.uncertain = true
 		layer.State = "invalid"
 		layer.Reason = "settings must be a bounded JSON object"
+		coverage.uncertain("Pi package locations cannot be established: " + layer.Reason)
 		inputs.problem(path, layer.Reason)
 		return s
 	}
+	coverage.complete(raw)
 	layer.State = "read"
 	layer.Reason = "Pi resource settings observed"
 	if value, ok := data["skills"]; ok {
@@ -109,39 +121,61 @@ func (inputs *piInputs) settings(path, scope string) piSettings {
 	}
 	if value, ok := data["packages"]; ok {
 		var packages []json.RawMessage
-		if json.Unmarshal(value, &packages) != nil || string(value) == "null" {
+		if json.Unmarshal(value, &packages) != nil || packages == nil {
 			s.uncertain = true
+			ownershipUncertain = true
 		} else {
 			for _, raw := range packages {
 				var p piPackage
+				partial := false
 				if json.Unmarshal(raw, &p.Source) != nil {
-					var registration struct {
-						Source   string `json:"source"`
-						Autoload *bool  `json:"autoload"`
-					}
 					var shape map[string]json.RawMessage
-					if json.Unmarshal(raw, &registration) != nil || json.Unmarshal(raw, &shape) != nil {
+					if json.Unmarshal(raw, &shape) != nil || shape == nil {
 						s.uncertain = true
+						ownershipUncertain = true
 						continue
 					}
-					p.Source, p.Autoload = registration.Source, registration.Autoload
 					p.object = true
-					_, p.hasSkills = shape["skills"]
-					if p.hasSkills {
+					if json.Unmarshal(shape["source"], &p.Source) != nil {
+						ownershipUncertain = true
+						s.uncertain = true
+					}
+					if value, ok := shape["autoload"]; ok {
+						if json.Unmarshal(value, &p.Autoload) != nil || p.Autoload == nil {
+							partial = true
+							s.uncertain = true
+						}
+					}
+					if value, ok := shape["skills"]; ok {
+						p.hasSkills = true
 						var valid bool
-						p.Skills, valid = piResourceArray(shape["skills"])
+						p.Skills, valid = piResourceArray(value)
 						if !valid {
+							partial = true
 							s.uncertain = true
 						}
 					}
 				}
-				if p.Source == "" {
+				if strings.TrimSpace(p.Source) == "" {
 					s.uncertain = true
+					ownershipUncertain = true
 					continue
+				}
+				if root, _, _, _, reason := piPackageLocation(p.Source, filepath.Dir(path), home); reason != "" {
+					ownershipUncertain = true
+					s.uncertain = true
+				} else if partial {
+					uncertainPackages = append(uncertainPackages, root)
 				}
 				s.packages = append(s.packages, p)
 			}
 		}
+	}
+	if ownershipUncertain {
+		coverage.uncertain("Pi package registrations have unsupported or partial fields; arbitrary package locations cannot be established")
+	} else if len(uncertainPackages) > 0 {
+		coverage.uncertain("Pi package registration fields are partial or invalid within known package locations")
+		coverage.result.UncertainBoundaries = uncertainPackages
 	}
 	if value, ok := data["enableSkillCommands"]; ok {
 		if json.Unmarshal(value, &s.commands) != nil || string(value) == "null" {

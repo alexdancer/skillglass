@@ -31,6 +31,7 @@ func buildClaude(ctx context.Context, request Request) (*Snapshot, error) {
 	}
 	snapshot.request = original
 	snapshot.managers = append([]ManagerEvidence(nil), inputs.managers...)
+	snapshot.managerReaders = append([]managerReader(nil), inputs.managerReaders...)
 	snapshot.scope.Agent = &inputs.scope
 	roots := map[RootID]DiscoveryRoot{}
 	for _, root := range request.Roots {

@@ -17,15 +17,16 @@ type claudeSetting struct {
 }
 type claudeRule struct{ selector, kind, path string }
 type claudeInputs struct {
-	managers  []ManagerEvidence
-	scope     AgentScope
-	overrides map[string]claudeSetting
-	plugins   map[string]claudeSetting
-	rules     []claudeRule
-	problems  []Problem
-	uncertain bool
-	strict    bool
-	safe      bool
+	managers       []ManagerEvidence
+	managerReaders []managerReader
+	scope          AgentScope
+	overrides      map[string]claudeSetting
+	plugins        map[string]claudeSetting
+	rules          []claudeRule
+	problems       []Problem
+	uncertain      bool
+	strict         bool
+	safe           bool
 }
 
 func claudeHome(home string) string {

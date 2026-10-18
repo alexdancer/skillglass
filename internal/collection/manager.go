@@ -19,11 +19,13 @@ const (
 )
 
 type ManagerEvidence struct {
-	Manager  string       `json:"manager"`
-	Boundary string       `json:"boundary,omitempty"`
-	State    ManagerState `json:"state"`
-	SHA256   string       `json:"input_sha256,omitempty"`
-	Evidence Evidence     `json:"evidence"`
+	Manager             string       `json:"manager"`
+	Reader              string       `json:"reader,omitempty"`
+	Boundary            string       `json:"boundary,omitempty"`
+	UncertainBoundaries []string     `json:"uncertain_boundaries,omitempty"`
+	State               ManagerState `json:"state"`
+	SHA256              string       `json:"input_sha256,omitempty"`
+	Evidence            Evidence     `json:"evidence"`
 }
 
 func managerInputDigest(raw []byte) string {
@@ -92,4 +94,72 @@ func pluginRegistryManagers(path string, raw []byte, err error, version int, evi
 		}
 	}
 	return out
+}
+
+// managerReader identifies an ownership-bearing input, independently of its
+// recovered boundaries. A parser starts uncertain and must finalize its result.
+type managerReader struct{ Reader, Path, Boundary string }
+
+type managerRead struct {
+	result ManagerEvidence
+}
+
+func startManagerRead(required *[]managerReader, reader, manager, path, boundary string, evidence Evidence) managerRead {
+	evidence.Kind = EvidenceUnknown
+	evidence.Reason = "ownership input has not been completely interpreted"
+	*required = append(*required, managerReader{reader, path, boundary})
+	return managerRead{result: ManagerEvidence{Reader: reader, Manager: manager, Boundary: boundary, State: ManagerUncertain, Evidence: evidence}}
+}
+func (r *managerRead) absent() {
+	r.result.State = ManagerAbsent
+	r.result.SHA256 = ""
+	r.result.Evidence.Kind = EvidenceObserved
+	r.result.Evidence.Reason = "optional ownership input is absent"
+}
+func (r *managerRead) complete(raw []byte) {
+	r.result.State = ManagerObserved
+	r.result.SHA256 = managerInputDigest(raw)
+	r.result.Evidence.Kind = EvidenceObserved
+	r.result.Evidence.Reason = "ownership-bearing records completely interpreted"
+}
+func (r *managerRead) uncertain(reason string) {
+	r.result.State = ManagerUncertain
+	r.result.Evidence.Kind = EvidenceUnknown
+	r.result.Evidence.Reason = reason
+}
+func (r *managerRead) finish(facts *[]ManagerEvidence) {
+	*facts = append(*facts, r.result)
+}
+func missingManagerReaders(required []managerReader, facts []ManagerEvidence) []ManagerEvidence {
+	var missing []ManagerEvidence
+	for _, reader := range required {
+		found := false
+		for _, fact := range facts {
+			if fact.Reader == reader.Reader && fact.Evidence.InputPath == reader.Path && (fact.State == ManagerObserved || fact.State == ManagerAbsent || fact.State == ManagerUncertain) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			missing = append(missing, ManagerEvidence{Reader: reader.Reader, Manager: "ownership-coverage", Boundary: reader.Boundary, State: ManagerUncertain, Evidence: Evidence{Kind: EvidenceUnknown, Rule: "required-manager-reader", InputPath: reader.Path, Reason: "required ownership reader has no terminal coverage result"}})
+		}
+	}
+	return missing
+}
+func requiredManagerReaders(request Request) []managerReader {
+	switch request.Agent {
+	case "pi":
+		base, err := piAgentDir(request.home)
+		if err != nil {
+			return []managerReader{{"pi-settings", request.home, ""}}
+		}
+		result := []managerReader{{"pi-settings", filepath.Join(base, "settings.json"), ""}}
+		if request.Project.Selected {
+			result = append(result, managerReader{"pi-settings", filepath.Join(request.Project.Path, ".pi", "settings.json"), ""})
+		}
+		return result
+	case "claude-code":
+		return []managerReader{{"claude-marketplaces", filepath.Join(request.claudeHome, "plugins", "known_marketplaces.json"), ""}}
+	}
+	return nil
 }

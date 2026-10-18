@@ -84,7 +84,11 @@ func deletePreviewLines(v collection.DeleteView) []string {
 			lines = append(lines, "Root ("+string(root.State)+", "+root.Origin+"): "+root.Requested)
 		}
 		for _, manager := range c.Managers {
-			lines = append(lines, "Manager evidence ("+string(manager.State)+"): "+manager.Manager+" | "+manager.Boundary+" | "+manager.Evidence.InputPath+" | "+manager.Evidence.Reason)
+			boundary := manager.Boundary
+			if len(manager.UncertainBoundaries) > 0 {
+				boundary = strings.Join(manager.UncertainBoundaries, ", ")
+			}
+			lines = append(lines, "Manager evidence ("+string(manager.State)+"): "+manager.Manager+" | "+boundary+" | "+manager.Evidence.InputPath+" | "+manager.Evidence.Reason)
 		}
 		for _, problem := range c.Problems {
 			if problem.LimitsCoverage {

@@ -102,6 +102,9 @@ func (p *DeletePreview) View() DeleteView {
 		consumer := &view.Consumers[i]
 		consumer.Scope = cloneScope(consumer.Scope)
 		consumer.Managers = append([]ManagerEvidence(nil), consumer.Managers...)
+		for j := range consumer.Managers {
+			consumer.Managers[j].UncertainBoundaries = append([]string(nil), consumer.Managers[j].UncertainBoundaries...)
+		}
 		consumer.Problems = cloneProblems(consumer.Problems)
 		consumer.Dependencies = cloneDeleteDependencies(consumer.Dependencies)
 		consumer.References = append([]Reference(nil), consumer.References...)
@@ -169,6 +172,8 @@ func (s *Snapshot) PreviewDelete(ctx context.Context, id SourceID) *DeletePrevie
 			v := native.Query(Filters{Context: FilterAll}, QuerySources)
 			observations = append(observations, v)
 			c.Managers = append([]ManagerEvidence(nil), native.managers...)
+			required := append(requiredManagerReaders(req), native.managerReaders...)
+			c.Managers = append(c.Managers, missingManagerReaders(required, c.Managers)...)
 			c.Problems = cloneProblems(v.Problems)
 			c.Dependencies = deleteDependencies(native, p.view.Target, true)
 			protect = append(protect, deleteApplicationHomes(req)...)
@@ -198,6 +203,15 @@ func (s *Snapshot) PreviewDelete(ctx context.Context, id SourceID) *DeletePrevie
 			})
 			for _, manager := range c.Managers {
 				relevant := manager.Boundary == "" || deletePathsOverlap(source.Directory, manager.Boundary)
+				if manager.State == ManagerUncertain && len(manager.UncertainBoundaries) > 0 {
+					relevant = false
+					for _, boundary := range manager.UncertainBoundaries {
+						if deletePathsOverlap(source.Directory, boundary) {
+							relevant = true
+							break
+						}
+					}
+				}
 				if relevant && manager.State == ManagerUncertain {
 					reason = "manager ownership evidence is uncertain: " + c.Application + ": " + manager.Evidence.InputPath + ": " + manager.Evidence.Reason
 					p.view.Ownership.State, p.view.Ownership.Reason = "uncertain", reason
@@ -206,7 +220,7 @@ func (s *Snapshot) PreviewDelete(ctx context.Context, id SourceID) *DeletePrevie
 					reason = "managed or system boundary: " + manager.Boundary
 					p.view.Ownership.State, p.view.Ownership.Reason = "managed", reason
 				}
-				if manager.State != ManagerUncertain && manager.Evidence.InputPath != "" {
+				if (manager.State != ManagerUncertain || manager.SHA256 != "") && manager.Evidence.InputPath != "" {
 					fact, err := observeChangePath(manager.Evidence.InputPath)
 					if err == nil {
 						inputs = append(inputs, fact)
