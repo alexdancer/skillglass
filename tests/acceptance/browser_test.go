@@ -1143,10 +1143,25 @@ func writeEvidence(t *testing.T, relative string, content []byte) {
 	}
 }
 
-func runContainedTmux(t *testing.T, tmux string, fx fixture, socket string, args ...string) string {
+type containedTmuxPayload struct {
+	executable string
+	command    string
+}
+
+func runContainedTmux(t *testing.T, tmux string, fx fixture, socket string, payload *containedTmuxPayload, args ...string) string {
 	t.Helper()
 	commandArgs := append([]string{"-S", fx.tmuxSocket(socket), "-f", "/dev/null"}, args...)
+	if payload != nil {
+		commandArgs = append(commandArgs, payload.command)
+	}
 	command := fx.recordedCommand(context.Background(), tmux, commandArgs...)
+	if payload != nil {
+		identity, err := launchrecord.Identify(payload.executable)
+		if err != nil {
+			t.Fatal(err)
+		}
+		command.payloadIdentity = identity
+	}
 	command.Dir, command.Env = fx.project, fx.environment()
 	output, err := command.CombinedOutput()
 	if err != nil {

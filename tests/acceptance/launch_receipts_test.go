@@ -142,7 +142,7 @@ func TestALE33FindingLaunchReceipts(t *testing.T) {
 }
 
 func TestALE33FindingTmuxReceipts(t *testing.T) {
-	product, err := launchrecord.Identify(skillglassBinary)
+	product, err := launchrecord.Identify(stagedProductPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,12 +156,24 @@ func TestALE33FindingTmuxReceipts(t *testing.T) {
 		}
 		raw, err := json.MarshalIndent(struct {
 			Supplied launchrecord.File `json:"supplied"`
-			Executed launchrecord.File `json:"executed"`
+			Staged   launchrecord.File `json:"staged"`
 		}{original, product}, "", "  ")
 		if err != nil {
 			t.Fatal(err)
 		}
 		writeEvidence(t, "fixture-launch/supplied-product.json", raw)
+	}
+	printfIdentity, err := launchrecord.Identify("/usr/bin/printf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	shellIdentity, err := launchrecord.Identify("/bin/sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	launcherIdentity, err := launchrecord.Identify(fixtureLaunchBinary)
+	if err != nil {
+		t.Fatal(err)
 	}
 	fx := piFixture(t)
 	tmux, err := exec.LookPath("tmux")
@@ -170,10 +182,10 @@ func TestALE33FindingTmuxReceipts(t *testing.T) {
 	}
 	socket := "receipts-" + filepath.Base(fx.base)
 	defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
-	runContainedTmux(t, tmux, fx, socket, "new-session", "-d", "-x", "48", "-y", "24", "-s", "receipt", "exec /bin/bash -c "+shellQuote(tmuxBootstrapCommand))
+	runContainedTmux(t, tmux, fx, socket, &containedTmuxPayload{executable: "/bin/bash", command: "exec /bin/bash -c " + shellQuote(tmuxBootstrapCommand)}, "new-session", "-d", "-x", "48", "-y", "24", "-s", "receipt")
 	waitForPaneTitle(t, tmux, fx, socket, "receipt:0.0", tmuxBootstrapTitle)
-	runContainedTmux(t, tmux, fx, socket, "set-option", "-g", "remain-on-exit", "on")
-	runContainedTmux(t, tmux, fx, socket, "new-window", "-t", "receipt", "-n", "probe", "exec /usr/bin/printf 'tmux-receipt\\n'")
+	runContainedTmux(t, tmux, fx, socket, nil, "set-option", "-g", "remain-on-exit", "on")
+	runContainedTmux(t, tmux, fx, socket, &containedTmuxPayload{executable: "/usr/bin/printf", command: "exec /usr/bin/printf 'tmux-receipt\\n'"}, "new-window", "-t", "receipt", "-n", "probe")
 	directory := filepath.Join(fx.tmuxTemporary, "invocations")
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
@@ -211,16 +223,21 @@ func TestALE33FindingTmuxReceipts(t *testing.T) {
 			if len(identity.Executables) != 1 || len(identity.Artifacts) != 2 || identity.Argv[0] != "/bin/sh" || identity.Profile == nil || identity.Profile.InheritedFrom != identity.Profile.SHA256 {
 				t.Fatalf("missing inherited payload identity: %s", raw)
 			}
-			if identity.Artifacts[0] != product {
-				t.Fatalf("payload receipt must identify the executed product: %s", raw)
+			if identity.Artifacts[0] != printfIdentity || identity.Artifacts[1] != launcherIdentity || identity.Executables[0] != shellIdentity || len(identity.Argv) != 3 || identity.Argv[1] != "-c" || identity.Argv[2] != "exec /usr/bin/printf 'tmux-receipt\\n'" || identity.Cwd != fx.project {
+				t.Fatalf("payload receipt must identify the actual printf, shell and launcher: %s", raw)
 			}
 			output, err := os.ReadFile(filepath.Join(directory, completion.ID+".stdout"))
 			if err != nil {
 				t.Fatal(err)
 			}
-			if completion.Stdout != launchrecord.Digest(output) || !strings.Contains(string(output), "tmux-receipt") {
+			if completion.Stdout != launchrecord.Digest(output) || string(output) != "tmux-receipt\r\n" {
 				t.Fatal("tmux output identity mismatch")
 			}
+			status, err := waitForTmuxExit(t, tmux, fx, socket, "receipt:probe.0", 0, 5*time.Second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeEvidence(t, "fixture-launch/printf-exit.txt", []byte(status))
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
