@@ -14,7 +14,6 @@ The project was planned as **Skill Viewer**. Existing Linear titles and historic
 
 - Extend version-specific availability evidence and remaining validation coverage.
 - Extend validated control scopes.
-- Work offline, with the first release targeting macOS.
 
 Native integrations cover Codex, Claude Code, Hermes, Pi, OpenCode, Gemini CLI, and CodeAF. Capabilities must be validated per application, version, and scope. CodeAF browsing with explicit persistent-control limitations is an accepted first-release exception.
 
@@ -51,9 +50,9 @@ Build on macOS with Go 1.27.1. Download the pinned dependencies once with networ
 ./tools/build-local.sh "$PWD/bin"
 ```
 
-The destination must be an absolute path that does not exist. The script refuses replacement, builds with cached dependencies and Go 1.27.1, and writes `bin/build.txt` with the source revision, dirty status, command, toolchain, architecture, and binary digest. Set `GO_BIN` if Go is installed elsewhere. No signing service, account, or public release is required.
+The destination must be an absolute path that does not exist. The script refuses replacement, builds with cached dependencies and Go 1.27.1, and writes `bin/build.txt` with the source revision, dirty status, command, toolchain, architecture, delivered path, binary digest, and Go module build information. Set `GO_BIN` if Go is installed elsewhere. No signing service, account, or public release is required.
 
-Run `bin/skillglass --help` to check the executable. To install it in a user-owned PATH directory, copy `bin/skillglass` there after checking the receipt. The build script never replaces an existing installation. Runtime discovery and controls use local files and require no credentials or network service. See [offline delivery verification and support limits](docs/verification/ale-42.md).
+Run `bin/skillglass --help` to check the executable. To install it in a user-owned PATH directory, copy `bin/skillglass` there after checking the receipt. For an update, build into a fresh destination and inspect its receipt before replacing your installed copy. The build script never replaces an existing installation. Runtime discovery and controls use local files and require no credentials or network service. See [offline delivery verification and support limits](docs/verification/ale-42.md).
 
 Generic inventory operations require an explicit discovery root; help does not. Select native discovery with `--agent codex|claude-code|pi|opencode|codeaf|gemini|hermes`. The version-specific scope and evidence contracts are documented for [Codex](docs/verification/ale-26.md), [Claude Code](docs/verification/ale-29.md), [Pi](docs/verification/ale-33.md), [OpenCode](docs/verification/ale-35.md), [CodeAF](docs/verification/ale-39.md), [Gemini CLI](docs/verification/ale-37.md), and [Hermes](docs/verification/ale-31.md). Repeat `--root` for custom locations. Use `--project-root` for roots associated with a selected `--project`; using a project root without `--project` is a usage error. Without `--agent`, project context never selects a root implicitly. Explicit roots containing `SKILL.md` select that bundle; otherwise only direct child bundle candidates are inspected, not nested collections. Explicit directory and manifest symlinks may resolve outside the root, but their siblings are not scanned.
 

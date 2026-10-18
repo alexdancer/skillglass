@@ -49,17 +49,17 @@ evidence="$(pwd)/.agent-loop/ale-24-evidence-$(date +%Y%m%d-%H%M%S)"
 test ! -e "$evidence" && ./tests/acceptance/run.sh "$evidence"
 ```
 
-The runner records the combined application suite's Go package timeout in `build.txt`; [run.sh](../../tests/acceptance/run.sh) owns that bound. `SKILLGLASS_TEST_RUN` optionally selects a quoted Go test-name regular expression; its default `.` runs the full suite. A filtered run records its selection and does not claim aggregate isolation-summary artifacts when the isolation test was not selected.
+The runner records the combined application suite's Go package timeout in `build.txt`; [run.sh](../../tests/acceptance/run.sh) owns that bound. `SKILLGLASS_TEST_RUN` optionally selects a quoted Go test-name regular expression; its default `.` runs the full suite. A filtered run records its selection and does not claim aggregate isolation-summary artifacts when the isolation test was not selected. Skipped prerequisites fail the runner.
 
-Inspect `cases.json`, raw PTY bytes, driven keys, pane dimensions, and current tmux cells. The acceptance driver builds the public executable and launches it with synthetic HOME, XDG, project, temporary, and current directories. Inspect fixture before/after manifests alongside command and browser receipts: read-only journeys must preserve sources and settings; mutation journeys must show only their intended changes and preserve unrelated state. The [inherited containment boundary](ale-23.md#runtime-containment-boundary) defines runtime restrictions, positive controls, and their limits.
+Inspect `cases.json`, raw PTY bytes, driven keys, pane dimensions, and current tmux cells. The acceptance driver builds the public executable by default and launches it with synthetic HOME, XDG, project, temporary, and current directories. See [delivered-artifact verification](ale-42.md#delivered-artifact-evidence) for supplying an existing executable and its staged identity chain. Inspect fixture before/after manifests alongside command and browser receipts: read-only journeys must preserve sources and settings; mutation journeys must show only their intended changes and preserve unrelated state. The [inherited containment boundary](ale-23.md#runtime-containment-boundary) defines runtime restrictions, positive controls, and their limits.
 
-Run repository checks after the last source or documentation change. The full Go suite now includes Codex snapshot and writer fault tests in `internal/collection`, which do not contain their own process. Set `SKILLGLASS_TEST_EXEC` to the absolute path of the coordinator-provided contained test launcher before running that suite. It must launch the collection test executable with disposable HOME/CODEX_HOME/CLAUDE_CONFIG_DIR/XDG paths, external TMPDIR/GOTMPDIR, controlled native-system-input absence, denied network and outside-content reads, and bounded fixture writes, using the shared policy's executable allowances. Prove its positive and negative controls and record finalized launch contexts using the [containment contract](ale-23.md#runtime-containment-boundary). Do not substitute an uncontained full-suite command if the launcher is unavailable.
+Run repository checks after the last source or documentation change. Supporting Go packages include Codex snapshot and writer fault tests in `internal/collection`, which do not contain their own process. Set `SKILLGLASS_TEST_EXEC` to the absolute path of the coordinator-provided contained test launcher before running those packages. It must launch each compiled test executable with disposable HOME/CODEX_HOME/CLAUDE_CONFIG_DIR/XDG paths, external TMPDIR/GOTMPDIR, controlled native-system-input absence, denied network and outside-content reads, and bounded fixture writes, using the shared policy's executable allowances. Prove its positive and negative controls and record finalized launch contexts using the [containment contract](ale-23.md#runtime-containment-boundary). Supply the launcher's required environment, including a fresh built isolation probe through `SKILLGLASS_COLLECTION_PROBE` and fresh evidence through `SKILLGLASS_COLLECTION_EVIDENCE`. Do not substitute an uncontained command if the launcher is unavailable. The complete acceptance package runs separately through `run.sh` above: its controller is distinct from its contained product payloads and must not run through the supporting-package launcher.
 
 ```sh
 /opt/homebrew/bin/gofmt -l cmd internal tests/acceptance tests/launchrecord
-env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go vet ./...
+env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go vet -mod=readonly ./...
 : "${SKILLGLASS_TEST_EXEC:?Supply the proved contained collection-test launcher}"
-env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go test -count=1 -mod=readonly -timeout=20m -exec "$SKILLGLASS_TEST_EXEC" ./...
+env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go test -count=1 -mod=readonly -timeout=20m -exec "$SKILLGLASS_TEST_EXEC" ./cmd/... ./internal/... ./tests/launchrecord ./tests/acceptance/cmd/...
 python3 -m unittest discover -s tests/agent_loop -v
 python3 -m unittest discover -s tests/native -v
 python3 -m py_compile tools/verify_hermes.py tools/verify_hermes_policy.py tools/verify_hermes_controls.py tools/hermes_control_probe.py tests/native/test_verify_hermes_retired.py
@@ -68,8 +68,9 @@ python3 -m py_compile tools/claude_containment.py tools/verify_claude.py tools/v
   tests/native_verification/test_verify_claude.py tests/native_verification/test_claude_controls_containment.py tests/native/test_opencode_containment.py \
   tools/codex_containment.py tools/codex_probe.py tools/verify_codex_control.py tools/verify_codex_project.py tests/native_verification/test_verify_codex_control.py \
   tools/opencode_controls_probe.py tools/opencode_tool_probe.py tools/verify_opencode_controls.py
-shellcheck tests/acceptance/run.sh
+shellcheck tests/acceptance/run.sh tools/build-local.sh
 sh -n tests/acceptance/run.sh
+sh -n tools/build-local.sh
 git diff --check
 ```
 

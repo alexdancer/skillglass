@@ -1,10 +1,10 @@
 # Offline Mac delivery verification
 
-`tools/build-local.sh OUTPUT_DIRECTORY` builds the local Mac executable from cached dependencies with Go 1.27.1 and `-mod=readonly -trimpath`. The absolute destination must not exist. `build.txt` records the source revision, worktree cleanliness, exact build command, toolchain, architecture, delivered path, SHA-256, and Go module build information. Dependency bootstrap requires network access once. The cached build invocation disables Go module network access. This is a local unsigned build; public distribution, signing, notarization, and release hosting are unverified.
+The [README](../../README.md#build-and-use) owns local Mac build, installation, update, and runtime instructions. This record owns delivered-artifact verification and its limits. The cached build uses `-mod=readonly -trimpath` with Go module network access disabled. This is a local unsigned build; public distribution, signing, notarization, and release hosting are unverified.
 
 ## Delivered artifact evidence
 
-The acceptance runner accepts an absolute executable through `SKILLGLASS_BIN`. Without it, the runner retains its offline build behavior. TestMain copies supplied bytes to an external temporary directory and verifies equality. `artifact-identity.json` identifies both the delivered and staged files. Finalized product launches check the immutable staged product path and digest independently of the mutable test dispatch target. The tmux payload launcher independently checks the finalized dispatched executable digest immediately before recording and launching its payload. Probe controls retain their own executable identity; they never substitute probe bytes for product identity. Invocation receipts retain actual executable paths, artifact hashes, environments, policies, and completions. The original installation pathname is not executed after staging.
+The acceptance runner accepts an absolute executable through `SKILLGLASS_BIN`. Without it, the runner retains its offline build behavior. TestMain copies supplied bytes to an external temporary directory and verifies equality. `artifact-identity.json` identifies both the delivered and staged files. Finalized product launches and contained tmux starts check the stable staged product path and digest independently of the mutable test dispatch target. Ordinary tmux utility queries do not check the product digest. The tmux payload launcher independently checks the finalized dispatched executable digest immediately before recording and launching its payload. Probe controls retain their own executable identity; they never substitute probe bytes for product identity. Invocation receipts retain actual executable paths, artifact hashes, environments, policies, and completions. The original installation pathname is not executed after staging.
 
 Two fresh builds with the same source state, cached dependencies, flags, and Go toolchain are compared byte for byte. This establishes repeatability only within that tested environment. The coordinator's run report owns exact paths, digests, check results, terminal review, and remaining gate status. A pending review or suite is not delivery certification.
 
@@ -42,7 +42,7 @@ Running-session adoption remains unknown for these fixture journeys. These journ
 
 ## Reproduce the artifact check
 
-Use macOS, cached dependencies, Go 1.27.1, tmux, Python 3, and shellcheck. Keep temporary homes outside every checkout. Supply a fresh absolute evidence directory and the separately proved contained collection-test launcher for full Go testing. Required prerequisite skips fail acceptance.
+Follow the [combined-suite prerequisites and containment procedure](ale-24.md#reproduce-the-acceptance-evidence). After dependency setup, build twice into fresh destinations and supply one artifact to the full acceptance runner:
 
 ```sh
 export TMPDIR="$(mktemp -d /private/tmp/ale42-check.XXXXXX)"
@@ -51,23 +51,8 @@ mkdir "$GOTMPDIR"
 ./tools/build-local.sh "$TMPDIR/install-a"
 ./tools/build-local.sh "$TMPDIR/install-b"
 cmp "$TMPDIR/install-a/skillglass" "$TMPDIR/install-b/skillglass"
+unset SKILLGLASS_TEST_RUN
 SKILLGLASS_BIN="$TMPDIR/install-a/skillglass" ./tests/acceptance/run.sh /ABSOLUTE/FRESH/EVIDENCE
-/opt/homebrew/bin/gofmt -l cmd internal tests/acceptance tests/launchrecord
-env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go vet ./...
-: "${SKILLGLASS_TEST_EXEC:?Supply the proved contained collection-test launcher}"
-env GOPROXY=off GOSUMDB=off /opt/homebrew/bin/go test -count=1 -mod=readonly -timeout=20m -exec "$SKILLGLASS_TEST_EXEC" ./cmd/... ./internal/... ./tests/launchrecord ./tests/acceptance/cmd/...
-python3 -m unittest discover -s tests/agent_loop -v
-python3 -m unittest discover -s tests/native -v
-python3 -m unittest discover -s tests/native_verification -v
-python3 -m py_compile tools/verify_hermes.py tools/verify_hermes_policy.py tools/verify_hermes_controls.py tools/hermes_control_probe.py tests/native/test_verify_hermes_retired.py
-python3 -m py_compile tools/claude_containment.py tools/verify_claude.py tools/verify_claude_controls.py tools/verify_claude_plugin_manifest.py \
-  tests/native_verification/test_verify_claude.py tests/native_verification/test_claude_controls_containment.py tests/native/test_opencode_containment.py \
-  tools/codex_containment.py tools/codex_probe.py tools/verify_codex_control.py tools/verify_codex_project.py tests/native_verification/test_verify_codex_control.py \
-  tools/opencode_controls_probe.py tools/opencode_tool_probe.py tools/verify_opencode_controls.py
-shellcheck tests/acceptance/run.sh tools/build-local.sh
-sh -n tests/acceptance/run.sh
-sh -n tools/build-local.sh
-git diff --check
 ```
 
-The full Go command must not use an uncontained fallback. The launcher must preserve the existing fixture policy and prove its controls before executing collection tests. Acceptance runs retain separate controller and product-payload receipts. Failed, skipped, blocked, or unrun checks belong in the run report.
+Then run the [repository checks](ale-24.md#reproduce-the-acceptance-evidence) with the separately proved contained collection-test launcher and inspect the terminal artifacts. Acceptance runs retain separate controller and product-payload receipts. Failed, skipped, blocked, or unrun checks belong in the run report.
