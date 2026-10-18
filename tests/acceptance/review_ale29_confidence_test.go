@@ -258,8 +258,12 @@ func TestALE29ReviewModelRestrictionsResolveUnknownModelInvocation(t *testing.T)
 func TestALE29ReviewCanonicalAgentSelection(t *testing.T) {
 	fx, _ := codexFixture(t)
 	claudeListResult(t, fx, 0)
+	before := treeManifest(t, fx.base)
 	result := fx.run(t, "list", "--agent", "claude", "--project", fx.project, "--json")
-	if result.code == 0 || !strings.Contains(string(result.stderr), "unknown agent") {
-		t.Fatalf("unrequired alias accepted: %+v", result)
+	assertExit(t, result, 2)
+	output := inspectResult(t, result)
+	if output.Operation != "list" || output.Outcome != "failed" || output.Coverage.Discovery != "not-started" || output.Coverage.Selected != "not-applicable" || output.Failure == nil || output.Failure.Code != "usage-error" || output.Failure.Action == "" || !strings.Contains(string(result.stdout), "unknown agent") {
+		t.Fatalf("noncanonical agent rejection lost its inspection contract: %s", result.stdout)
 	}
+	assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 }
