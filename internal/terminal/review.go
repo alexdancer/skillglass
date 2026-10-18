@@ -137,6 +137,18 @@ func runReview(args []string, stdout, stderr io.Writer) int {
 		return writeReviewJSON(selection, stdout, stderr)
 	}
 	fmt.Fprintf(stdout, "Selection %s | %s\nChosen in proposal order: %s\nOmitted (unapproved): %s\n", selection.SelectionID, selection.State, displayOptional(strings.Join(selection.Chosen, ", ")), displayOptional(strings.Join(selection.Omitted, ", ")))
+	fmt.Fprintf(stdout, "Scope: %s | project: %s\n", selection.Proposal.Draft.Context.Scope, displayOptional(selection.Proposal.Draft.Context.Project))
+	chosenChanges := make(map[string]bool, len(selection.Chosen))
+	for _, id := range selection.Chosen {
+		chosenChanges[id] = true
+	}
+	for _, change := range selection.Proposal.Changes {
+		if !chosenChanges[change.Recommendation.ID] {
+			continue
+		}
+		r := change.Recommendation
+		fmt.Fprintf(stdout, "Selected %s: %s %s | scope: %s\nSource ID: %s\nSource: %s\n", safeInline(r.ID), r.Application, r.Action, selection.Proposal.Draft.Context.Scope, safeInline(string(r.Source)), safeInline(change.Baseline.SourcePath))
+	}
 	renderReviewEffects(stdout, selection.Effects)
 	if selection.State == "preview" {
 		fmt.Fprintf(stdout, "After explicit user approval, repeat this exact selection with --approve %s\n", selection.SelectionID)
