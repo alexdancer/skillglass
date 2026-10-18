@@ -448,6 +448,17 @@ func (p *changePlan) apply(ctx context.Context) (out ChangeOutcome) {
 	if created.Exists {
 		committedParent = created.Identity
 	}
+	// Collection progression additionally binds this exact staged object.
+	// Preserve the native result inspection even when that extra proof fails.
+	if p.reviewCheck != nil {
+		committed, observationErr := observeChangePath(dest.Path)
+		if observationErr == nil && committed.Identity.Inode == stagedFact.Identity.Inode && committed.Identity.Device == stagedFact.Identity.Device && committed.Identity.BirthSec == stagedFact.Identity.BirthSec && committed.Identity.BirthNano == stagedFact.Identity.BirthNano && bytes.Equal(committed.Bytes, p.postimage) {
+			p.committedFact = &committed
+			if created.Exists {
+				p.createdFact = &created
+			}
+		}
+	}
 	out = p.inspectResult(out, committedParent)
 	if syncErr != nil {
 		out.State = "failed"
@@ -460,6 +471,11 @@ func (p *changePlan) apply(ctx context.Context) (out ChangeOutcome) {
 	return
 }
 func (p *changePlan) recheckCreated(ctx context.Context, created changeFact, tempName string) error {
+	if p.reviewCheckCreated != nil {
+		if err := p.reviewCheckCreated(ctx, created); err != nil {
+			return err
+		}
+	}
 	current, err := observeChangePath(created.Path)
 	if err != nil || current.Identity != created.Identity {
 		return errors.New("created configuration directory changed before commit")
