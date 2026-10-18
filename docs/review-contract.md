@@ -54,11 +54,11 @@ must retain external-edit, identity, discovery and effect freshness checks.
 The current build has no collection execution command.
 
 JSON files use schema version 1, strict known fields and unique object keys.
-Malformed, altered, incompatible, ambiguous and stale requests refuse. `--json`
-returns one object, including errors. Exit 0 means prepared, subset previewed or
-approval recorded; 1 means blocked/refused/stale operational state; 2 means
-invalid authoring input or usage. Human output identifies sources, effects,
-unchanged and unresolved summaries, and coverage. It escapes terminal controls.
+Malformed, altered, incompatible, ambiguous and stale requests refuse. The
+[proposal reference](../internal/companion/skillglass-review/references/proposals.md#failures-coverage-and-exit-statuses)
+owns failure, coverage and exit-status semantics. Human output identifies sources,
+effects, unchanged and unresolved summaries, and coverage. It escapes terminal
+controls.
 
 ## Representative external-agent evaluations
 

@@ -49,4 +49,10 @@ Selection rechecks the complete original proposal against live observations, the
 
 After explicit user approval of that exact selection preview, repeat the same command with `--approve SELECTION_ID`. The returned `state: approved` records the caller's attestation of user approval; the CLI cannot authenticate who supplied it. Empty selection approves no actions. Neither prepare nor select writes source content or settings. Availability execution is a separate command in a later compatible build, which must validate the exact approved selection, preflight the whole selected batch and preserve freshness. Proposal/selection hashes are not native `--confirm` tokens.
 
-Read errors and malformed, duplicate-key, unknown-field, unsupported-version, altered or stale artifacts refuse safely. Commands return one JSON object with `--json`, including failures. Exit 0 means prepared/previewed/approved, 1 means operational/refused/stale/blocked, and 2 means invalid input or usage. Discovery and selected evidence coverage remain separate; a successful preparation is not a claim of complete review.
+## Failures, coverage and exit statuses
+
+Unreadable input JSON files and malformed, duplicate-key, unknown-field, unsupported-version, altered or stale artifacts refuse safely. Missing or unreadable supporting evidence instead remains visible in the proposal's evidence diagnostics and incomplete selected-evidence coverage; it does not by itself block preparation. Discovery and selected evidence coverage remain separate; successful preparation is not a claim of complete review. Commands return one JSON object with `--json`, including failures.
+
+- `0`: proposal prepared, subset previewed or approval recorded. Inspect coverage and limitations even on success.
+- `1`: preparation returned a blocked native proposal, or selection/approval was refused, including altered or stale proposals, invalid chosen IDs and mismatched approval IDs.
+- `2`: invalid usage, an unreadable or invalid draft/proposal JSON file, or a draft validation or preparation error.
