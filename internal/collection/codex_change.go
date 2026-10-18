@@ -84,6 +84,10 @@ func previewCodexChange(ctx context.Context, s *Snapshot, intent ChangeIntent) *
 		view.Notes = append(view.Notes, "Precise per-skill user setting only; manager configuration and managed content stay intact.")
 	}
 	p := &changePlan{request: cloneRequest(s.request), intent: intent, postimage: postimage, destination: destination, snapshotFacts: facts, dependencies: dependencies}
+	p.reviewPatch = func(raw []byte, _ bool) ([]byte, []SettingChange, bool, error) {
+		post, effect, write, err := patchCodexChoice(raw, target, intent.Choice == ControlEnable)
+		return post, []SettingChange{effect}, write, err
+	}
 	tokenData, _ := json.Marshal(struct {
 		Version         string
 		Request         Request

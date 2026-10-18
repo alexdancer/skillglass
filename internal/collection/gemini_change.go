@@ -287,6 +287,13 @@ func previewGeminiSnapshot(ctx context.Context, s *Snapshot, intent ChangeIntent
 		deps = append(deps, f)
 	}
 	plan := &changePlan{request: cloneRequest(s.request), intent: intent, postimage: post, destination: dest, snapshotFacts: observations, dependencies: deps}
+	plan.reviewPatch = func(raw []byte, exists bool) ([]byte, []SettingChange, bool, error) {
+		doc, err := readGeminiDisabledDocument(raw)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		return doc.patch(p.Name, p.Choice, !exists)
+	}
 	data, _ := json.Marshal(struct {
 		Version      string
 		Recipe       geminiControlPlan
