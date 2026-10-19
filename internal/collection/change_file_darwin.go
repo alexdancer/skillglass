@@ -211,6 +211,38 @@ func sameChangeFacts(left, right any) bool {
 	b, _ := json.Marshal(right)
 	return bytes.Equal(a, b)
 }
+
+const replacementProvenanceNote = "macOS may regenerate com.apple.provenance on the temporary settings replacement. Skillglass does not write or remove that OS-managed tag; all other metadata and the original file freshness checks remain strict."
+
+// Only replacement objects receive this exception. Original observations and
+// freshness comparisons retain every attribute, including provenance.
+func replacementAttributesMatch(original, replacement map[string][]byte) bool {
+	for name, value := range original {
+		if name == "com.apple.provenance" {
+			continue
+		}
+		other, exists := replacement[name]
+		if !exists || !bytes.Equal(value, other) {
+			return false
+		}
+	}
+	for name := range replacement {
+		if name != "com.apple.provenance" {
+			if _, exists := original[name]; !exists {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func replacementMetadataMatches(original, replacement changeFact) bool {
+	return original.Identity.Mode == replacement.Identity.Mode &&
+		original.Identity.UID == replacement.Identity.UID && original.Identity.GID == replacement.Identity.GID &&
+		original.Flags == replacement.Flags && original.Links == replacement.Links &&
+		replacementAttributesMatch(original.Attributes, replacement.Attributes) && changeACLAbsent(replacement.Path)
+}
+
 func (p *changePlan) apply(ctx context.Context) (out ChangeOutcome) {
 	out = ChangeOutcome{State: "failed", Reason: "configuration write failed", Intent: p.intent, WriteState: "none", Persistence: "not-written", Achievement: "unknown", Reload: changeReload()}
 	if p.intent.Application == "claude-code" {
@@ -229,6 +261,12 @@ func (p *changePlan) apply(ctx context.Context) (out ChangeOutcome) {
 		out.Reload = SessionExplanation{State: "unknown", Evidence: geminiEvidence(EvidenceInferred, "skills-reload", "", "/skills reload", "fresh native launch validated; source-verified /skills reload or /skills refresh, or restart, loads per-name changes; running-session adoption unobserved")}
 	}
 	dest := p.destination
+	provenanceChanged := false
+	defer func() {
+		if provenanceChanged && out.WriteState == "committed" {
+			out.Reason += "; OS-managed com.apple.provenance differed on the settings replacement; Skillglass did not write or remove the tag"
+		}
+	}()
 	parentFD, err := unix.Open(dest.Parent.Resolved, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {
 		out.Reason = "open configuration parent failed"
@@ -348,12 +386,13 @@ func (p *changePlan) apply(ctx context.Context) (out ChangeOutcome) {
 	}
 	tempIdentity = temp.Identity
 	if dest.Config.Exists {
-		if temp.Identity.Mode != dest.Config.Identity.Mode || temp.Identity.UID != dest.Config.Identity.UID || temp.Identity.GID != dest.Config.Identity.GID || !sameChangeFacts(temp.Attributes, dest.Config.Attributes) {
+		if !replacementMetadataMatches(dest.Config, temp) || !bytes.Equal(temp.Bytes, dest.Config.Bytes) {
 			file.Close()
 			out.Reason = "temporary clone did not preserve file metadata"
 			return
 		}
 	}
+	provenanceChanged = dest.Config.Exists && !sameChangeFacts(temp.Attributes, dest.Config.Attributes)
 	if err = file.Truncate(0); err != nil {
 		file.Close()
 		out.Reason = "temporary resize failed"
@@ -377,10 +416,11 @@ func (p *changePlan) apply(ctx context.Context) (out ChangeOutcome) {
 		return
 	}
 	stagedFact, err := observeChangePath(path)
-	if err != nil || (dest.Config.Exists && !sameChangeFacts(stagedFact.Attributes, dest.Config.Attributes)) {
+	if err != nil || stagedFact.Identity != tempIdentity || (dest.Config.Exists && !replacementMetadataMatches(dest.Config, stagedFact)) {
 		out.Reason = "temporary metadata verification failed"
 		return
 	}
+	provenanceChanged = provenanceChanged || (dest.Config.Exists && !sameChangeFacts(stagedFact.Attributes, dest.Config.Attributes))
 	staged, err := nativeBytes(path)
 	if err != nil || !bytes.Equal(staged, p.postimage) {
 		out.Reason = "temporary content verification failed"
