@@ -44,10 +44,12 @@ The same snapshot read-set helper is used during direct preview and review captu
 
 `tests/acceptance/ale50_inspection_controls_test.go` ports the independent six-application preview regression with and without an explicit viewer root, retaining unknown inspection permission diagnostics. It covers custom/project inspection roots across all Pi control operations and preserves refusals for native permission/participation uncertainty, unknown ignore rules, viewer-only sources and prevented prospective effects. `internal/collection/pi_change_proof_test.go` exercises missing/inconsistent reference and root provenance at the shared proof boundary. The original ALE-42 browser journey remains unchanged. Decision5's qualified higher-star-ignore case expects lower available and higher unavailable; its unsupported higher-pattern case still expects unknown.
 
-Run those tests plus adjacent discovery, direct control and ordered review coverage with:
+Run the public regressions, the original ALE-42 browser journey, and adjacent discovery, direct control and ordered review coverage with:
 
 ```sh
-SKILLGLASS_TEST_RUN='^TestALE(33|34|49|50)' sh tests/acceptance/run.sh /private/tmp/ale50-acceptance
+SKILLGLASS_TEST_RUN='^Test(ALE(33|34|49|50|42DeliveredBrowserJourney)|Decision(ALE42RootGroup|5Precedence))' sh tests/acceptance/run.sh /private/tmp/ale50-acceptance
 ```
+
+The provenance test runs separately through the [contained supporting-package checks](ale-24.md#reproduce-the-acceptance-evidence).
 
 Exact candidate commands, receipts and results belong to the run artifacts. Neither these tests nor saved native settings prove current running-session adoption. Live retries require the exact-effect review workflow and do not permit deletion or direct settings edits.
