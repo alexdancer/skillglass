@@ -11,6 +11,8 @@ import (
 )
 
 type changePlan struct {
+	// reviewPatch reuses this validated native recipe without writing a destination.
+	reviewPatch            func([]byte, bool) ([]byte, []SettingChange, bool, error)
 	request                Request
 	intent                 ChangeIntent
 	digest                 string

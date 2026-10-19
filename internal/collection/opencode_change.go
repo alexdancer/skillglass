@@ -214,6 +214,12 @@ func previewOpencodeSnapshot(ctx context.Context, s *Snapshot, intent ChangeInte
 		return rejectedChange(intent, "refused", "relevant OpenCode inputs cannot be pinned: "+err.Error())
 	}
 	plan := &changePlan{request: cloneRequest(s.request), intent: intent, postimage: post, destination: dest, snapshotFacts: observations, dependencies: deps, opencodeGlobalExpected: expectedGlobal}
+	plan.reviewPatch = func(raw []byte, _ bool) ([]byte, []SettingChange, bool, error) {
+		if intent.Choice == ControlEnable && s.sources[intent.Source].Availability.State == AvailabilityAsk {
+			return append([]byte(nil), raw...), append([]SettingChange(nil), changes...), false, nil
+		}
+		return patchOpencodeChoice(raw, recipe.NativeName, recipe.Action, false)
+	}
 	data, _ := json.Marshal(struct {
 		Version      string
 		Recipe       opencodeControlPlan

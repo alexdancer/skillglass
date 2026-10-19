@@ -180,6 +180,10 @@ func previewHermesSnapshot(s *Snapshot, intent ChangeIntent) *ChangePreview {
 		return rejectedChange(intent, "refused", "relevant Hermes inputs cannot be pinned: "+err.Error())
 	}
 	plan := &changePlan{request: cloneRequest(s.request), intent: intent, postimage: post, destination: dest, snapshotFacts: facts, dependencies: deps}
+	plan.reviewPatch = func(raw []byte, _ bool) ([]byte, []SettingChange, bool, error) {
+		post, effect, write, err := patchHermesChoice(raw, name, intent.Choice)
+		return post, []SettingChange{effect}, write, err
+	}
 	data, _ := json.Marshal(struct {
 		Version, Home string
 		Intent        ChangeIntent

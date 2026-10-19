@@ -10,6 +10,17 @@ The production inventory, identity, comparison, and application discovery slices
 
 The project was planned as **Skill Viewer**. Existing Linear titles and historical planning documents retain that name; **Skillglass** is the product and repository name.
 
+## Companion collection reviews
+
+`skillglass companion --file SKILL.md` displays the portable companion bundled
+with this executable. `companion --json` includes its version, files and hashes.
+An external agent can inspect selected applications, review a broad or lean
+collection, prepare exact native availability recommendations, and record user
+approval of a chosen subset with `review prepare` and `review select`. These
+commands write no skill contents or settings. Installation and collection batch
+execution are separate work. See [the review contract](docs/review-contract.md)
+and `skillglass help` for direct reads, controls and proposal syntax.
+
 ## Planned capabilities
 
 - Extend version-specific availability evidence and remaining validation coverage.

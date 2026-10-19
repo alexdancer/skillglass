@@ -192,6 +192,9 @@ func previewPiSnapshot(ctx context.Context, s *Snapshot, intent ChangeIntent, pi
 		return rejectedChange(intent, "refused", "relevant Pi inputs cannot be pinned: "+err.Error())
 	}
 	plan := &changePlan{request: cloneRequest(s.request), intent: intent, postimage: post, destination: destination, snapshotFacts: facts, dependencies: deps}
+	plan.reviewPatch = func(raw []byte, _ bool) ([]byte, []SettingChange, bool, error) {
+		return patchPiChoice(raw, recipe)
+	}
 	data, _ := json.Marshal(struct {
 		Version      string
 		Recipe       piControlPlan
