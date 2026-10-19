@@ -39,17 +39,19 @@ var (
 )
 
 type evidenceCase struct {
-	ID               string   `json:"id"`
-	Kind             string   `json:"kind"`
-	Argv             []string `json:"argv"`
-	WorkingDirectory string   `json:"working_directory"`
-	EnvironmentKeys  []string `json:"environment_keys"`
-	ExitCode         int      `json:"exit_code"`
-	DurationMS       int64    `json:"duration_ms"`
-	Stdout           string   `json:"stdout"`
-	Stderr           string   `json:"stderr"`
-	LaunchReceipt    string   `json:"launch_receipt,omitempty"`
-	PayloadLaunch    string   `json:"payload_launch,omitempty"`
+	ID                string   `json:"id"`
+	Kind              string   `json:"kind"`
+	Argv              []string `json:"argv"`
+	WorkingDirectory  string   `json:"working_directory"`
+	EnvironmentKeys   []string `json:"environment_keys"`
+	ExitCode          int      `json:"exit_code"`
+	DurationMS        int64    `json:"duration_ms"`
+	Stdout            string   `json:"stdout"`
+	Stderr            string   `json:"stderr"`
+	LaunchReceipt     string   `json:"launch_receipt,omitempty"`
+	PayloadLaunch     string   `json:"payload_launch,omitempty"`
+	ExecutionError    string   `json:"execution_error,omitempty"`
+	ExecutionCanceled bool     `json:"execution_canceled,omitempty"`
 }
 
 func TestMain(testMain *testing.M) {
@@ -206,12 +208,15 @@ type fixture struct {
 }
 
 type commandResult struct {
-	code     int
-	stdout   []byte
-	stderr   []byte
-	duration time.Duration
-	launch   *launchReceipt
-	payload  *launchReceipt
+	code              int
+	stdout            []byte
+	stderr            []byte
+	duration          time.Duration
+	launch            *launchReceipt
+	payload           *launchReceipt
+	executionError    string
+	executionCanceled bool
+	recordingErr      error
 }
 
 type publicList struct {
@@ -956,10 +961,12 @@ func (fx fixture) run(t *testing.T, args ...string) commandResult {
 	command.Dir = fx.project
 	command.Env = fx.environment()
 	command.Stdin = bytes.NewReader(nil)
-	result, err := executeFinalizedCommand(t, command)
-	recordEvidenceCommand(t, "public-cli-contained", result)
-	if err != nil && ctx.Err() != nil {
-		t.Fatalf("command timed out: %s %s", skillglassBinary, strings.Join(args, " "))
+	result, err := executeEvidenceCommand(t, command, "public-cli-contained")
+	if result.executionCanceled {
+		t.Fatalf("command canceled at execution: %s %s (launch %s)", skillglassBinary, strings.Join(args, " "), result.launch.ID)
+	}
+	if result.recordingErr != nil {
+		t.Fatalf("launch recording failed: %v", result.recordingErr)
 	}
 	if err != nil {
 		var exitError *exec.ExitError
@@ -976,8 +983,22 @@ func executeFinalizedCommand(t *testing.T, command *exec.Cmd) (commandResult, er
 	command.Stdout, command.Stderr = &stdout, &stderr
 	started := time.Now()
 	launch := recordLaunch(t, command)
-	err := (&fixtureCommand{Cmd: command}).Run()
-	return commandResult{code: launchExitCode(err), stdout: stdout.Bytes(), stderr: stderr.Bytes(), duration: time.Since(started), launch: launch}, err
+	recorded := &fixtureCommand{Cmd: command}
+	err := recorded.Run()
+	executionError := ""
+	if recorded.executionErr != nil {
+		executionError = recorded.executionErr.Error()
+	}
+	return commandResult{code: launchExitCode(recorded.executionErr), stdout: stdout.Bytes(), stderr: stderr.Bytes(), duration: time.Since(started), launch: launch, executionError: executionError, executionCanceled: recorded.executionCanceled, recordingErr: recorded.recordingErr}, err
+}
+
+// Save the complete result before a caller reports cancellation or launch failure.
+func executeEvidenceCommand(t *testing.T, command *exec.Cmd, kind string) (commandResult, error) {
+	t.Helper()
+	result, err := executeFinalizedCommand(t, command)
+	recordEvidenceCommand(t, kind, result)
+	assertRecordedContext(t, result.launch, command)
+	return result, err
 }
 
 func (fx fixture) environment() []string {
@@ -1178,17 +1199,19 @@ func recordEvidenceCommand(
 		payloadPath = result.payload.Path
 	}
 	record := evidenceCase{
-		ID:               id,
-		Kind:             kind,
-		Argv:             argv,
-		WorkingDirectory: result.launch.Cwd,
-		EnvironmentKeys:  keys,
-		LaunchReceipt:    result.launch.Path,
-		PayloadLaunch:    payloadPath,
-		ExitCode:         result.code,
-		DurationMS:       result.duration.Milliseconds(),
-		Stdout:           stdoutRelative,
-		Stderr:           stderrRelative,
+		ID:                id,
+		Kind:              kind,
+		Argv:              argv,
+		WorkingDirectory:  result.launch.Cwd,
+		EnvironmentKeys:   keys,
+		LaunchReceipt:     result.launch.Path,
+		PayloadLaunch:     payloadPath,
+		ExecutionError:    result.executionError,
+		ExecutionCanceled: result.executionCanceled,
+		ExitCode:          result.code,
+		DurationMS:        result.duration.Milliseconds(),
+		Stdout:            stdoutRelative,
+		Stderr:            stderrRelative,
 	}
 	encoded, err := json.MarshalIndent(record, "", "  ")
 	if err != nil {

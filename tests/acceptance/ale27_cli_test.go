@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -31,28 +32,23 @@ func changeCommand(t *testing.T, fx fixture, extraProfile string, args ...string
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Env = fx.environment()
 	cmd.Dir = fx.project
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	started := time.Now()
-	launch := recordLaunch(t, cmd)
-	err := cmd.Run()
-	code := 0
+	result, err := executeEvidenceCommand(t, cmd, "offline-public-mutation")
+	if result.executionCanceled {
+		t.Fatalf("change canceled at execution (launch %s)", result.launch.ID)
+	}
+	if result.recordingErr != nil {
+		t.Fatalf("launch recording failed: %v", result.recordingErr)
+	}
 	if err != nil {
-		exit, ok := err.(*exec.ExitError)
-		if !ok {
-			t.Fatal(err)
+		var exit *exec.ExitError
+		if !errors.As(err, &exit) {
+			t.Fatalf("change launch %s: %v", result.launch.ID, err)
 		}
-		code = exit.ExitCode()
 	}
-	if err != nil && ctx.Err() != nil {
-		t.Fatal("change timed out")
-	}
-	result := commandResult{code: code, stdout: stdout.Bytes(), stderr: stderr.Bytes(), duration: time.Since(started), launch: launch}
-	recordEvidenceCommand(t, "offline-public-mutation", result)
-	assertRecordedContext(t, launch, cmd)
+
 	return result
 }
+
 func changeRun(t *testing.T, fx fixture, choice, id, token string, want int, extra ...string) changeReceipt {
 	t.Helper()
 	args := []string{choice, "--agent", "codex", "--scope", "global", "--project", fx.project, "--json"}
