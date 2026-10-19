@@ -119,6 +119,11 @@ func ApplyReview(ctx context.Context, selection ReviewSelection) ReviewOutcome {
 			fail("refused", "remaining native effects changed; reprepare and renew approval")
 			break
 		}
+		discovery, err := guard.project(ctx, native.plan)
+		if err != nil {
+			fail("refused", err.Error())
+			break
+		}
 		native.plan.reviewCheck = guard.check
 		native.plan.reviewCheckCreated = guard.checkCreated
 		result := native.Apply(ctx, native.plan.digest)
@@ -133,7 +138,7 @@ func ApplyReview(ctx context.Context, selection ReviewSelection) ReviewOutcome {
 		} else {
 			receipt.State = "succeeded"
 		}
-		if err := guard.advance(native.plan); err != nil {
+		if err := guard.advance(native.plan, discovery); err != nil {
 			fail("failed", err.Error())
 			break
 		}
@@ -316,7 +321,7 @@ func reviewDiscoveryShape(snapshot *Snapshot) string {
 	view := snapshot.Query(Filters{Context: FilterAll}, QuerySources)
 	// Availability and native diagnostics are derived from guarded configuration
 	// inputs. Retain source identity/content/resources/ownership and references,
-	// roots, project and coverage, which availability writes must not change.
+	// roots, project and coverage.
 	for i := range view.Sources {
 		view.Sources[i].Availability = AvailabilityExplanation{}
 		view.Sources[i].Problems = nil
@@ -360,7 +365,37 @@ func (g *reviewGuard) check(ctx context.Context) error {
 	}
 	return nil
 }
-func (g *reviewGuard) advance(plan *changePlan) error {
+func (g *reviewGuard) project(ctx context.Context, plan *changePlan) ([]string, error) {
+	discovery := append([]string(nil), g.discovery...)
+	if plan.intent.Application != "pi" || bytes.Equal(plan.destination.Config.Bytes, plan.postimage) {
+		return discovery, nil
+	}
+	for i, request := range g.requests {
+		if request.Agent != "pi" {
+			continue
+		}
+		request = cloneRequest(request)
+		request.piPlanning = true
+		request.piSettingsOverlay = map[string][]byte{plan.destination.Path: plan.postimage}
+		snapshot, err := Build(ctx, request)
+		if err != nil {
+			return nil, fmt.Errorf("approved Pi discovery projection failed: %w", err)
+		}
+		discovery[i] = reviewDiscoveryShape(snapshot)
+		for _, path := range changeObservationPaths(snapshot.Query(Filters{Context: FilterAll}, QuerySources), changeDestination{}) {
+			if _, exists := g.facts[path]; exists {
+				continue
+			}
+			fact, err := observeChangePath(path)
+			g.facts[path] = fact
+			if err != nil {
+				g.failures[path] = err.Error()
+			}
+		}
+	}
+	return discovery, g.check(ctx)
+}
+func (g *reviewGuard) advance(plan *changePlan, discovery []string) error {
 	if plan.committedFact == nil {
 		if !bytes.Equal(plan.destination.Config.Bytes, plan.postimage) {
 			return errors.New("installed object identity could not be verified; remaining selection unapplied")
@@ -371,6 +406,7 @@ func (g *reviewGuard) advance(plan *changePlan) error {
 	// committedFact is captured by the native writer and bound to the exact
 	// staged inode. Observing an arbitrary same-byte replacement is insufficient.
 	fact := *plan.committedFact
+	g.discovery = discovery
 	g.facts[plan.destination.Path] = fact
 	if plan.createdFact != nil {
 		g.addCreated(*plan.createdFact, plan.destination.Path)
