@@ -125,3 +125,17 @@ copies, discloses incomplete evidence, and excludes omitted recommendations.
 The subset approval follow-up must identify a concrete chosen subset from its
 actual proposal. These are behavioral evaluations; deterministic acceptance or
 searches through instruction strings cannot substitute for them.
+
+## Installed-companion delivery evaluations
+
+For the delivered Mac journey, use `create --installed --execution` as documented
+in [delivered workflow verification](verification/ale-49.md). This is explicit
+controller setup for Codex and Claude Code with separate OpenCode/CodeAF shared
+acknowledgement before model dispatch. It preserves exact installed bundle files
+and setup manifests separately from model calls. `context.txt` contains those
+actual installed bytes and the tool surface; `request.txt` contains the neutral
+synthetic request. `--case missing-inputs --incomplete-evidence` independently
+combines missing user inputs and evidence limitations. No installation command
+is added to the evaluator's narrow `run` surface. Every installed companion copy
+remains a distinct inventory source; synthetic keep-enabled inputs should
+protect both copies when their continued availability is required.
