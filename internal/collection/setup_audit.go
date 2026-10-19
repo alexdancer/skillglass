@@ -71,6 +71,9 @@ func AuditSetupLocation(ctx context.Context, destination string) SetupLocation {
 			}
 			if setupRootParticipates(root) {
 				consumer = true
+				if app.Application == "pi" && !setupPiProspectiveIgnoreKnown(ctx, s, root, destination) {
+					out.Refusals = append(out.Refusals, "pi: prospective companion ignore inputs are unverified: "+root.Requested)
+				}
 			}
 		}
 		// A child symlink can expose this destination even when its collection root
@@ -87,7 +90,7 @@ func AuditSetupLocation(ctx context.Context, destination string) SetupLocation {
 			}
 			message := fmt.Sprintf("%s: incomplete discovery: %s: %s", app.Application, problem.Path, problem.Summary)
 			unrelated := setupPathsOverlap(destination, problem.Path) == deleteUnrelated
-			if unrelated && (problem.Code != ProblemNativeInput || setupAvailabilityOnly(app.Application, problem)) {
+			if (unrelated && problem.Code != ProblemNativeInput) || (app.Application == "pi" && setupPiIgnoreUnrelated(ctx, s, problem, destination)) {
 				out.Warnings = append(out.Warnings, message)
 			} else {
 				out.Refusals = append(out.Refusals, message)
@@ -239,14 +242,6 @@ func setupReferenceParticipates(roots []RootReport, id RootID) bool {
 		}
 	}
 	return true // Missing provenance cannot establish non-participation.
-}
-
-// This closed, adapter-specific exception describes resource availability only:
-// ignore rules remove resources in a fixed root, and cannot add loader roots.
-// All other native input uncertainty (including config, plugins and startup
-// environment) can change routing and remains a refusal even at a disjoint path.
-func setupAvailabilityOnly(app string, problem Problem) bool {
-	return app == "pi" && problem.Summary == "Pi ignore-file rules require native validation; resource availability remains unknown"
 }
 
 // Resolve every existing symlink component before comparing prospective paths.

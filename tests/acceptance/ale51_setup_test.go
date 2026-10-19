@@ -23,7 +23,7 @@ func TestALE51SetupProvenDestinationRetainsUnrelatedWarnings(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "pi-ignore":
-				writeFile(t, filepath.Join(fx.home, ".pi/agent/skills/.gitignore"), []byte("ignored/\n"), 0600)
+				writeFile(t, filepath.Join(fx.home, ".pi/agent/skills/.gitignore"), []byte("ignored?/\n"), 0600)
 				writeFile(t, filepath.Join(fx.home, ".pi/agent/skills/example/SKILL.md"), []byte("---\nname: example\ndescription: fixture\n---\nfixture\n"), 0600)
 			case "inactive-cache":
 				root := filepath.Join(fx.home, ".pi/agent/npm/node_modules")
@@ -39,6 +39,9 @@ func TestALE51SetupProvenDestinationRetainsUnrelatedWarnings(t *testing.T) {
 			raw, err := json.Marshal(preview)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if kind == "pi-ignore" && !strings.Contains(string(raw), "Pi ignore-file") {
+				t.Fatalf("Pi ignore uncertainty warning missing: %s", raw)
 			}
 			if !strings.Contains(string(raw), `"warnings":["`) {
 				t.Fatalf("unrelated gaps not visible: %s", raw)
@@ -83,7 +86,7 @@ func TestALE51UnknownRoutesAndBrokenAliasChainsStillRefuse(t *testing.T) {
 					t.Fatal(err)
 				}
 				writeFile(t, filepath.Join(fx.home, ".pi/agent/settings.json"), raw, 0600)
-				writeFile(t, filepath.Join(root, ".gitignore"), []byte("ignored/\n"), 0600)
+				writeFile(t, filepath.Join(root, ".gitignore"), []byte("ignored?/\n"), 0600)
 			case "inactive-managed-alias":
 				root := filepath.Join(fx.home, ".pi/agent/npm")
 				if err := os.MkdirAll(root, 0700); err != nil {
