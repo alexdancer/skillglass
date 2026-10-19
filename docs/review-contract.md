@@ -96,9 +96,13 @@ Cases are `global-lean`, `global-broad`, `project-broad`, `missing-inputs` and
 `incomplete-evidence`. The provider stages exact executable bytes outside the
 fixture, creates synthetic homes/project/configuration, proves the shared
 reader/writer/outside/symlink/network/execution controls, and records sealed
-profiles and launch receipts. Product operations use the reader profile, with
-native system inputs controlled absent. No installed native agent is invoked.
-`session.json` and `prompt.txt` are evaluator inputs. `run` records raw output,
+profiles and launch receipts. The synthetic PATH exposes the exact immutable staged
+`skillglass` executable for the companion's startup check. The surface accepts
+only `setup --check`, `setup --check --json` and `setup --json --check`; setup
+previews, installation and all other setup forms remain denied, including in
+execution sessions. Startup checks and other read-only product operations use the
+reader profile, with native system inputs controlled absent. No installed native
+agent is invoked. `session.json` and `prompt.txt` are evaluator inputs. `run` records raw output,
 exit status and before/after manifests; `put` accepts JSON only into a fixture
 artifact filename; `status` compares source/settings state with the initial tree.
 For an execution walkthrough, add `--execution` to `create`. That session permits
