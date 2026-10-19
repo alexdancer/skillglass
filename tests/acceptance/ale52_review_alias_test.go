@@ -114,8 +114,8 @@ func TestALE52PiAliasExternalEditsDuringReview(t *testing.T) {
 				claudeDir := filepath.Join(fx.home, ".claude")
 				if scope == "project" {
 					claudeDir = filepath.Join(fx.project, ".claude")
-					writeFile(t, filepath.Join(claudeDir, "settings.json"), []byte(`{}`), 0600)
 				}
+				writeFile(t, filepath.Join(claudeDir, "settings.json"), []byte(`{}`), 0600)
 				shared := filepath.Join(claudeDir, "skills/first")
 				if err := os.MkdirAll(filepath.Dir(shared), 0700); err != nil {
 					t.Fatal(err)
@@ -124,8 +124,22 @@ func TestALE52PiAliasExternalEditsDuringReview(t *testing.T) {
 					t.Fatal(err)
 				}
 				draft.Context.Applications = []string{"pi", "claude-code"}
-				draft.Changes = append(draft.Changes, ale46Change("pause-claude", string(draft.Sources[0].Source), "claude-code", collection.ControlDisable))
-				selection, path := ale47Approved(t, fx, draft, []string{"disable-0", "pause-claude", "disable-1"})
+				pause := ale46Change("pause-claude", string(draft.Sources[0].Source), "claude-code", collection.ControlDisable)
+				draft.Changes = []collection.ReviewRecommendation{draft.Changes[0], pause, draft.Changes[1]}
+				order := []string{"disable-0", "pause-claude", "disable-1"}
+				selection, path := ale47Approved(t, fx, draft, order)
+				if len(selection.Effects) != len(order) || len(selection.Chosen) != len(order) {
+					t.Fatalf("unexpected selection: %+v", selection)
+				}
+				for i, id := range order {
+					if selection.Effects[i].ID != id || selection.Chosen[i] != id {
+						t.Fatalf("unexpected execution order: %+v", selection.Effects)
+					}
+				}
+				if selection.Effects[1].Intent.Application != "claude-code" || filepath.Dir(selection.Effects[1].ConfigPath) != claudeDir || selection.Effects[1].NoWriteNeeded {
+					t.Fatalf("second effect does not require the held lock: %+v", selection.Effects[1])
+				}
+				claudeBefore := readBytes(t, selection.Effects[1].ConfigPath)
 				lock, err := os.Open(claudeDir)
 				if err != nil {
 					t.Fatal(err)
@@ -169,6 +183,17 @@ func TestALE52PiAliasExternalEditsDuringReview(t *testing.T) {
 					<-done
 					t.Fatal("first native write did not commit")
 				}
+				select {
+				case err := <-done:
+					t.Fatalf("apply bypassed held second-effect lock: %v %s %s", err, stdout.Bytes(), stderr.Bytes())
+				case <-time.After(250 * time.Millisecond):
+				}
+				if fmt.Sprintf("%x", sha256.Sum256(readBytes(t, first))) != selection.Effects[0].AfterSHA256 || !bytes.Equal(claudeBefore, readBytes(t, selection.Effects[1].ConfigPath)) {
+					cancel()
+					<-done
+					t.Fatal("later native write crossed the barrier")
+				}
+				ignorePath := filepath.Join(filepath.Dir(manifests[1]), ".gitignore")
 				switch mutation {
 				case "content":
 					writeFile(t, first, append(readBytes(t, first), '\n'), 0600)
@@ -198,7 +223,7 @@ func TestALE52PiAliasExternalEditsDuringReview(t *testing.T) {
 						t.Fatal(err)
 					}
 				case "new-input":
-					writeFile(t, filepath.Join(filepath.Dir(manifests[1]), ".piignore"), []byte("unrelated/\n"), 0600)
+					writeFile(t, ignorePath, []byte("unrelated/\n"), 0600)
 				}
 				afterExternal := treeManifest(t, fx.base)
 				if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_UN); err != nil {
@@ -217,8 +242,20 @@ func TestALE52PiAliasExternalEditsDuringReview(t *testing.T) {
 				if out.State != "failed" || len(out.Results) != 3 || out.Results[0].Outcome == nil || out.Results[0].Outcome.WriteState != "committed" || out.Results[2].State != "not-attempted" {
 					t.Fatalf("unexpected stopped review: %+v", out)
 				}
-				if out.Results[1].Outcome != nil && out.Results[1].Outcome.WriteState != "none" {
-					t.Fatalf("external change accepted: %+v", out.Results)
+				if out.Results[0].State != "succeeded" || out.Results[0].Outcome.Persistence != "verified" || out.Results[1].State != "refused" || out.Results[1].Outcome != nil && out.Results[1].Outcome.WriteState != "none" {
+					t.Fatalf("external change accepted or verified first write lost: %+v", out.Results)
+				}
+				if mutation == "new-input" {
+					changed := strings.TrimPrefix(out.Results[1].Reason, "unexpected external change at ")
+					changed = strings.TrimSuffix(changed, "; remaining selection unapplied; renew approval")
+					resolved, err := filepath.EvalSymlinks(changed)
+					expected, expectedErr := filepath.EvalSymlinks(ignorePath)
+					if err != nil || expectedErr != nil || resolved != expected || out.Results[1].Reason != fmt.Sprintf("unexpected external change at %s; remaining selection unapplied; renew approval", changed) {
+						t.Fatalf("native ignore input did not cause freshness refusal: %+v", out.Results[1])
+					}
+					if out.Results[0].Final == nil || out.Results[0].Final.State != collection.AvailabilityDisabled || out.Results[2].Final == nil || out.Results[2].Final.State != collection.AvailabilityAvailable {
+						t.Fatalf("unrelated ignore pattern changed configured availability: %+v", out.Results)
+					}
 				}
 				assertTreeUnchanged(t, afterExternal, treeManifest(t, fx.base))
 			})
