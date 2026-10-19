@@ -58,7 +58,7 @@ func runCompanion(args []string, stdout, stderr io.Writer) int {
 func runReview(args []string, stdout, stderr io.Writer) int {
 	operation := "review"
 	if len(args) == 0 {
-		return reviewFailure(operation, errors.New("review requires prepare or select"), 2, false, stdout, stderr)
+		return reviewFailure(operation, errors.New("review requires prepare, select or apply"), 2, false, stdout, stderr)
 	}
 	if args[0] == "--help" || args[0] == "-h" || args[0] == "help" {
 		if reviewJSONRequested(args[1:]) {
@@ -71,18 +71,20 @@ func runReview(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet(operation, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	machine := flags.Bool("json", false, "emit one versioned JSON object")
-	draftPath, proposalPath := "", ""
+	draftPath, proposalPath, selectionPath := "", "", ""
 	var approval optionalString
 	var chosen stringList
 	switch args[0] {
 	case "prepare":
 		flags.StringVar(&draftPath, "draft", "", "agent-authored review draft JSON file")
+	case "apply":
+		flags.StringVar(&selectionPath, "selection", "", "exact approved selection JSON file")
 	case "select":
 		flags.StringVar(&proposalPath, "proposal", "", "complete proposal JSON file")
 		flags.Var(&chosen, "choose", "chosen change ID; repeat; execution retains proposal order")
 		flags.Var(&approval, "approve", "explicit user approval of this exact selection_id")
 	default:
-		return reviewFailure(operation, errors.New("review requires prepare or select"), 2, reviewJSONRequested(args) || reviewJSONRequested(args[1:]), stdout, stderr)
+		return reviewFailure(operation, errors.New("review requires prepare, select or apply"), 2, reviewJSONRequested(args) || reviewJSONRequested(args[1:]), stdout, stderr)
 	}
 	if err := flags.Parse(args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -95,7 +97,7 @@ func runReview(args []string, stdout, stderr io.Writer) int {
 		return reviewFailure(operation, err, 2, reviewJSONRequested(args[1:]), stdout, stderr)
 	}
 	if flags.NArg() != 0 {
-		return reviewFailure(operation, errors.New("review accepts flags only; paths use --draft or --proposal"), 2, *machine, stdout, stderr)
+		return reviewFailure(operation, errors.New("review accepts flags only; paths use --draft, --proposal or --selection"), 2, *machine, stdout, stderr)
 	}
 	if args[0] == "prepare" {
 		var draft collection.ReviewDraft
@@ -118,6 +120,21 @@ func runReview(args []string, stdout, stderr io.Writer) int {
 		}
 		renderReviewProposal(stdout, proposal)
 		return code
+	}
+	if args[0] == "apply" {
+		var selection collection.ReviewSelection
+		if err := readReviewFile(selectionPath, &selection); err != nil {
+			return reviewFailure(operation, err, 2, *machine, stdout, stderr)
+		}
+		outcome := collection.ApplyReview(context.Background(), selection)
+		if *machine {
+			if code := writeReviewJSON(outcome, stdout, stderr); code != 0 {
+				return code
+			}
+		} else {
+			renderReviewOutcome(stdout, outcome)
+		}
+		return outcome.ExitCode()
 	}
 	var proposal collection.ReviewProposal
 	if err := readReviewFile(proposalPath, &proposal); err != nil {
@@ -153,7 +170,7 @@ func runReview(args []string, stdout, stderr io.Writer) int {
 	if selection.State == "preview" {
 		fmt.Fprintf(stdout, "After explicit user approval, repeat this exact selection with --approve %s\n", selection.SelectionID)
 	}
-	io.WriteString(stdout, "No source content or settings changed. Collection execution is not included in this build.\n")
+	io.WriteString(stdout, "No source content or settings changed. Apply the approved artifact with review apply --selection FILE.\n")
 	return 0
 }
 
@@ -290,7 +307,7 @@ func reviewJSONRequested(args []string) bool {
 		key, value, has := strings.Cut(args[i], "=")
 		if key == "--json" || key == "-json" {
 			machine = !has || value != "false"
-		} else if (key == "--draft" || key == "--proposal" || key == "--choose" || key == "--approve" || key == "--file") && !has {
+		} else if (key == "--selection" || key == "--draft" || key == "--proposal" || key == "--choose" || key == "--approve" || key == "--file") && !has {
 			i++
 		}
 	}
@@ -323,4 +340,23 @@ func writeReviewJSON(value any, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+func renderReviewOutcome(stdout io.Writer, out collection.ReviewOutcome) {
+	fmt.Fprintf(stdout, "Selection %s | %s\n%s\n", safeInline(out.SelectionID), out.State, safeInline(out.Reason))
+	for _, r := range out.Results {
+		fmt.Fprintf(stdout, "%s: %s | %s %s %s | source %s | project %s\n%s\n", safeInline(r.ID), r.State, r.Intent.Application, r.Intent.Scope, r.Intent.Choice, safeInline(string(r.Intent.Source)), safeInline(displayOptional(r.Project)), safeInline(r.Reason))
+		if r.Outcome != nil {
+			fmt.Fprintf(stdout, "Persistence: %s | write: %s | configured result: %s\nSession/reload: %s | %s\n", r.Outcome.Persistence, r.Outcome.WriteState, r.Outcome.Achievement, r.Outcome.Reload.State, safeInline(r.Outcome.Reload.Evidence.Reason))
+		}
+		fmt.Fprintf(stdout, "Final reinspection: %s", safeInline(r.FinalObservation))
+		if r.Final != nil {
+			fmt.Fprintf(stdout, " | %s", r.Final.State)
+		}
+		io.WriteString(stdout, "\n")
+	}
+	fmt.Fprintf(stdout, "Omitted (unapproved): %s\n", safeInline(displayOptional(strings.Join(out.Omitted, ", "))))
+	for _, l := range out.Limitations {
+		fmt.Fprintln(stdout, safeInline(l))
+	}
 }

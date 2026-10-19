@@ -1,6 +1,6 @@
 ---
 name: skillglass-review
-description: Read local agent skills, review a collection for a broad or lean goal, and prepare exact availability proposals with the Skillglass CLI. Use for skill collection reviews and supported enable or disable requests.
+description: Read local agent skills, review a collection for a broad or lean goal, and apply exact approved availability proposals with the Skillglass CLI. Use for skill collection reviews and supported enable or disable requests.
 metadata:
   version: '1.0.0'
   review-contract: '1'
@@ -24,7 +24,8 @@ For a direct read or enable/disable request, follow [references/direct.md](refer
 4. Assess recommendations against the user's goal and keep-enabled constraints. A broad goal can retain useful occasional skills; a lean goal can favor a smaller relevant enabled set. Include enabling useful disabled sources when appropriate. Attach concrete reasons and cited supporting paths to exact source/application actions. Account for unchanged sources, unresolved questions and unreviewed coverage. Unsupported actions remain unresolved instead of becoming broader changes.
 5. Write a draft using the contract reference and run `review prepare --draft draft.json --json`. Inspect the returned proposal's native previews, ordered effects, shared consumers and evidence limitations. The CLI verifies observations, not the truth of your interpretation. Present the evidence-backed recommendations, unchanged summary, unresolved questions, discovery coverage, selected evidence and unreviewed sources to the user. Fix draft errors and reprepare; a changed proposal requires renewed approval.
 6. Let the user choose changes. Omitted recommendations are excluded. Run `review select --proposal proposal.json --choose CHANGE_ID --json`, repeating `--choose` for every chosen change. The CLI preserves proposal order, regardless of flag order, and recomputes actual effects for this subset. Show the exact selection preview and selection ID before requesting approval. An empty selection is a valid no-op.
-7. Only after the user explicitly approves those exact selected effects, repeat the same `review select` command with `--approve SELECTION_ID`. This records approval without changing availability. Stop with the approved selection artifact. This build does not execute a collection batch; never replay separate native confirmation tokens as a batch substitute. Report this limitation if asked to apply it.
+7. Only after the user explicitly approves those exact selected effects, repeat the same `review select` command with `--approve SELECTION_ID`. This records approval without changing availability. Save the complete approved selection JSON. Run `review apply --selection approved-selection.json --json` only after this approval. It preflights the whole sequence and applies the exact chosen effects, preserving immediate native freshness checks and expected earlier writes to shared settings. A refusal needs a new preview and renewed approval; never expand the selection or silently apply a supported subset.
+8. Inspect every per-item receipt and final reinspection. On the first failure, completed writes remain and later items are not attempted. Report persistence, effective configured outcome, final configured observation and reload/session limits separately. Reinspect and obtain a fresh approval before any continuation; do not claim rollback or cross-file atomicity.
 
 ## Limits
 

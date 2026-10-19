@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Disposable, read-only public CLI surface for external companion evaluations.
+"""Disposable public CLI surface for external companion evaluations.
 
 This is an evaluation controller, not a model runner. Product launches use the
 proved shared sandbox and receipts. Model prompts/transcripts are evaluator-owned.
@@ -167,7 +167,10 @@ def create(args):
              'probe': str(boundary.probe), 'probe_sha256': digest(boundary.probe),
              'profile': str(boundary.profiles[False]),
              'profile_sha256': boundary.profile_hashes[False], 'output': str(output),
-             'initial_manifest': manifest(fixture)}
+             'initial_manifest': manifest(fixture), 'execution': args.execution,
+             'writer_profile': str(boundary.profiles[True]),
+             'writer_profile_sha256': boundary.profile_hashes[True],
+             'mutable_paths': [str(p.relative_to(fixture)) for p in (home / '.codex/config.toml', home / '.claude/settings.json', project / '.claude/settings.json')]}
     seal(output / 'session.json', (json.dumps(state, indent=2) + '\n').encode())
     request = {
         'global-lean': 'Review my global Codex and Claude Code skills for a leaner enabled collection. Keep guardrails enabled. Budgeting and occasional primary-source research matter. Propose changes, then let me select a subset before approval.',
@@ -186,8 +189,8 @@ def create(args):
               'put --session ' + str(output / 'session.json') + ' --name draft.json < DRAFT_JSON\n'
               'The put result returns the absolute path for --draft. Save complete CLI JSON '
               'with --save; use the returned path for --proposal. Start with companion --json '
-              'and companion --file SKILL.md. Ask missing user information naturally. '
-              'Stop after the read-only approval artifact or a supported explanation.\n')
+              'and companion --file SKILL.md. Ask missing user information naturally. ' +
+              ('After the user approves the exact chosen effects, apply only that approved selection and report every receipt and final configured observation.\n' if args.execution else 'Stop after the read-only approval artifact or a supported explanation.\n'))
     (output / 'prompt.txt').write_text(prompt)
     print(json.dumps({'session': str(output / 'session.json'), 'prompt': str(output / 'prompt.txt'),
                       'project': str(project), 'fixture': str(fixture)}, indent=2))
@@ -195,7 +198,7 @@ def create(args):
 
 def load_session(args):
     state = json.loads(Path(args.session).read_text())
-    for field in ('product', 'probe', 'profile'):
+    for field in ('product', 'probe', 'profile', *(['writer_profile'] if state.get('execution') else [])):
         if digest(Path(state[field])) != state[field + '_sha256']:
             raise RuntimeError('sealed executable or profile changed')
     controls = json.loads((Path(state['output']) / 'containment.json').read_text())
@@ -253,14 +256,19 @@ def run(args):
     if not arguments or arguments[0] not in allowed or any(
             value.split('=')[0] in ('--confirm', '-confirm') for value in arguments):
         raise ValueError('scenario surface permits read-only public operations and previews only')
+    applying = len(arguments) > 1 and arguments[:2] == ['review', 'apply']
+    if applying and not state.get('execution'):
+        raise ValueError('this session permits read-only review only; create an execution session explicitly')
+    profile = state['writer_profile'] if applying else state['profile']
+    profile_hash = state['writer_profile_sha256'] if applying else state['profile_sha256']
     with session_lock(state):
         call = Path(state['output']) / ('call-' + uuid.uuid4().hex)
         call.mkdir()
         fixture = Path(state['fixture'])
         before = manifest(fixture, artifacts=True)
-        argv = ['/usr/bin/sandbox-exec', '-f', state['profile'], state['product'], *arguments]
+        argv = ['/usr/bin/sandbox-exec', '-f', profile, state['product'], *arguments]
         receipt = {'argv': argv, 'cwd': state['cwd'], 'environment': state['environment'],
-                   'binary_sha256': state['product_sha256'], 'profile_sha256': state['profile_sha256']}
+                   'binary_sha256': state['product_sha256'], 'profile_sha256': profile_hash, 'availability_execution': applying}
         seal(call / 'invocation.json', (json.dumps(receipt, indent=2) + '\n').encode())
         result = subprocess.run(argv, cwd=state['cwd'], env=state['environment'],
                                 capture_output=True, timeout=30)
@@ -270,19 +278,26 @@ def run(args):
         (call / 'tree-before.json').write_text(json.dumps(before, indent=2) + '\n')
         (call / 'tree-after.json').write_text(json.dumps(after, indent=2) + '\n')
         if before != after:
-            raise RuntimeError('read-only product operation changed the fixture')
+            if not applying:
+                raise RuntimeError('read-only product operation changed the fixture')
+            before_paths = {row['path']: row for row in before}
+            after_paths = {row['path']: row for row in after}
+            changed = {path for path in before_paths.keys() | after_paths.keys()
+                       if before_paths.get(path) != after_paths.get(path)}
+            if not changed.issubset(set(state['mutable_paths'])):
+                raise RuntimeError('execution changed paths outside the explicit native settings surface')
         saved = None
         if args.save:
             saved = artifact_path(state, args.save)
             with saved.open('xb') as output:
                 output.write(result.stdout)
         seal(call / 'result.json', (json.dumps({'exit_code': result.returncode,
-             'no_write': True, 'saved': str(saved) if saved else None,
+             'no_write': before == after, 'saved': str(saved) if saved else None,
              'receipt_sha256': digest(call / 'invocation.json')}, indent=2) + '\n').encode())
         sys.stdout.buffer.write(result.stdout)
         sys.stderr.buffer.write(result.stderr)
         print(json.dumps({'receipt': str(call), 'saved': str(saved) if saved else None,
-                          'exit_code': result.returncode, 'no_write': True}), file=sys.stderr)
+                          'exit_code': result.returncode, 'no_write': before == after}), file=sys.stderr)
         return result.returncode
 
 
@@ -292,7 +307,7 @@ def status(args):
         current = manifest(Path(state['fixture']))
         print(json.dumps({'product_tree_unchanged': current == state['initial_manifest'],
                           'initial_manifest': state['initial_manifest'], 'current_manifest': current}, indent=2))
-        return int(current != state['initial_manifest'])
+        return int(current != state['initial_manifest'] and not state.get('execution'))
 
 
 def main():
@@ -302,6 +317,7 @@ def main():
     for option in ('binary', 'probe', 'output'):
         setup.add_argument('--' + option, required=True)
     setup.add_argument('--case', choices=CASES, required=True)
+    setup.add_argument('--execution', action='store_true', help='allow only review apply through the bounded writer profile')
     setup.set_defaults(handler=create)
     invoke = commands.add_parser('run')
     invoke.add_argument('--session', required=True)
