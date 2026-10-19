@@ -426,6 +426,7 @@ func (p *changePlan) apply(ctx context.Context) (out ChangeOutcome) {
 		out.Reason = "temporary content verification failed"
 		return
 	}
+	p.stagedFact = &stagedFact
 	if err = p.checkpoint("before-recheck"); err == nil {
 		if created.Exists {
 			err = p.recheckCreated(ctx, created, tempName)
@@ -490,25 +491,19 @@ func (p *changePlan) apply(ctx context.Context) (out ChangeOutcome) {
 	if created.Exists {
 		committedParent = created.Identity
 	}
-	// Collection progression additionally binds this exact staged object.
-	// Preserve the native result inspection even when that extra proof fails.
-	if p.reviewCheck != nil {
-		committed, observationErr := observeChangePath(dest.Path)
-		if observationErr == nil && committed.Identity.Inode == stagedFact.Identity.Inode && committed.Identity.Device == stagedFact.Identity.Device && committed.Identity.BirthSec == stagedFact.Identity.BirthSec && committed.Identity.BirthNano == stagedFact.Identity.BirthNano && bytes.Equal(committed.Bytes, p.postimage) {
-			p.committedFact = &committed
-			if created.Exists {
-				p.createdFact = &created
-			}
-		}
-	}
+	// Result inspection binds persistence and collection progression to the exact
+	// verified staged replacement, retaining its complete observed metadata.
 	out = p.inspectResult(out, committedParent)
+	if p.committedFact != nil && created.Exists {
+		p.createdFact = &created
+	}
 	if syncErr != nil {
 		out.State = "failed"
 		out.Reason += "; directory durability could not be verified"
 	}
 	if out.Persistence != "verified" {
 		out.State = "failed"
-		out.Reason += "; persisted bytes no longer match the confirmed change"
+		out.Reason += "; persisted configuration no longer matches the verified replacement"
 	}
 	return
 }

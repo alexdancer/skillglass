@@ -115,7 +115,7 @@ func TestHermesPostwriteControlCertainty(t *testing.T) {
 			} else if calls != 1 || out.WriteState != "committed" {
 				t.Fatalf("wrong commit seam: calls=%d outcome=%+v", calls, out)
 			}
-			if (out.Persistence == "verified") == tc.profileChanged {
+			if (out.Persistence == "verified") == (tc.profileChanged || tc.change == "config-hardlink") {
 				t.Fatalf("persistence facts lost: %+v", out)
 			}
 			fresh, ok := out.Snapshot.Source(intent.Source)
@@ -136,6 +136,12 @@ func TestHermesPostwriteControlCertainty(t *testing.T) {
 			if tc.unknown {
 				if capState != "unsupported" || out.Achievement != "unknown" || out.ExitCode() != 1 || !strings.Contains(out.Reason, tc.reason) {
 					t.Fatalf("native certainty lost but result not unknown: achievement=%q exit=%d reason=%q capability=%s", out.Achievement, out.ExitCode(), out.Reason, capState)
+				}
+			} else if tc.change == "config-hardlink" {
+				// The saved native choice is still observed, but changed replacement
+				// metadata cannot certify persistence of the exact staged object.
+				if out.Achievement != "achieved" || out.ExitCode() != 1 || out.Persistence != "unverified" {
+					t.Fatalf("changed committed metadata was certified: %+v", out)
 				}
 			} else if out.Achievement != "achieved" || out.ExitCode() != 0 {
 				t.Fatalf("writer capability incorrectly controlled saved achievement: %+v", out)

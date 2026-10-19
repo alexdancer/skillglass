@@ -13,6 +13,7 @@ import (
 type changePlan struct {
 	reviewCheck        func(context.Context) error
 	reviewCheckCreated func(context.Context, changeFact) error
+	stagedFact         *changeFact
 	committedFact      *changeFact
 	createdFact        *changeFact
 	// reviewPatch reuses this validated native recipe without writing a destination.
@@ -178,10 +179,25 @@ func (p *changePlan) inspectResult(out ChangeOutcome, parent changeIdentity) Cha
 		resolvedParent, err := observeChangePath(parentFact.Resolved)
 		parentMatches = err == nil && resolvedParent.Identity.Inode == parent.Inode && resolvedParent.Identity.Device == parent.Device && resolvedParent.Identity.BirthSec == parent.BirthSec && resolvedParent.Identity.BirthNano == parent.BirthNano
 	}
-	metadataMatches := !p.destination.Config.Exists || (current.Identity.Mode == p.destination.Config.Identity.Mode && current.Identity.UID == p.destination.Config.Identity.UID && current.Identity.GID == p.destination.Config.Identity.GID && sameChangeFacts(current.Attributes, p.destination.Config.Attributes))
+	// A no-op must still match the exact original observation. A committed
+	// replacement must match the staged object we already verified, including
+	// its own provenance, rather than the original object's OS-managed tag.
+	metadataMatches := sameChangeFacts(current, p.destination.Config)
+	p.committedFact = nil
+	if out.WriteState == "committed" {
+		metadataMatches = false
+		if p.stagedFact != nil {
+			expected := p.stagedFact.Identity
+			expected.Path = p.destination.Path
+			metadataMatches = current.Identity == expected && current.Flags == p.stagedFact.Flags && current.Links == p.stagedFact.Links && sameChangeFacts(current.Attributes, p.stagedFact.Attributes) && changeACLAbsent(current.Path)
+		}
+	}
 	expectedExists := p.destination.Config.Exists || len(p.postimage) > 0
 	if err == nil && current.Exists == expectedExists && current.Symlink == "" && bytes.Equal(current.Bytes, p.postimage) && metadataMatches && (parentMatches || (len(p.postimage) == 0 && !p.destination.Config.Exists && p.destination.CreateDirectory != "")) {
 		out.Persistence = "verified"
+		if out.WriteState == "committed" {
+			p.committedFact = &current
+		}
 		out.PersistedChoice = p.intent.Choice
 		if p.intent.Application != "claude-code" && p.intent.Application != "hermes" && p.intent.Application != "pi" && p.intent.Application != "opencode" && p.intent.Application != "gemini" {
 			// Resource choice persistence alone does not establish native invocation permission for these agents.
