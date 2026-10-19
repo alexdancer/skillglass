@@ -16,6 +16,7 @@ const usage = `Usage:
   skillglass problems [SCOPE] [FILTERS] [--search TEXT] [--json]
   skillglass read [SCOPE] [--json] SOURCE_ID
   skillglass explain [SCOPE] [--json] SOURCE_ID
+  skillglass read-resource [SCOPE] [--json] SOURCE_ID RELATIVE_PATH
   skillglass compare [SCOPE] [--json] LEFT_SOURCE_ID RIGHT_SOURCE_ID
   skillglass enable|disable|inherit --agent codex|claude-code|hermes|pi|opencode|gemini --scope global|project [SCOPE] [--confirm TOKEN] [--json] SOURCE_ID
   skillglass enable|disable|inherit --agents APP --agents APP --scope global|project [SCOPE] [--confirm TOKEN] [--json] SOURCE_ID
@@ -37,6 +38,23 @@ Filters:
 
 Browser:
   --theme VALUE        auto, dark, light, or none (default auto)
+
+Inspection for agents:
+  1. list [SCOPE] --json gives exact sources[].id, source_path, shared references,
+     availability and resource paths. Disabled sources are included by default.
+  2. read [SCOPE] --json SOURCE_ID reads instructions and resource metadata.
+  3. read-resource [SCOPE] --json SOURCE_ID references/nested/guide.md reads one
+     regular file, up to 1 MiB. UTF-8 text uses text; binary uses bytes_base64.
+     Internal links are resolved within the bundle; external/broken/cyclic links
+     are reported as limitations. Contents and scripts are never executed.
+  4. explain [SCOPE] --json SOURCE_ID includes supported application/scope controls.
+     Read their preview before requesting a confirmed enable/disable change.
+
+Inspection JSON contract: schema_version=1; additive fields may appear. Check
+outcome, exit_code, coverage.discovery and coverage.selected separately. Status 1
+can contain useful partial discovery; it never proves complete review coverage.
+Usage/early errors with --json remain JSON and include failure and help. Flags
+precede positional IDs/paths. See docs/cli-json.md for the compatibility contract.
 
 Group controls preflight all requested apps. Unsupported members block the whole request; a subset needs a fresh explicit request. Application stops at the first non-success, retains earlier successful changes, and reports remaining apps not attempted. Discovery is bounded, not machine-wide.
 
@@ -97,7 +115,7 @@ func (value *optionalString) Set(raw string) error {
 	return nil
 }
 
-func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		writeError(stderr, errors.New("a subcommand is required"))
 		io.WriteString(stderr, usage)
@@ -114,6 +132,8 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return runProblems(args[1:], stdout, stderr)
 	case "read", "explain":
 		return runSource(args[0], args[1:], stdout, stderr)
+	case "read-resource":
+		return runResource(args[1:], stdout, stderr)
 	case "compare":
 		return runCompare(args[1:], stdout, stderr)
 	case "enable", "disable", "inherit":
@@ -155,6 +175,9 @@ func runList(args []string, stdout, stderr io.Writer) int {
 	}
 	filters, err := optionFilters(snapshot, options, *search)
 	if err != nil {
+		if options.jsonOutput {
+			return writeInspectionFailure("list", snapshot, err, 2, stdout, stderr)
+		}
 		writeError(stderr, err)
 		io.WriteString(stderr, usage)
 		return 2
@@ -206,6 +229,9 @@ func runProblems(args []string, stdout, stderr io.Writer) int {
 	}
 	filters, err := optionFilters(snapshot, options, *search)
 	if err != nil {
+		if options.jsonOutput {
+			return writeInspectionFailure("problems", snapshot, err, 2, stdout, stderr)
+		}
 		writeError(stderr, err)
 		io.WriteString(stderr, usage)
 		return 2
@@ -274,7 +300,8 @@ func runSource(operation string, args []string, stdout, stderr io.Writer) int {
 		writeError(stderr, fmt.Errorf("write output: %w", err))
 		return 1
 	}
-	if !found || !snapshot.Complete() {
+	source, _ := snapshot.Source(id)
+	if !found || source.Manifest.Status == collection.ManifestUnreadable || !snapshot.Complete() {
 		return 1
 	}
 	return 0
