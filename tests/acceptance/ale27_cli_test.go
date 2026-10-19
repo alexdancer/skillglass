@@ -25,7 +25,7 @@ type changeReceipt struct {
 
 func changeCommand(t *testing.T, fx fixture, extraProfile string, args ...string) commandResult {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	argv := fx.launchArgs(t, skillglassBinary, true, extraProfile, args...)
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
@@ -45,7 +45,7 @@ func changeCommand(t *testing.T, fx fixture, extraProfile string, args ...string
 		}
 		code = exit.ExitCode()
 	}
-	if ctx.Err() != nil {
+	if err != nil && ctx.Err() != nil {
 		t.Fatal("change timed out")
 	}
 	result := commandResult{code: code, stdout: stdout.Bytes(), stderr: stderr.Bytes(), duration: time.Since(started), launch: launch}

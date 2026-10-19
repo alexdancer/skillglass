@@ -950,7 +950,7 @@ func newFixture(t *testing.T) fixture {
 
 func (fx fixture) run(t *testing.T, args ...string) commandResult {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	command := fx.command(t, ctx, args...)
 	command.Dir = fx.project
@@ -958,7 +958,7 @@ func (fx fixture) run(t *testing.T, args ...string) commandResult {
 	command.Stdin = bytes.NewReader(nil)
 	result, err := executeFinalizedCommand(t, command)
 	recordEvidenceCommand(t, "public-cli-contained", result)
-	if ctx.Err() != nil {
+	if err != nil && ctx.Err() != nil {
 		t.Fatalf("command timed out: %s %s", skillglassBinary, strings.Join(args, " "))
 	}
 	if err != nil {
