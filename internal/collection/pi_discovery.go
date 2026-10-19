@@ -52,7 +52,7 @@ func (builder *discoveryBuilder) discoverPiFile(ctx context.Context, root Discov
 	builder.sources[id] = Source{ID: id, Identity: identity, Directory: resolved, Name: manifest.Name, Description: manifest.Description, Manifest: manifest, References: []ReferenceID{rid}, Problems: problems, Ownership: EvidenceState{State: "unknown", Reason: "standalone Markdown resource has no established bundle ownership"}}
 }
 
-func (builder *discoveryBuilder) discoverPiChildren(ctx context.Context, root DiscoveryRoot, path string, ancestors map[string]bool, count *int, first bool) {
+func (builder *discoveryBuilder) discoverPiChildren(ctx context.Context, root DiscoveryRoot, path string, ancestors map[string]bool, count *int, first bool, matcher *piIgnoreMatcher, excluded bool) {
 	if ctx.Err() != nil {
 		return
 	}
@@ -69,10 +69,19 @@ func (builder *discoveryBuilder) discoverPiChildren(ctx context.Context, root Di
 	*count++
 	ancestors[resolved] = true
 	defer delete(ancestors, resolved)
+	if !excluded {
+		matcher.addDirectory(root.piDiscovery, root.Path, path)
+	}
 	if present, _ := hasManifest(path); present {
+		file := filepath.Join(path, "SKILL.md")
+		relative, _ := filepath.Rel(root.Path, file)
+		ignored := excluded || matcher.ignored(relative, false)
+		root.piDiscovery.record(file, ignored, matcher)
 		rel, _ := filepath.Rel(root.Path, path)
 		builder.discoverCandidate(ctx, root, path, rel)
-		return
+		if !ignored && !matcher.uncertain(relative) {
+			return
+		}
 	}
 	entries, err := os.ReadDir(path)
 	if err != nil {
@@ -102,7 +111,11 @@ func (builder *discoveryBuilder) discoverPiChildren(ctx context.Context, root Di
 			continue
 		}
 		if info.IsDir() {
-			builder.discoverPiChildren(ctx, root, child, ancestors, count, false)
+			ignored := excluded || matcher.ignored(rel, true)
+			builder.discoverPiChildren(ctx, root, child, ancestors, count, false, matcher, ignored)
+			continue
+		}
+		if e.Name() == "SKILL.md" {
 			continue
 		}
 		if !strings.HasSuffix(e.Name(), ".md") {
@@ -110,6 +123,7 @@ func (builder *discoveryBuilder) discoverPiChildren(ctx context.Context, root Di
 		}
 		include := (root.piMode == "pi" && first) || (root.piMode == "agents" && !first)
 		if include {
+			root.piDiscovery.record(child, excluded || matcher.ignored(rel, false), matcher)
 			builder.discoverPiFile(ctx, root, child, rel)
 		}
 	}

@@ -168,7 +168,7 @@ func piIgnoreFixture(t *testing.T, origin, control string) (fixture, string, str
 	a := filepath.Dir(codexSkill(t, root, folder, "ignore-A"))
 	codexSkill(t, root, "B", "healthy-B")
 	codexSkill(t, global, "C", "healthy-C")
-	ignore, exit := "*\n", 1
+	ignore, exit := "**\n", 1
 	if control == "comment-only" {
 		ignore, exit = "# comment only\n\n", 0
 	}
