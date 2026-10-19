@@ -20,8 +20,32 @@ approval of a chosen subset with `review prepare` and `review select`. These
 commands write no skill contents or settings. Apply the complete approved
 selection with `review apply --selection FILE`. It preflights the entire batch,
 tracks expected shared-settings writes, stops on failure and reinspects each
-result. Completed writes remain in place. Companion installation is separate work. See [the review contract](docs/review-contract.md)
+result. Completed writes remain in place. Explicit companion setup is available
+separately. See [the review contract](docs/review-contract.md)
 and `skillglass help` for direct reads, controls and proposal syntax.
+
+## Install the companion for selected applications
+
+Put the compatible executable named `skillglass` on the same PATH the native
+application uses, then run `skillglass setup --check`. Preview explicit targets:
+
+```sh
+skillglass setup --app codex --app opencode --allow-shared-app codeaf
+```
+
+This shows exact user destinations and acknowledged indirect discovery. Add
+`--install` to the same explicit request after reviewing it. CodeAF is a known
+source-loader consumer of these shared folders; its installed dirty-build
+catalog is unverified. Consent acknowledges that possible exposure and installs
+no separate CodeAF target. Omitting required shared consent refuses the write.
+Claude's personal folder is also discovered by OpenCode, so installing only for
+Claude normally needs `--allow-shared-app opencode` as well as CodeAF consent.
+
+Setup supports the validated default macOS Codex, Claude Code and OpenCode user
+folders. Identical copies are idempotent; customized copies remain preserved
+conflicts. Other targets, overridden native homes, project-local setup and
+managed caches have no installation fallback. See [setup, prerequisites and
+recovery](docs/companion-setup.md) and [native verification limits](docs/verification/ale-48.md).
 
 ## Planned capabilities
 

@@ -21,6 +21,8 @@ const usage = `Usage:
   skillglass enable|disable|inherit --agent codex|claude-code|hermes|pi|opencode|gemini --scope global|project [SCOPE] [--confirm TOKEN] [--json] SOURCE_ID
   skillglass enable|disable|inherit --agents APP --agents APP --scope global|project [SCOPE] [--confirm TOKEN] [--json] SOURCE_ID
   skillglass delete [SCOPE] [--confirm TOKEN] [--json] SOURCE_ID
+  skillglass setup --app APP [--app APP ...] [--allow-shared-app APP ...] [--install] [--json]
+  skillglass setup --check [--json]
   skillglass companion [--json] [--file BUNDLE_RELATIVE_PATH]
   skillglass review prepare --draft FILE [--json]
   skillglass review select --proposal FILE [--choose CHANGE_ID ...] [--approve SELECTION_ID] [--json]
@@ -59,6 +61,31 @@ outcome, exit_code, coverage.discovery and coverage.selected separately. Status 
 can contain useful partial discovery; it never proves complete review coverage.
 Usage/early errors with --json remain JSON and include failure and help. Flags
 precede positional IDs/paths. See docs/cli-json.md for the compatibility contract.
+
+Companion setup:
+  setup --app APP previews exact user-level destinations and shared effects.
+  Repeat the explicit applications with --install to install the bundled skill.
+  macOS native discovery validated: Codex 0.162.1, Claude Code 2.1.300,
+  OpenCode 1.17.15. Other applications/platforms are unsupported/unverified.
+  Default Codex, Claude and OpenCode roots may also expose the skill to CodeAF;
+  its installed dirty-build discovery is unverified. Claude personal skills are
+  also imported by OpenCode. Review affected apps in the preview. Select each
+  installation target with --app, and separately acknowledge indirect discovery
+  with --allow-shared-app APP, repeating as needed. This grants no separate
+  installation or native-support claim for that consumer. Repeat exact apps and
+  consent with --install. Unacknowledged shared consumers refuse; no fallback.
+  For example: setup --app codex --app opencode --allow-shared-app codeaf
+  previews two targets; add --install only after reviewing those destinations.
+  Aliased destinations refuse. Non-default CODEX_HOME, CLAUDE_CONFIG_DIR or
+  XDG_CONFIG_HOME destinations are unverified and unsupported; no fallback.
+  Managed caches, projects, generic skills and settings are never written.
+  Identical copies are already-present; customized/different copies are preserved
+  as conflicts. Preserve or move a conflicting copy yourself before retrying.
+  Each application reports its own outcome; partial installs are retained.
+  skillglass must be executable on the native application PATH. setup --check
+  diagnoses missing/moved/incompatible builds without installation. Repair PATH
+  to a compatible build, then retry. Use a fresh native session or native reload;
+  installed files do not prove session adoption. Reads/reviews never install.
 
 Collection review:
   companion emits portable bundled skillglass-review 1.0.0, review contract 1.

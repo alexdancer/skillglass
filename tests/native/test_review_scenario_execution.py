@@ -73,6 +73,44 @@ class ReviewScenarioExecution(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'outside the explicit native settings'):
             self.invoke(['review', 'apply'], 'home/skill/SKILL.md')
 
+    def test_setup_checks_always_use_reader(self):
+        for execution in (False, True):
+            self.state['execution'] = execution
+            for arguments in (['setup', '--check'], ['setup', '--check', '--json'],
+                              ['setup', '--json', '--check']):
+                with self.subTest(execution=execution, arguments=arguments):
+                    result, argv = self.invoke(['--', *arguments])
+                    self.assertEqual(result, 0)
+                    self.assertEqual(argv[2], 'reader-test-only')
+                    self.assertEqual(argv[4:], arguments)
+        for path in self.output.glob('call-*/invocation.json'):
+            invocation = json.loads(path.read_text())
+            self.assertIs(invocation['availability_execution'], False)
+            self.assertEqual(invocation['profile_sha256'], 'reader-hash')
+
+    def test_setup_other_than_exact_read_only_check_stays_outside_surface(self):
+        denied = ([], ['--json'], ['--app', 'codex'], ['--install', '--app', 'codex'],
+                  ['--check', '--install'], ['--check', '--install=false'],
+                  ['--check', '--app', 'codex'], ['--check', '--allow-shared-app', 'codeaf'],
+                  ['--check=false'], ['--check=invalid'], ['--check', 'false'],
+                  ['--check', '--check=false'], ['--check', '--json', '--install'],
+                  ['--check', '--json', '--confirm'], ['--check', '--json', '--'],
+                  ['--check', '--check'], ['--check', '--unknown'], ['-check'],
+                  ['--check=true'], ['--check', '--json=false'], ['--check', '--json', '--json'])
+        for execution in (False, True):
+            self.state['execution'] = execution
+            for arguments in denied:
+                with self.subTest(execution=execution, arguments=arguments):
+                    with self.assertRaisesRegex(ValueError, 'read-only public operations'):
+                        self.invoke(['setup', *arguments])
+        self.assertFalse(list(self.output.glob('call-*')))
+
+    def test_setup_check_retains_artifact_inclusive_no_write_guard(self):
+        for changed in ('home/.codex/config.toml', 'artifacts/unexpected.json'):
+            with self.subTest(changed=changed):
+                with self.assertRaisesRegex(RuntimeError, 'read-only product operation'):
+                    self.invoke(['setup', '--check', '--json'], changed)
+
     def test_direct_confirmation_stays_outside_surface(self):
         with self.assertRaisesRegex(ValueError, 'read-only public operations'):
             self.invoke(['disable', '--confirm', 'opaque'])

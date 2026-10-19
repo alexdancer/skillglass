@@ -156,7 +156,7 @@ def create(args):
         'XDG_CONFIG_HOME': str(home / '.config'),
         'XDG_DATA_HOME': str(home / '.local/share'),
         'XDG_CACHE_HOME': str(home / '.cache'), 'XDG_STATE_HOME': str(home / '.local/state'),
-        'TMPDIR': str(fixture / 'tmp'), 'PATH': '/usr/bin:/bin:/usr/sbin:/sbin',
+        'TMPDIR': str(fixture / 'tmp'), 'PATH': str(binaries) + ':/usr/bin:/bin:/usr/sbin:/sbin',
         'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null', 'LC_ALL': 'C',
     }
     boundary = ReviewContainment(fixture, project, environment,
@@ -253,7 +253,9 @@ def run(args):
         arguments = arguments[1:]
     allowed = ('list', 'problems', 'read', 'explain', 'read-resource', 'compare',
                'companion', 'help', '--help', 'review', 'enable', 'disable')
-    if not arguments or arguments[0] not in allowed or any(
+    startup_check = arguments in (['setup', '--check'], ['setup', '--check', '--json'],
+                                 ['setup', '--json', '--check'])
+    if not arguments or (arguments[0] not in allowed and not startup_check) or any(
             value.split('=')[0] in ('--confirm', '-confirm') for value in arguments):
         raise ValueError('scenario surface permits read-only public operations and previews only')
     applying = len(arguments) > 1 and arguments[:2] == ['review', 'apply']
