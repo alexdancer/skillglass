@@ -53,13 +53,19 @@ proposal and approval. An empty selection applies no changes.
 Execution guards the original native read set, reviewed evidence and structural
 inventories for every catalog consumer. Each next native preview must match the
 approved ordered effect exactly. It retains the native writer's immediate
-rechecks under its held directory lock and before commit. Expected progression
-advances configuration facts only to the exact staged file object installed by a
-successful native write, with verified bytes and metadata. Exclusive native
-directory creation may add only that held directory's identity to ancestor
-chains. Every other file, identity, source, reference, evidence observation and
-new native input remains subject to freshness checks. Independent stale native
-tokens are never replayed and unrelated same-byte replacements still refuse.
+rechecks under its held directory lock and before commit. Expected configuration
+progression accepts only the exact staged file object installed by a successful
+native write, with verified bytes and metadata. For Pi, expected discovery and
+additional native input paths are projected before the write from its exact
+approved settings postimage, including project registrations of existing sources.
+The structural expectation advances only after a verified commit; arbitrary live
+discovery is never adopted. Exclusive native directory creation may add only that
+held directory's identity to ancestor chains. Every other file, identity, source,
+reference, evidence observation and new native input remains subject to freshness
+checks. Independent stale native tokens are never replayed and unrelated same-byte
+replacements still refuse. See the [Pi registration regressions](../tests/acceptance/ale49_pi_review_test.go)
+and [in-batch external-change refusals](../tests/acceptance/ale47_review_apply_test.go)
+for executable coverage.
 
 The first unexpected non-success stops application. Completed writes remain;
 later items are `not-attempted`. Machine receipts retain each source, application,
@@ -125,3 +131,17 @@ copies, discloses incomplete evidence, and excludes omitted recommendations.
 The subset approval follow-up must identify a concrete chosen subset from its
 actual proposal. These are behavioral evaluations; deterministic acceptance or
 searches through instruction strings cannot substitute for them.
+
+## Installed-companion delivery evaluations
+
+For the delivered Mac journey, use `create --installed --execution` as documented
+in [delivered workflow verification](verification/ale-49.md). This is explicit
+controller setup for Codex and Claude Code with separate OpenCode/CodeAF shared
+acknowledgement before model dispatch. It preserves exact installed bundle files
+and setup manifests separately from model calls. `context.txt` contains those
+actual installed bytes and the tool surface; `request.txt` contains the neutral
+synthetic request. `--case missing-inputs --incomplete-evidence` independently
+combines missing user inputs and evidence limitations. No installation command
+is added to the evaluator's narrow `run` surface. Every installed companion copy
+remains a distinct inventory source; synthetic keep-enabled inputs should
+protect both copies when their continued availability is required.

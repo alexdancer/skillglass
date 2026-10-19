@@ -270,15 +270,40 @@ func TestALE47ProjectAndHumanReceipts(t *testing.T) {
 // the first real commit, it makes a genuine edit and releases the writer. There
 // is no production fault switch or synthetic freshness bypass.
 func TestALE47ExternalEditsDuringBatch(t *testing.T) {
-	for _, scenario := range []string{"saved-config", "same-byte-config", "evidence", "source-identity", "new-reference"} {
+	for _, app := range []string{"codex", "pi"} {
+		t.Run(app, func(t *testing.T) {
+			ale47ExternalEditsDuringBatch(t, app)
+		})
+	}
+}
+func ale47ExternalEditsDuringBatch(t *testing.T, app string) {
+	for _, scenario := range []string{"saved-config", "same-byte-config", "evidence", "source-identity", "new-reference", "new-source", "new-consumer"} {
 		t.Run(scenario, func(t *testing.T) {
 			fx, id, target := ale40Fixture(t, false)
 			guide := filepath.Join(filepath.Dir(target), "guide.md")
 			writeFile(t, guide, []byte("initial reviewed evidence"), 0600)
 			draft, _ := ale47Draft(t, fx, id, []string{"codex", "claude-code", "hermes"})
 			draft.Sources[0].SupportingPaths = []string{"guide.md"}
-			selection, path := ale47Approved(t, fx, draft, []string{"codex-first", "claude-code-first", "hermes-first"})
-			lock, err := os.Open(filepath.Join(fx.home, ".claude"))
+			chosen := []string{"codex-first", "claude-code-first", "hermes-first"}
+			lockPath := filepath.Join(fx.home, ".claude")
+			if app == "pi" {
+				writeFile(t, filepath.Join(fx.home, ".pi/agent/settings.json"), []byte(`{"keep":true,"defaultProjectTrust":"always"}`), 0600)
+				writeFile(t, filepath.Join(fx.project, ".pi/settings.json"), []byte(`{"keep":true}`), 0600)
+				writeFile(t, filepath.Join(fx.project, ".claude/settings.json"), []byte(`{"keep":true}`), 0600)
+				draft.Context.Applications = []string{"pi", "claude-code"}
+				draft.Context.Scope, draft.Context.Project = collection.ControlProject, fx.project
+				for i := range draft.Changes {
+					if draft.Changes[i].Application == "codex" {
+						draft.Changes[i].Application = "pi"
+						draft.Changes[i].ID = strings.Replace(draft.Changes[i].ID, "codex", "pi", 1)
+					}
+				}
+				draft.Changes = draft.Changes[:4]
+				chosen = []string{"pi-first", "claude-code-first", "claude-code-second"}
+				lockPath = filepath.Join(fx.project, ".claude")
+			}
+			selection, path := ale47Approved(t, fx, draft, chosen)
+			lock, err := os.Open(lockPath)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -326,7 +351,7 @@ func TestALE47ExternalEditsDuringBatch(t *testing.T) {
 			}
 			switch scenario {
 			case "saved-config":
-				writeFile(t, first, append(readBytes(t, first), []byte("\n# unrelated external edit\n")...), 0600)
+				writeFile(t, first, append(readBytes(t, first), '\n'), 0600)
 			case "same-byte-config":
 				raw := readBytes(t, first)
 				if err := os.Rename(first, first+"-external"); err != nil {
@@ -342,6 +367,15 @@ func TestALE47ExternalEditsDuringBatch(t *testing.T) {
 				writeSkill(t, filepath.Dir(target), "ale40-target", "replacement", "Replacement")
 			case "new-reference":
 				if err := os.Symlink(filepath.Dir(target), filepath.Join(fx.home, ".claude/skills/new-reference")); err != nil {
+					t.Fatal(err)
+				}
+			case "new-source":
+				codexSkill(t, filepath.Join(fx.home, ".pi/agent/skills"), "external-source", "external-source")
+			case "new-consumer":
+				if err := os.MkdirAll(filepath.Join(fx.home, ".codeaf/skills"), 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(filepath.Dir(target), filepath.Join(fx.home, ".codeaf/skills/external-consumer")); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -369,7 +403,7 @@ func TestALE47ExternalEditsDuringBatch(t *testing.T) {
 				t.Fatalf("external change accepted: %+v", out.Results)
 			}
 			assertTreeUnchanged(t, afterExternal, treeManifest(t, fx.base))
-			writeEvidence(t, "ale47/external-"+scenario+".json", stdout.Bytes())
+			writeEvidence(t, "ale47/external-"+app+"-"+scenario+".json", stdout.Bytes())
 		})
 	}
 }

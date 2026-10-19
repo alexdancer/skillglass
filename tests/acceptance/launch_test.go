@@ -2,6 +2,7 @@ package acceptance_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync/atomic"
 
 	"github.com/alexdancer/skillglass/tests/launchrecord"
 	"github.com/creack/pty"
@@ -16,10 +18,13 @@ import (
 
 type fixtureCommand struct {
 	*exec.Cmd
-	fixture         fixture
-	record          *launchrecord.Record
-	payloadProfile  []byte
-	payloadIdentity launchrecord.File
+	fixture           fixture
+	record            *launchrecord.Record
+	executionErr      error
+	executionCanceled bool
+	recordingErr      error
+	payloadProfile    []byte
+	payloadIdentity   launchrecord.File
 }
 
 func invocationDirectory() string {
@@ -91,6 +96,7 @@ func (command *fixtureCommand) begin() error {
 }
 func (command *fixtureCommand) Run() error {
 	if err := command.begin(); err != nil {
+		command.executionErr = err
 		return err
 	}
 	var stdout, stderr bytes.Buffer
@@ -103,9 +109,26 @@ func (command *fixtureCommand) Run() error {
 	}
 	command.Stdout = io.MultiWriter(out, &stdout)
 	command.Stderr = io.MultiWriter(errout, &stderr)
+	var cancellationRequested atomic.Bool
+	if cancel := command.Cmd.Cancel; cancel != nil {
+		command.Cmd.Cancel = func() error {
+			err := cancel()
+			if err == nil {
+				cancellationRequested.Store(true)
+			}
+			return err
+		}
+	}
 	err := command.Cmd.Run()
-	if receiptErr := command.record.Complete(err, stdout.Bytes(), stderr.Bytes()); receiptErr != nil {
-		return errors.Join(err, receiptErr)
+	command.executionErr = err
+	command.executionCanceled = errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+	var exit *exec.ExitError
+	if cancellationRequested.Load() && errors.As(err, &exit) && exit.ExitCode() < 0 {
+		command.executionCanceled = true
+	}
+	command.recordingErr = command.record.Complete(err, stdout.Bytes(), stderr.Bytes())
+	if command.recordingErr != nil {
+		return errors.Join(err, command.recordingErr)
 	}
 	return err
 }

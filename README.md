@@ -75,6 +75,7 @@ Native integrations cover Codex, Claude Code, Hermes, Pi, OpenCode, Gemini CLI, 
 - [ALE-43 verification](docs/verification/ale-43.md)
 - [ALE-41 permanent deletion verification](docs/verification/ale-41.md)
 - [ALE-42 offline delivery verification](docs/verification/ale-42.md)
+- [Delivered Mac companion review workflow](docs/verification/ale-49.md)
 
 [Linear](https://linear.app/alex-dancer/project/skill-viewer-58706f175bed) holds live ticket requirements, status, and dependencies. The local copies are references.
 
