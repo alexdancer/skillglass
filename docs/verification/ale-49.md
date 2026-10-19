@@ -46,10 +46,10 @@ continuing. Customized copies are preserved conflicts. Unsupported or uncertain
 isolation refuses without a fallback. Project-local companion setup is unsupported;
 reviewing one selected project is a separate operation.
 
-Setup validation covers default user destinations for Codex 0.162.1, Claude Code
-2.1.300 and OpenCode 1.17.15. CodeAF remains native-unverified. These catalog
-versions do not refresh independently versioned availability-control evidence
-or prove adoption by an already running session. See [setup evidence](ale-48.md).
+The [setup contract](../companion-setup.md#supported-destinations) owns validated
+default user destinations and native catalog versions. These catalog checks do
+not refresh independently versioned availability-control evidence or prove
+adoption by an already running session. See [setup evidence](ale-48.md).
 
 ## Repeat the journey in a disposable environment
 

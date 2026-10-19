@@ -109,11 +109,19 @@ Setup can proceed with incomplete inventory when the selected destination and
 all possible affected applications are proven. The `isolation.warnings` array
 and human `Warning:` lines retain unrelated discovery or ownership gaps; a
 successful install does not claim complete inventory coverage. For example, a
-broken skill link whose prospective target is proven disjoint, Pi ignore-file
-availability uncertainty in a disjoint fixed root, or incomplete inactive Pi
-package-cache inspection does not block a proven ordinary destination. Inactive
-cache storage is still checked for destination ownership, and registered package
-roots remain prospective discovery routes.
+broken skill link whose prospective target is proven disjoint or incomplete
+inactive Pi package-cache inspection does not block a proven ordinary destination.
+Inactive cache storage is still checked for destination ownership, and registered
+package roots remain prospective discovery routes.
+
+Pi ignore uncertainty can remain a warning in a disjoint root or an unrelated
+sibling skill within the same root. This requires adapter-classified ignore
+diagnostics with consistent source, reference and root provenance, plus a proven
+ignore-input chain from the participating root through every prospective
+destination ancestor and the destination itself. Unsupported rules on that chain
+still refuse, even when no existing manifest produces an inventory diagnostic.
+Missing or inconsistent provenance also refuses. The [bounded Pi ignore
+contract](verification/ale-50.md#native-ignore-decisions) defines qualified syntax.
 
 Unknown native configuration, plugin hooks and external-secret startup policy
 can redirect discovery. Their uncertainty continues to refuse even when the
