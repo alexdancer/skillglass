@@ -24,6 +24,12 @@ func piProveControlCoverage(s *Snapshot, source Source) error {
 		}
 	}
 	for _, ra := range source.Availability.References {
+		if ra.Participation == ParticipationInspection {
+			if !piProvenInspectionReference(s, source, ra) {
+				return errors.New("selected Pi inspection occurrence has unproven reference or root provenance")
+			}
+			continue
+		}
 		if ra.Permission.State == PermissionUnknown || ra.Participation == ParticipationUnknown {
 			return errors.New("selected Pi occurrence has uncertain native participation or permission")
 		}
@@ -62,6 +68,25 @@ func piProveControlCoverage(s *Snapshot, source Source) error {
 	}
 	return nil
 }
+func piProvenInspectionReference(s *Snapshot, source Source, ra ReferenceAvailability) bool {
+	ref, found := s.references[ra.Reference]
+	if !found || ref.ID != ra.Reference || ref.Source != source.ID || !slices.Contains(source.References, ref.ID) || ra.Provenance.Kind != "custom" {
+		return false
+	}
+	if _, native := s.piControls.facts[ref.Root]; native {
+		return false
+	}
+	for _, root := range s.request.Roots {
+		if root.ID != ref.Root || root.Origin != "" || root.Context != ref.Context || (root.Context != ContextCustom && root.Context != ContextProject) {
+			continue
+		}
+		return slices.ContainsFunc(s.scope.Roots, func(report RootReport) bool {
+			return report.ID == root.ID && report.Requested == root.Path && report.Context == root.Context && report.Origin == ""
+		})
+	}
+	return false
+}
+
 func piDanglingReference(s *Snapshot, path string) bool {
 	_, err := os.Stat(path)
 	if !errors.Is(err, os.ErrNotExist) {

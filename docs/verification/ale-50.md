@@ -26,6 +26,7 @@ A closed list of demonstrably unrelated inspection gaps may coexist with a Pi co
 - A native dangling reference is stat-proven absent and cannot currently load. Its lexical link text, inode, ancestors and missing resolution remain guarded. Becoming a valid alias invalidates approval.
 - A valid, understood registered package may declare an exact resource path that is absent. Unknown package registration, unreadable/invalid manifests and unbounded active membership remain refusals.
 - Unqualified ignore rules for completely enumerated independent sources do not block a target whose every native occurrence is proven. Target ignore uncertainty still refuses.
+- Viewer-selected references may retain inspection-only participation and unknown permission without blocking a proven native operation. The reference must belong to the selected source and match an explicit inspection root in both the request and root report, with no Pi native root fact. Missing or inconsistent provenance refuses; a viewer-only source still has no native control target.
 
 Every other incomplete participating search refuses, including active traversal limits that could conceal a target alias, unresolved settings and unknown package boundaries. A target's native aliases, identity, hardlink restrictions, destination safety, trust and prospective achieved result are still checked. The existing independent-source permission/membership checks remain in force. No broad selector or package-manager write substitutes for an exact source operation.
 
@@ -40,6 +41,8 @@ The same snapshot read-set helper is used during direct preview and review captu
 ## Executable regressions
 
 `tests/acceptance/ale50_pi_test.go` exercises the built executable in isolated fixtures. It covers ordinary enable/disable with nonmatching root and actual live leaf ignore rules, dangling unrelated links, absent package roots and a 10,000-entry inactive cache; ordered two-item review under incomplete discovery; stale same-result/new/symlink-target ignore inputs and a broken link becoming a target alias; and refusal for active search limits, unknown settings and managed aliases. Existing unknown-ignore diagnostic tests now use deliberately unqualified `**` rather than newly supported `*`, retaining their original uncertainty-scoping contracts.
+
+`tests/acceptance/ale50_inspection_controls_test.go` ports the independent six-application preview regression with and without an explicit viewer root, retaining unknown inspection permission diagnostics. It covers custom/project inspection roots across all Pi control operations and preserves refusals for native permission/participation uncertainty, unknown ignore rules, viewer-only sources and prevented prospective effects. `internal/collection/pi_change_proof_test.go` exercises missing/inconsistent reference and root provenance at the shared proof boundary. The original ALE-42 browser journey remains unchanged. Decision5's qualified higher-star-ignore case expects lower available and higher unavailable; its unsupported higher-pattern case still expects unknown.
 
 Run those tests plus adjacent discovery, direct control and ordered review coverage with:
 
