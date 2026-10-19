@@ -34,11 +34,11 @@ func changeObservations(s *Snapshot, destination changeDestination) ([]byte, []c
 	if err != nil {
 		return nil, nil, err
 	}
-	ordered := changeObservationPaths(view, destination)
+	ordered := snapshotChangeObservationPaths(s, destination)
 	var facts []changeFact
 	for _, path := range ordered {
 		fact, err := observeChangePath(path)
-		if err != nil {
+		if err != nil && !piObservationFailureAllowed(s, path, err) {
 			if errors.Is(err, os.ErrPermission) {
 				return nil, nil, errors.New("unreadable relevant input")
 			}
@@ -47,6 +47,44 @@ func changeObservations(s *Snapshot, destination changeDestination) ([]byte, []c
 		facts = append(facts, fact)
 	}
 	return raw, facts, nil
+}
+
+// snapshotChangeObservationPaths includes the Pi traversal read set, including
+// absent ignore files whose later creation must invalidate direct and batch consent.
+func snapshotChangeObservationPaths(s *Snapshot, destination changeDestination) []string {
+	paths := changeObservationPaths(s.Query(Filters{Context: FilterAll}, QuerySources), destination)
+	seen := make(map[string]bool, len(paths))
+	for _, path := range paths {
+		seen[path] = true
+	}
+	if s.piControls != nil {
+		add := func(path string) {
+			if !seen[path] {
+				paths = append(paths, path)
+				seen[path] = true
+			}
+			if resolved, err := filepath.EvalSymlinks(path); err == nil && !seen[resolved] {
+				paths = append(paths, resolved)
+				seen[resolved] = true
+			}
+		}
+		// Package membership/absence proofs depend on the exact manifest bytes even
+		// when a package contributes no discovered source to the public view.
+		for _, reader := range s.managerReaders {
+			add(reader.Path)
+		}
+		for _, fact := range s.piControls.facts {
+			if fact.discovery == nil {
+				continue
+			}
+			for path := range fact.discovery.reads {
+				add(path)
+			}
+		}
+	}
+
+	sort.Strings(paths)
+	return paths
 }
 
 // changeObservationPaths describes the native read set without changing the

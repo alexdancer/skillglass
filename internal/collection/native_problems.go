@@ -10,6 +10,7 @@ func applyNativeProblems(snapshot *Snapshot, problems []Problem, roots map[RootI
 			current = problem
 		}
 		current.nativeLocal = current.nativeLocal || problem.nativeLocal
+		current.piIgnoreInput = current.piIgnoreInput || problem.piIgnoreInput
 		current.SourceIDs = appendUniqueSourceIDs(current.SourceIDs, problem.SourceIDs...)
 		current.ReferenceIDs = appendUniqueReferenceIDs(current.ReferenceIDs, problem.ReferenceIDs...)
 		current.RootIDs = appendUniqueRootIDs(current.RootIDs, problem.RootIDs...)

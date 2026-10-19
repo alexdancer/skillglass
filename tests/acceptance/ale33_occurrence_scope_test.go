@@ -63,7 +63,7 @@ func piRetainedFixture(t *testing.T, scenario string) (fixture, string, string, 
 		patterns = append(patterns, "-"+alias)
 		pState = "disabled"
 	case "unknown-alias":
-		writeFile(t, filepath.Join(p, ".ignore"), []byte("*\n"), 0600)
+		writeFile(t, filepath.Join(p, ".ignore"), []byte("**\n"), 0600)
 		pState = "unknown"
 	case "disabled-X":
 		patterns = append(patterns, "-"+x)

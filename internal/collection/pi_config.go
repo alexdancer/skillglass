@@ -32,6 +32,7 @@ type piPackage struct {
 	object    bool
 }
 type piRootFact struct {
+	discovery       *piDiscovery
 	rank            int
 	base, path      string
 	patterns        []string

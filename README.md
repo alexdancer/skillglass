@@ -165,7 +165,7 @@ bin/skillglass enable --agent pi --scope project --project /path/to/repository S
 bin/skillglass inherit --agent pi --scope project --project /path/to/repository SOURCE_ID
 ```
 
-Inspect the preview and repeat that exact request with `--confirm pi1:PREVIEW_TOKEN` to apply. In the Pi browser, `D`/`e` opens scope selection, `g`/`p` selects global/project, `i` selects project inheritance, `y` confirms and Enter or Escape cancels. See [Pi control evidence and limits](docs/verification/ale-34.md) for the override representation, preservation and refusal rules, capability versus effective-result checks, and required settings reload.
+Inspect the preview and repeat that exact request with `--confirm pi1:PREVIEW_TOKEN` to apply. In the Pi browser, `D`/`e` opens scope selection, `g`/`p` selects global/project, `i` selects project inheritance, `y` confirms and Enter or Escape cancels. See [Pi control evidence and limits](docs/verification/ale-34.md) for the override representation, preservation rules, capability versus effective-result checks, and required settings reload; [bounded Pi discovery and control proof](docs/verification/ale-50.md) owns ignore handling, operation eligibility under incomplete discovery, and input freshness.
 
 OpenCode supports global enable/disable and selected-project overrides:
 

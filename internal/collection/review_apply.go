@@ -243,7 +243,7 @@ func newReviewGuard(ctx context.Context, selection ReviewSelection, prepared pre
 		if err != nil {
 			return nil, fmt.Errorf("%s discovery: %w", capability.Application, err)
 		}
-		for _, path := range changeObservationPaths(snapshot.Query(Filters{Context: FilterAll}, QuerySources), changeDestination{}) {
+		for _, path := range snapshotChangeObservationPaths(snapshot, changeDestination{}) {
 			fact, err := observeChangePath(path)
 			g.facts[path] = fact
 			if err != nil {
@@ -351,7 +351,7 @@ func (g *reviewGuard) check(ctx context.Context) error {
 		}
 		// New native input paths also require approval. Unavailable inputs in
 		// an unselected consumer retain their exact partial fact and error.
-		for _, path := range changeObservationPaths(snapshot.Query(Filters{Context: FilterAll}, QuerySources), changeDestination{}) {
+		for _, path := range snapshotChangeObservationPaths(snapshot, changeDestination{}) {
 			if _, ok := g.facts[path]; !ok {
 				return fmt.Errorf("new native input %s requires renewed approval", path)
 			}
@@ -382,7 +382,7 @@ func (g *reviewGuard) project(ctx context.Context, plan *changePlan) ([]string, 
 			return nil, fmt.Errorf("approved Pi discovery projection failed: %w", err)
 		}
 		discovery[i] = reviewDiscoveryShape(snapshot)
-		for _, path := range changeObservationPaths(snapshot.Query(Filters{Context: FilterAll}, QuerySources), changeDestination{}) {
+		for _, path := range snapshotChangeObservationPaths(snapshot, changeDestination{}) {
 			if _, exists := g.facts[path]; exists {
 				continue
 			}

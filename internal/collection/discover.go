@@ -187,7 +187,7 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 	}
 	if strings.HasPrefix(root.Origin, "opencode-") {
 		builder.discoverOpencodeChildren(ctx, root, root.Path, make(map[string]bool), new(int))
-	} else if rootIsBundle {
+	} else if rootIsBundle && !strings.HasPrefix(root.Origin, "pi-") {
 		if builder.discoverCandidate(ctx, root, root.Path, ".") {
 			report.SourceCount++
 		}
@@ -195,7 +195,7 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 	if rootIsBundle && strings.HasPrefix(root.Origin, "hermes-") && root.Origin != "hermes-plugin" {
 		builder.discoverHermesChildren(ctx, root, root.Path, make(map[string]bool), new(int))
 	}
-	if !strings.HasPrefix(root.Origin, "opencode-") && (!rootIsBundle || strings.HasPrefix(root.Origin, "gemini-")) {
+	if !strings.HasPrefix(root.Origin, "opencode-") && (!rootIsBundle || strings.HasPrefix(root.Origin, "gemini-") || strings.HasPrefix(root.Origin, "pi-")) {
 		entries, readErr := os.ReadDir(resolvedRoot)
 		if readErr != nil {
 			problem := makeProblem(
@@ -220,7 +220,7 @@ func (builder *discoveryBuilder) discoverRoot(ctx context.Context, root Discover
 			return entries[left].Name() < entries[right].Name()
 		})
 		if strings.HasPrefix(root.Origin, "pi-") {
-			builder.discoverPiChildren(ctx, root, root.Path, make(map[string]bool), new(int), true)
+			builder.discoverPiChildren(ctx, root, root.Path, make(map[string]bool), new(int), true, &piIgnoreMatcher{}, false)
 			entries = nil
 		} else if strings.HasPrefix(root.Origin, "hermes-") {
 			builder.discoverHermesChildren(ctx, root, root.Path, make(map[string]bool), new(int))

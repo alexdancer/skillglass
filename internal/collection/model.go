@@ -72,6 +72,7 @@ type DiscoveryRoot struct {
 	Context             ReferenceContext `json:"context"`
 	Origin              string           `json:"origin,omitempty"`
 	Optional            bool             `json:"-"`
+	piDiscovery         *piDiscovery
 	piMode              string
 	piFile              bool
 	childrenOnly        bool
@@ -231,6 +232,7 @@ func ParseProblemCode(value string) (ProblemCode, error) {
 
 type Problem struct {
 	nativeLocal    bool
+	piIgnoreInput  bool
 	ID             ProblemID     `json:"id"`
 	Code           ProblemCode   `json:"code"`
 	Path           string        `json:"path"`

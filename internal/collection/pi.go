@@ -10,6 +10,9 @@ import (
 )
 
 func (inputs *piInputs) addRoot(request *Request, path string, context ReferenceContext, origin, mode string, fact piRootFact, optional bool) {
+	if fact.discovery == nil {
+		fact.discovery = newPiDiscovery()
+	}
 	id := RootID("root_pi_" + stableID(origin, path, fact.path, fact.provenance.PluginID))
 	for _, r := range request.Roots {
 		if r.ID == id {
@@ -34,7 +37,7 @@ func (inputs *piInputs) addRoot(request *Request, path string, context Reference
 	}
 	info, err := os.Stat(path)
 	file := err == nil && !info.IsDir()
-	request.Roots = append(request.Roots, DiscoveryRoot{ID: id, Path: path, Context: context, Origin: origin, Optional: optional, piMode: mode, piFile: file})
+	request.Roots = append(request.Roots, DiscoveryRoot{ID: id, Path: path, Context: context, Origin: origin, Optional: optional, piMode: mode, piFile: file, piDiscovery: fact.discovery})
 	inputs.facts[id] = fact
 }
 func buildPi(ctx context.Context, request Request) (*Snapshot, error) {
@@ -43,7 +46,7 @@ func buildPi(ctx context.Context, request Request) (*Snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	inputs := piInputs{facts: make(map[RootID]piRootFact), scope: AgentScope{Application: "pi", ValidatedVersion: piValidatedVersion, VersionEvidence: "docs/verification/ale-33.md", Evidence: piEvidence(EvidenceInferred, "version-specific-adapter", "", "", "rules validated with installed native Pi resource manager and skill loader; current running sessions are not inspected"), Gaps: []string{"Running CLI --skill, --no-skills, trust overrides, custom SDK loaders and extension-provided resources are not observed.", "Complex minimatch braces/extglobs, package manifest glob expansion and ignore-file rules remain unknown; bounded discovery reports those cases.", "Non-exact ? and character-class patterns involving astral text remain unknown, including conservative uncertainty under astral candidate ancestors.", "Legacy global npm installations and remote package version satisfaction are not inferred from a cache folder.", "Within one native root, discovery order follows the recorded macOS filesystem ordering; other platforms remain unvalidated.", "Standalone Markdown resources can be read; bundle comparison has incomplete coverage.", "Package writers are unavailable; exact resource controls require a confirmed preview."}}}
+	inputs := piInputs{facts: make(map[RootID]piRootFact), scope: AgentScope{Application: "pi", ValidatedVersion: piValidatedVersion, VersionEvidence: "docs/verification/ale-33.md", Evidence: piEvidence(EvidenceInferred, "version-specific-adapter", "", "", "rules validated with installed native Pi resource manager and skill loader; current running sessions are not inspected"), Gaps: []string{"Running CLI --skill, --no-skills, trust overrides, custom SDK loaders and extension-provided resources are not observed.", "Complex minimatch braces/extglobs, package manifest glob expansion and unqualified ignore syntax remain unknown; bounded discovery reports those cases.", "Non-exact ? and character-class patterns involving astral text remain unknown, including conservative uncertainty under astral candidate ancestors.", "Legacy global npm installations and remote package version satisfaction are not inferred from a cache folder.", "Within one native root, discovery order follows the recorded macOS filesystem ordering; other platforms remain unvalidated.", "Standalone Markdown resources can be read; bundle comparison has incomplete coverage.", "Package writers are unavailable; exact resource controls require a confirmed preview."}}}
 	inputs.overlay = request.piSettingsOverlay
 	inputs.global = inputs.settings(filepath.Join(agentDir, "settings.json"), "global", request.home)
 	inputs.trust = inputs.projectTrust(request.Project, agentDir)
@@ -182,7 +185,12 @@ func (inputs *piInputs) explain(snapshot *Snapshot, id SourceID, roots map[RootI
 				ra.Evidence = piEvidence(EvidenceUnknown, "project-trust", fact.path, "defaultProjectTrust", "project trust requires a decision or cannot be read")
 			}
 			// Ignore files use gitignore semantics; unsupported forms must not be invented.
-			ignoreUnknown := !root.piFile && piHasIgnore(root.Path, file)
+			ignore := fact.discovery.decisions[file]
+			ignoreUnknown := ignore.unknown
+			if ignore.excluded && !ignore.unknown {
+				ra.Participation = ParticipationExcluded
+				ra.Evidence = piEvidence(EvidenceInferred, "native-ignore", file, ".gitignore, .ignore, .fdignore", "native ignore rules exclude this occurrence")
+			}
 			if !patternKnown {
 				problem := makeProblem(ProblemNativeInput, fact.path, "Pi resource pattern semantics are not independently validated", nil, true)
 				problem.nativeLocal = true
@@ -194,6 +202,7 @@ func (inputs *piInputs) explain(snapshot *Snapshot, id SourceID, roots map[RootI
 				ra.Permission.Evidence = piEvidence(EvidenceUnknown, "unverified-native-input", fact.path, "skills", "configuration, pattern or ignore-file semantics cannot be reliably interpreted")
 				if ignoreUnknown {
 					problem := makeProblem(ProblemNativeInput, root.Path, "Pi ignore-file rules require native validation; resource availability remains unknown", nil, true)
+					problem.piIgnoreInput = true
 					problem.nativeLocal = true
 					problem.ReferenceIDs = []ReferenceID{rid}
 					inputs.problems = append(inputs.problems, problem)
@@ -207,7 +216,7 @@ func (inputs *piInputs) explain(snapshot *Snapshot, id SourceID, roots map[RootI
 				source.Ownership = EvidenceState{State: "managed", Reason: "Pi package registration or managed storage owns this content; no isolated writer is enabled"}
 			}
 			candidateRank := fact.rank
-			if fact.trust == "denied" || fact.trust == "inactive" {
+			if fact.trust == "denied" || fact.trust == "inactive" || ignore.excluded && !ignore.unknown {
 				candidateRank += 100
 			}
 			if selection, isSuppressed := suppressed[rid]; isSuppressed {
@@ -307,6 +316,9 @@ func (inputs *piInputs) occurrenceDuplicates(snapshot *Snapshot) map[ReferenceID
 			continue
 		}
 		file := piOccurrenceFile(snapshot.sources[ref.Source], ref)
+		if fact.discovery.decisions[file].excluded {
+			continue
+		}
 		if seen[file] {
 			suppressed[rid] = piEvidence(EvidenceInferred, "native-first-lexical-occurrence", file, file, "earlier native registration retained this identical lexical resource")
 		} else {
@@ -334,31 +346,6 @@ func (inputs *piInputs) occurrenceDuplicates(snapshot *Snapshot) map[ReferenceID
 	return suppressed
 }
 
-func piHasIgnore(root, file string) bool {
-	path := filepath.Dir(file)
-	root = filepath.Clean(root)
-	for {
-		for _, name := range []string{".gitignore", ".ignore", ".fdignore"} {
-			raw, err := nativeBytes(filepath.Join(path, name))
-			if !nativeAbsent(filepath.Join(path, name), err) {
-				if err != nil {
-					return true
-				}
-				for _, line := range strings.Split(string(raw), "\n") {
-					line = strings.TrimSpace(line)
-					if line != "" && !strings.HasPrefix(line, "#") {
-						return true
-					}
-				}
-			}
-		}
-		if path == root || !pathWithin(root, path) || filepath.Dir(path) == path {
-			break
-		}
-		path = filepath.Dir(path)
-	}
-	return false
-}
 func applyPiPrecedence(snapshot *Snapshot, ranks map[SourceID]int) {
 	order := map[SourceID]int{}
 	for index, rid := range snapshot.referenceOrder {
