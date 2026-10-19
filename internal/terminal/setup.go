@@ -81,6 +81,9 @@ func runSetup(args []string, stdout, stderr io.Writer) int {
 	}
 	for _, r := range report.Results {
 		if r.Audit != nil {
+			for _, warning := range r.Audit.Warnings {
+				fmt.Fprintf(stdout, "Warning: %s\n", safeInline(warning))
+			}
 			for _, e := range r.Audit.ConsumerEvidence {
 				fmt.Fprintf(stdout, "Shared discovery %s: %s | %s\n", e.Application, safeInline(e.State), safeInline(e.Reason))
 			}

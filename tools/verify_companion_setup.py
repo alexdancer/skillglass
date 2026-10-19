@@ -125,7 +125,7 @@ def main():
     claude_version = run('claude-version', claude_boundary.command(['--version']),
                          claude, claude_boundary.profile)
     claude_version.check_returncode()
-    assert claude_version.stdout.decode().strip() == '2.1.300 (Claude Code)'
+    assert claude_version.stdout.decode().strip() == '2.1.303 (Claude Code)'
     raw, stderr, commands, exit_code = initialize(claude_boundary.command([
         '--print', '--input-format', 'stream-json', '--output-format', 'stream-json',
         '--verbose']), cwd, env)

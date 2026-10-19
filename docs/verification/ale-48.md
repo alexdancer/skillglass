@@ -52,7 +52,9 @@ python3 tools/verify_companion_setup.py \
 The isolation probe is built from `tests/acceptance/cmd/isolationprobe` using the
 repository's offline cached Go build procedure. Supply authorized installed
 native executables, not arbitrary programs. The helper requires the exact
-recorded versions Codex 0.162.1, Claude Code 2.1.300 and OpenCode 1.17.15. It pins
+recorded versions Codex 0.162.1, Claude Code 2.1.303 and OpenCode 1.17.15.
+The Claude baseline was revalidated for ALE-51 after the installed version
+changed from 2.1.300. It pins
 supplied native bytes before proving the existing Codex containment controls;
 that reuse does not inherit the older helper's 0.155.1 version claim. Claude's
 separate live-home/system denial controls are proved before initialization.
