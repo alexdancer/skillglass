@@ -61,14 +61,12 @@ func (m *piIgnoreMatcher) addDirectory(d *piDiscovery, root, dir string) {
 			}
 			// These are the exact native prefix transformations, rather than generic
 			// per-directory Git matching. Unqualified forms retain honest uncertainty.
-			if strings.ContainsRune(line, '\\') {
+			if strings.TrimRight(line, " \t") != line || strings.ContainsRune(line, '\\') {
 				m.unknownPrefixes = append(m.unknownPrefixes, strings.ToLower(prefix))
 				continue
 			}
 			negated := strings.HasPrefix(line, "!")
 			if negated {
-				line = line[1:]
-			} else if strings.HasPrefix(line, `\!`) {
 				line = line[1:]
 			}
 			line = strings.TrimPrefix(line, "/")
@@ -80,10 +78,45 @@ func (m *piIgnoreMatcher) addDirectory(d *piDiscovery, root, dir string) {
 				m.unknownPrefixes = append(m.unknownPrefixes, strings.ToLower(prefix))
 				continue
 			}
-			m.patterns = append(m.patterns, gitignore.ParsePattern(strings.ToLower(pattern), nil))
+			m.patterns = append(m.patterns, newPiIgnorePattern(strings.ToLower(pattern)))
 		}
 	}
 }
+
+// Native rules match the terminal occurrence; exclusion inherited from a
+// parent is evaluated separately by ignored. Go Git also matches ancestor
+// components, so qualify each rule at its exact terminal path before delegating.
+// This preserves a child's own exclusion after its parent is re-included without
+// inventing a child exclusion for a rule that matched only the restored parent.
+type piIgnoreTerminal struct {
+	gitPattern              gitignore.Pattern
+	pattern                 string
+	directoryOnly, anchored bool
+}
+
+func newPiIgnorePattern(pattern string) gitignore.Pattern {
+	gitPattern := gitignore.ParsePattern(pattern, nil)
+	pattern = strings.TrimPrefix(pattern, "!")
+	directoryOnly := strings.HasSuffix(pattern, "/")
+	pattern = strings.TrimSuffix(pattern, "/")
+	anchored := strings.Contains(pattern, "/")
+	return piIgnoreTerminal{gitPattern: gitPattern, pattern: strings.TrimPrefix(pattern, "/"), directoryOnly: directoryOnly, anchored: anchored}
+}
+func (p piIgnoreTerminal) Match(parts []string, dir bool) gitignore.MatchResult {
+	if len(parts) == 0 || p.pattern == "" || p.directoryOnly && !dir {
+		return gitignore.NoMatch
+	}
+	candidate := parts[len(parts)-1]
+	if p.anchored {
+		candidate = strings.Join(parts, "/")
+	}
+	match, err := filepath.Match(p.pattern, candidate)
+	if err == nil && match {
+		return p.gitPattern.Match(parts, dir)
+	}
+	return gitignore.NoMatch
+}
+
 func piIgnorePatternKnown(pattern string) bool {
 	if !piIgnoreASCII(pattern) || strings.Contains(pattern, "//") || strings.ContainsAny(pattern, `\?`) {
 		return false

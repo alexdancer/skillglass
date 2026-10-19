@@ -257,3 +257,43 @@ func TestALE50PiIgnoredAliasRetainsNativeOccurrence(t *testing.T) {
 		})
 	}
 }
+
+func TestALE50PiNegatedParentAndWhitespaceProof(t *testing.T) {
+	for _, tc := range []struct {
+		name, rules, state string
+		exit               int
+	}{
+		{"parent-name", "*\n!target\n!group\n", "unavailable", 0},
+		{"parent-directory", "*\n!target/\n!group/\n", "unavailable", 0},
+		{"trailing-directory-space", "target/ \n!target/SKILL.md\n", "unknown", 1},
+		{"trailing-directory-tab", "target/\t\n!target/SKILL.md\n", "unknown", 1},
+		{"restored-parent", "target\n!target/\n", "available", 0},
+		{"restored-parent-and-child", "*\n!target/\n!target/SKILL.md\n", "available", 0},
+		{"retained-child-exclusion", "target/*\n!target/\n", "unavailable", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fx := piFixture(t)
+			root := filepath.Join(fx.home, ".pi/agent/skills")
+			target := codexSkill(t, root, "target", "target")
+			codexSkill(t, root, "group/target", "nested")
+			codexSkill(t, root, "sibling", "sibling")
+			writeFile(t, filepath.Join(root, ".ignore"), []byte(tc.rules), 0600)
+			before := treeManifest(t, fx.base)
+			selected := ale50PiSource(t, fx, target, tc.exit)
+			if selected.Availability.State != tc.state {
+				t.Errorf("target = %s, want native-qualified state %s", selected.Availability.State, tc.state)
+			}
+			for _, choice := range []string{"enable", "disable"} {
+				want := 1
+				if tc.state == "available" {
+					want = 0
+				}
+				preview := piChange(t, fx, "global", choice, selected.ID, "", want)
+				if (preview.State == "ready") != (want == 0) {
+					t.Fatal("native participation and preview proof disagree", choice, preview)
+				}
+			}
+			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
+		})
+	}
+}

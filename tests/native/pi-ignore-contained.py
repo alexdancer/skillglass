@@ -11,6 +11,8 @@ import subprocess
 import sys
 import tempfile
 
+if sys.flags.optimize:
+    raise SystemExit('Native qualification assertions must remain enabled')
 if len(sys.argv) != 4 or sys.platform != 'darwin':
     raise SystemExit(__doc__)
 pi, binary, out = [Path(p).resolve() for p in sys.argv[1:]]
@@ -53,6 +55,10 @@ cases = {
     'crlf': {'.gitignore': 'target/SKILL.md\r\n'},
     'trailing-space': {'.gitignore': 'target/SKILL.md   \n'},
 }
+cases.update(json.loads(Path(__file__).with_name('pi-ignore-cases.json').read_text()))
+# These fixtures deliberately exercise unqualified trailing whitespace. Require
+# explicit unknown and refused previews, rather than silently skipping a mismatch.
+expected_unknown = {'trailing-space', 'grammar-11', 'grammar-12', 'grammar-13', 'grammar-34', 'space-after-dir-then-negate-file', 'tab-after-dir-then-negate-file', 'space-tab-after-dir'}
 receipts = []
 for name, ignores in cases.items():
     base = root/name
@@ -61,7 +67,7 @@ for name, ignores in cases.items():
     skills = agent/'skills'
     for relative, skillname in [('target','target'), ('group/target','nested'), ('sibling','sibling')]:
         write(skills/relative/'SKILL.md', f'---\nname: {skillname}\ndescription: Inert fixture.\n---\nNo workload.\n')
-    if name in ['ignored-alias', 'ignored-original']:
+    if name in ['ignored-alias', 'ignored-original'] or name.startswith('alias-'):
         (skills/'alias').symlink_to(skills/'target')
     write(agent/'settings.json', '{}')
     for relative, content in ignores.items():
@@ -96,9 +102,28 @@ console.log(JSON.stringify({controls:{liveReadDenied:true,writesDenied:true,netw
     expected = sorted(s['name'] for s in json.loads(native.stdout)['loaded']['skills'])
     actual = run([str(binary),'list','--agent','pi','--json'], env, project)
     (out/(name+'-cli.json')).write_text(actual.stdout)
-    assert actual.returncode == 0, (name,actual.returncode,actual.stdout[:500])
-    observed = sorted(s['name'] for s in json.loads(actual.stdout)['sources'] if s['availability']['state'] == 'available')
-    assert expected == observed, (name,expected,observed)
-    receipts.append({'case':name,'native_names':expected,'cli_names':observed,'native_exit':native.returncode,'cli_exit':actual.returncode,'native_script_sha256':digest(script),'profile_sha256':digest(profile)})
+    inventory = json.loads(actual.stdout)
+    assert actual.returncode == (1 if name in expected_unknown else 0), (name, actual.returncode, actual.stdout[:500])
+    available = {'available', 'explicit-only'}
+    observed = sorted(s['name'] for s in inventory['sources'] if s['availability']['state'] in available)
+    unknown = sorted(s['name'] for s in inventory['sources'] if s['availability']['state'] == 'unknown')
+    expected_set = set(expected)
+    assert expected_set <= set(observed) | set(unknown), (name, 'native skill missing from available/unknown inventory', expected, observed, unknown)
+    for source in inventory['sources']:
+        state = source['availability']['state']
+        if state != 'unknown':
+            assert (source['name'] in expected_set) == (state in available), (name, source['name'], state, expected)
+    if name in expected_unknown:
+        assert unknown == ['nested', 'sibling', 'target'], (name, 'unqualified grammar was not explicitly unknown', unknown)
+        assert inventory['coverage']['discovery'] == 'incomplete', (name, 'lost unknown coverage')
+        for source in inventory['sources']:
+            for action in ['enable', 'disable']:
+                preview = run([str(binary), action, '--agent', 'pi', '--scope', 'global', '--json', source['id']], env, project)
+                (out/(name+'-'+source['name']+'-'+action+'.json')).write_text(preview.stdout)
+                assert preview.returncode == 1 and json.loads(preview.stdout)['state'] != 'ready', (name, action, source['name'], 'unproven control accepted')
+    else:
+        assert not unknown and expected == observed, (name, expected, observed, unknown)
+    assert (agent/'settings.json').read_text() == '{}', (name, 'read-only probe modified settings')
+    receipts.append({'case':name,'verdict':'expected-unknown-refused' if name in expected_unknown else 'native-parity','native_names':expected,'cli_names':observed,'unknown_names':unknown,'native_exit':native.returncode,'cli_exit':actual.returncode,'native_script_sha256':digest(script),'profile_sha256':digest(profile)})
 (out/'receipt.json').write_text(json.dumps({'fixture_root':str(root),'pi_version':json.loads((pi/'package.json').read_text())['version'],'node':str(node),'node_sha256':digest(node),'binary':str(binary),'binary_sha256':digest(binary),'native_source_sha256':{f:digest(pi/'dist/core'/f) for f in ['skills.js','package-manager.js','settings-manager.js']},'results':receipts},indent=2)+'\n')
-print(f'PASS {len(receipts)} contained native/CLI differential cases; fixtures retained at {root}')
+print(f'PASS {len(receipts)} asserted native-parity/expected-unknown cases; native imports contained, CLI uses disposable HOME; fixtures retained at {root}')
