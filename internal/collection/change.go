@@ -76,7 +76,11 @@ func (p *ChangePreview) View() ChangeView {
 	if p == nil {
 		return ChangeView{State: "refused", Reason: "no preview"}
 	}
-	return cloneChangeView(p.view)
+	view := cloneChangeView(p.view)
+	if p.plan != nil && p.plan.destination.Config.Exists && !view.NoWriteNeeded {
+		view.Notes = append(view.Notes, replacementProvenanceNote)
+	}
+	return view
 }
 func cloneChangeView(original ChangeView) ChangeView {
 	view := original

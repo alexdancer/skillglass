@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"syscall"
 )
 
 // ReviewReceipt retains the native writer result separately from final reinspection.
@@ -267,6 +268,13 @@ func newReviewGuard(ctx context.Context, selection ReviewSelection, prepared pre
 		if err := add(plan.destination.CreateDirectory); err != nil {
 			return nil, err
 		}
+		for _, path := range []string{plan.destination.Path, plan.destination.CreateDirectory} {
+			if path != "" {
+				if err := add(reviewObservationPath(g.facts[path])); err != nil {
+					return nil, err
+				}
+			}
+		}
 	}
 	for _, source := range selection.Proposal.Sources {
 		var owner *Snapshot
@@ -407,11 +415,36 @@ func (g *reviewGuard) advance(plan *changePlan, discovery []string) error {
 	// staged inode. Observing an arbitrary same-byte replacement is insufficient.
 	fact := *plan.committedFact
 	g.discovery = discovery
-	g.facts[plan.destination.Path] = fact
 	if plan.createdFact != nil {
-		g.addCreated(*plan.createdFact, plan.destination.Path)
+		g.addCreated(*plan.createdFact)
+	}
+	for path, old := range g.facts {
+		if g.failures[path] != "" || old.Symlink != "" || old.Directory || reviewObservationPath(old) != fact.Resolved {
+			continue
+		}
+		next := fact
+		next.Path, next.Identity.Path, next.Chain = path, path, old.Chain
+		g.facts[path] = next
 	}
 	return g.check(context.Background())
+}
+func reviewObservationPath(fact changeFact) string {
+	if fact.Exists {
+		return fact.Resolved
+	}
+	for i, ancestor := range fact.Chain {
+		if ancestor.Mode&syscall.S_IFMT == syscall.S_IFLNK {
+			if i+1 >= len(fact.Chain) || !stringsWithin(fact.Path, ancestor.Path) {
+				return ""
+			}
+			rel, err := filepath.Rel(ancestor.Path, fact.Path)
+			if err != nil {
+				return ""
+			}
+			return filepath.Join(fact.Chain[i+1].Path, rel)
+		}
+	}
+	return fact.Path
 }
 func stringsWithin(path, parent string) bool {
 	rel, err := filepath.Rel(parent, path)
@@ -426,17 +459,28 @@ func (g *reviewGuard) checkCreated(ctx context.Context, created changeFact) erro
 	for path, fact := range g.facts {
 		projected.facts[path] = fact
 	}
-	projected.addCreated(created, "")
+	projected.addCreated(created)
 	return projected.check(ctx)
 }
-func (g *reviewGuard) addCreated(created changeFact, destination string) {
-	g.facts[created.Path] = created
+func (g *reviewGuard) addCreated(created changeFact) {
 	for path, old := range g.facts {
-		if path == created.Path || path == destination {
+		if g.failures[path] != "" || old.Symlink != "" {
 			continue
 		}
-		if stringsWithin(path, created.Path) {
-			old.Chain = append([]changeIdentity{created.Identity}, old.Chain...)
+		resolved := reviewObservationPath(old)
+		if resolved == created.Resolved {
+			next := created
+			next.Path, next.Identity.Path, next.Chain = path, path, old.Chain
+			g.facts[path] = next
+		} else if stringsWithin(resolved, created.Resolved) {
+			rel, _ := filepath.Rel(created.Resolved, resolved)
+			directory := path
+			for suffix := rel; suffix != "."; suffix = filepath.Dir(suffix) {
+				directory = filepath.Dir(directory)
+			}
+			identity := created.Identity
+			identity.Path = directory
+			old.Chain = append([]changeIdentity{identity}, old.Chain...)
 			g.facts[path] = old
 		}
 	}

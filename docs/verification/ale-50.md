@@ -36,7 +36,7 @@ Inspection coverage and diagnostics remain incomplete when those unrelated gaps 
 
 Direct consent and review guards include directories where ignore inputs are consulted and all three candidate ignore-file paths, including absence, lexical identity, contents and resolved symlink targets. Exact native package/settings reader paths are pinned even when a package contributes no source. Changing an ignore file invalidates approval even when the resulting availability is unchanged. Existing settings, source, alias, trust and one-use confirmation guards remain. A dangling-link observation records its lexical text before reporting the resolution error; unrelated Pi absence may be retained without weakening the generic writer's strict error policy.
 
-The same snapshot read-set helper is used during direct preview and review capture/check/prospective projection. Approved earlier settings writes advance only the existing expected postimage; external ignore/alias changes still stop the remaining selection. Warnings are retained in the approved proposal and final inspection.
+The same snapshot read-set helper is used during direct preview and review capture/check/prospective projection. Approved earlier settings writes advance only the existing expected postimage under the [shared ordered-review alias rules](ale-52.md#ordered-review-directory-alias-regression); external ignore/alias changes still stop the remaining selection. Warnings are retained in the approved proposal and final inspection.
 
 ## Executable regressions
 
