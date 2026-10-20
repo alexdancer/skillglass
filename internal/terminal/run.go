@@ -65,7 +65,7 @@ precede positional IDs/paths. See docs/cli-json.md for the compatibility contrac
 Companion setup:
   setup --app APP previews exact user-level destinations and shared effects.
   Repeat the explicit applications with --install to install the bundled skill.
-  macOS native discovery validated: Codex 0.162.1, Claude Code 2.1.300,
+  macOS native discovery validated: Codex 0.162.1, Claude Code 2.1.303,
   OpenCode 1.17.15. Other applications/platforms are unsupported/unverified.
   Default Codex, Claude and OpenCode roots may also expose the skill to CodeAF;
   its installed dirty-build discovery is unverified. Claude personal skills are
@@ -76,6 +76,8 @@ Companion setup:
   consent with --install. Unacknowledged shared consumers refuse; no fallback.
   For example: setup --app codex --app opencode --allow-shared-app codeaf
   previews two targets; add --install only after reviewing those destinations.
+  Unrelated incomplete discovery remains visible as warnings when destination
+  and every affected consumer are proven. Unknown consumer routes still refuse.
   Aliased destinations refuse. Non-default CODEX_HOME, CLAUDE_CONFIG_DIR or
   XDG_CONFIG_HOME destinations are unverified and unsupported; no fallback.
   Managed caches, projects, generic skills and settings are never written.

@@ -20,11 +20,20 @@ reinspection while retaining installed companion bytes and omitted skills.
 Before/after manifests prove successful setup preserves unrelated entries and
 writes only the exact selected bundle destinations and necessary parents.
 
+`tests/acceptance/ale51_setup_test.go` covers destination-specific warnings,
+unknown dynamic routes, unsafe alias chains and reinspection after preview.
+`tests/acceptance/ale51_ignore_scope_test.go` covers unrelated sibling ignore
+uncertainty, retained shared-consumer consent, and prospective root/ancestor
+refusals without existing references. The supporting
+`internal/collection/setup_pi_ignore_test.go` checks typed diagnostic provenance
+independently of editorial wording. The [setup isolation contract](../companion-setup.md#destination-specific-isolation)
+owns these eligibility rules.
+
 Use the [repository acceptance procedure](ale-24.md#reproduce-the-acceptance-evidence)
 with external TMPDIR/GOTMPDIR and a fresh evidence directory:
 
 ```sh
-SKILLGLASS_TEST_RUN='TestALE48|TestALE46' ./tests/acceptance/run.sh /ABSOLUTE/FRESH/EVIDENCE
+SKILLGLASS_TEST_RUN='TestALE48|TestALE46|TestALE51' ./tests/acceptance/run.sh /ABSOLUTE/FRESH/EVIDENCE
 ```
 
 The existing supporting-package suite must run separately through the proved
@@ -52,8 +61,11 @@ python3 tools/verify_companion_setup.py \
 The isolation probe is built from `tests/acceptance/cmd/isolationprobe` using the
 repository's offline cached Go build procedure. Supply authorized installed
 native executables, not arbitrary programs. The helper requires the exact
-recorded versions Codex 0.162.1, Claude Code 2.1.300 and OpenCode 1.17.15. It pins
-supplied native bytes before proving the existing Codex containment controls;
+versions in the [supported-destinations table](../companion-setup.md#supported-destinations),
+with executable assertions in `tools/verify_companion_setup.py`. The Claude
+baseline was revalidated for ALE-51; pass a version-pinned executable rather than
+an auto-updating launcher. The helper pins supplied native bytes before proving
+the existing Codex containment controls;
 that reuse does not inherit the older helper's 0.155.1 version claim. Claude's
 separate live-home/system denial controls are proved before initialization.
 OpenCode uses the existing denied-network, bounded fixture-write/outside-content

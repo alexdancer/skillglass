@@ -307,7 +307,7 @@ func setupRoot(app, home string) (string, string) {
 		if base == "" {
 			base = filepath.Join(home, ".claude")
 		}
-		return filepath.Join(base, "skills"), "Claude Code 2.1.300"
+		return filepath.Join(base, "skills"), "Claude Code 2.1.303"
 	case "opencode":
 		base := os.Getenv("XDG_CONFIG_HOME")
 		if base == "" {

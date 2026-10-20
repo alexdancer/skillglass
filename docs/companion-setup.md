@@ -53,7 +53,7 @@ absolute. Actual native sessions are not inspected or restarted.
 | Target | Exact default destination under HOME | Fresh native catalog validation |
 | --- | --- | --- |
 | `codex` | `.codex/skills/skillglass-review` | Codex 0.162.1 `skills/list` |
-| `claude-code` | `.claude/skills/skillglass-review` | Claude Code 2.1.300 initialization catalog |
+| `claude-code` | `.claude/skills/skillglass-review` | Claude Code 2.1.303 initialization catalog |
 | `opencode` | `.config/opencode/skills/skillglass-review` | OpenCode 1.17.15 `debug skill`, including the shared Claude route separately |
 | `hermes`, `pi`, `gemini`, `codeaf` | No setup target | Companion installation discovery is unverified; existing read/control support is separate |
 
@@ -102,3 +102,32 @@ on the native application's PATH and rerun `setup --check`. For an incompatible
 build, obtain the matching bundle/contract and command capabilities before
 invoking the installed companion. Recheck in the actual application environment;
 a successful shell check alone does not establish a running agent's PATH.
+
+## Destination-specific isolation
+
+Setup can proceed with incomplete inventory when the selected destination and
+all possible affected applications are proven. The `isolation.warnings` array
+and human `Warning:` lines retain unrelated discovery or ownership gaps; a
+successful install does not claim complete inventory coverage. For example, a
+broken skill link whose prospective target is proven disjoint or incomplete
+inactive Pi package-cache inspection does not block a proven ordinary destination.
+Inactive cache storage is still checked for destination ownership, and registered
+package roots remain prospective discovery routes.
+
+Pi ignore uncertainty can remain a warning in a disjoint root or an unrelated
+sibling skill within the same root. This requires adapter-classified ignore
+diagnostics with consistent source, reference and root provenance, plus a proven
+ignore-input chain from the participating root through every prospective
+destination ancestor and the destination itself. Unsupported rules on that chain
+still refuse, even when no existing manifest produces an inventory diagnostic.
+Missing or inconsistent provenance also refuses. The [bounded Pi ignore
+contract](verification/ale-50.md#native-ignore-decisions) defines qualified syntax.
+
+Unknown native configuration, plugin hooks and external-secret startup policy
+can redirect discovery. Their uncertainty continues to refuse even when the
+configuration file itself is elsewhere. Shared-consumer consent does not waive
+unknown consumers. Related, cyclic or unresolved aliases, target ownership
+uncertainty, and symlinked destination ancestry still refuse. Setup recomputes
+the destination proof immediately before each installation and refuses changed
+evidence; descriptor-relative no-follow traversal and exclusive publication
+continue to protect the destination and conflicting copies.
