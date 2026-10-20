@@ -38,7 +38,7 @@ func planPiControl(s *Snapshot, intent ChangeIntent) (piControlPlan, error) {
 		return p, errors.New("inherit removes only a project override")
 	}
 	inputs := s.piControls
-	if inputs == nil || !s.Complete() || inputs.global.uncertain || inputs.project.uncertain {
+	if inputs == nil || inputs.global.uncertain || inputs.project.uncertain {
 		return p, errors.New("native Pi discovery or settings are incomplete; isolated effects cannot be bounded")
 	}
 	if intent.Scope == ControlProject && (!s.request.Project.Selected || inputs.trust != "allowed") {
@@ -54,6 +54,9 @@ func planPiControl(s *Snapshot, intent ChangeIntent) (piControlPlan, error) {
 	source, found := s.sources[intent.Source]
 	if !found || !changeWriterEligible(source) || source.Ownership.State == "managed" {
 		return p, errors.New("a proven ordinary native Pi source is required; package and inspection-only controls are unsupported")
+	}
+	if err := piProveControlCoverage(s, source); err != nil {
+		return p, err
 	}
 	manifest, err := observeChangePath(source.Manifest.Path)
 	if err != nil || manifest.Links != 1 {
@@ -206,7 +209,7 @@ func previewPiSnapshot(ctx context.Context, s *Snapshot, intent ChangeIntent, pi
 	sum := sha256.Sum256(data)
 	plan.digest = "pi1:" + hex.EncodeToString(sum[:])
 	source := s.sources[intent.Source]
-	return &ChangePreview{plan: plan, view: ChangeView{State: "ready", Reason: "preview only; no settings changed", Intent: intent, SourcePath: source.Directory, ManifestPath: source.Manifest.Path, ConfigPath: recipe.SettingsPath, InspectionProject: s.request.Project, Changes: changes, KnownReferences: s.References(source.ID), Before: source.Availability, NoWriteNeeded: !write, CreateDirectory: destination.CreateDirectory, Confirmation: plan.digest, Notes: []string{"Validated Pi 1.1.0 exact lexical resource controls preserve existing roots, patterns, packages and unrelated settings.", "Inherited project controls use an exact instruction-file registration and exact choice; inherit removes the native override pair when inherited discovery remains reachable.", "Disabling a name winner can expose an independent same-name copy; only the selected source is controlled.", "Existing sessions require settings reload; fresh sessions load saved choices. Interactive /reload adoption is unverified."}}}
+	return &ChangePreview{plan: plan, view: ChangeView{State: "ready", Reason: "preview only; no settings changed", Intent: intent, SourcePath: source.Directory, ManifestPath: source.Manifest.Path, ConfigPath: recipe.SettingsPath, InspectionProject: s.request.Project, Changes: changes, KnownReferences: s.References(source.ID), Before: source.Availability, NoWriteNeeded: !write, CreateDirectory: destination.CreateDirectory, Confirmation: plan.digest, Notes: []string{"Validated Pi 1.1.0 exact lexical resource controls preserve existing roots, patterns, packages and unrelated settings.", "Inherited project controls use an exact instruction-file registration and exact choice; inherit removes the native override pair when inherited discovery remains reachable.", "Disabling a name winner can expose an independent same-name copy; only the selected source is controlled.", "Existing sessions require settings reload; fresh sessions load saved choices. Interactive /reload adoption is unverified.", "Unrelated discovery gaps remain visible; this preview proves only the selected exact native effects."}}}
 }
 func piSamePermissions(a, b AvailabilityExplanation) bool {
 	permissions := func(ex AvailabilityExplanation) map[string]PermissionState {

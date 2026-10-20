@@ -1,0 +1,172 @@
+{
+  "grammar-00": {
+    ".ignore": "target\n"
+  },
+  "grammar-01": {
+    ".ignore": "target/\n"
+  },
+  "grammar-02": {
+    ".ignore": "target/SKILL.md\n"
+  },
+  "grammar-03": {
+    ".ignore": "*\n"
+  },
+  "grammar-04": {
+    ".ignore": "*/\n"
+  },
+  "grammar-05": {
+    ".ignore": "*.md\n"
+  },
+  "grammar-06": {
+    ".ignore": "t*get/\n"
+  },
+  "grammar-07": {
+    ".ignore": "*target/\n"
+  },
+  "grammar-08": {
+    ".ignore": "target*\n"
+  },
+  "grammar-09": {
+    ".ignore": "target/*\n"
+  },
+  "grammar-10": {
+    ".ignore": "target/SKILL.*\n"
+  },
+  "grammar-11": {
+    ".ignore": "target/SKILL.md \n"
+  },
+  "grammar-12": {
+    ".ignore": "target/\t\n"
+  },
+  "grammar-13": {
+    ".ignore": "target/SKILL.md\t\n"
+  },
+  "grammar-14": {
+    ".ignore": " target/\n"
+  },
+  "grammar-15": {
+    ".ignore": "!target/\n"
+  },
+  "grammar-16": {
+    ".ignore": "!\n"
+  },
+  "grammar-17": {
+    ".ignore": "/\n"
+  },
+  "grammar-18": {
+    ".ignore": "//target/\n"
+  },
+  "grammar-19": {
+    ".ignore": "target/\r\n"
+  },
+  "grammar-20": {
+    ".ignore": "target/SKILL.md\r\n"
+  },
+  "grammar-21": {
+    ".ignore": "[Tt]arget/\n"
+  },
+  "grammar-22": {
+    ".ignore": "t[ae]rget/\n"
+  },
+  "grammar-23": {
+    ".ignore": "group/*/SKILL.md\n"
+  },
+  "grammar-24": {
+    ".ignore": "group/target\n"
+  },
+  "grammar-25": {
+    ".ignore": "group/target/\n"
+  },
+  "grammar-26": {
+    ".ignore": "group/*\n"
+  },
+  "grammar-27": {
+    ".ignore": "group/target/SKILL.md\n"
+  },
+  "grammar-28": {
+    ".ignore": "group/target/SKILL.md\n!group/target/SKILL.md\n"
+  },
+  "grammar-29": {
+    ".ignore": "target\n!target/\n"
+  },
+  "grammar-30": {
+    ".ignore": "*\n!target\n!group\n"
+  },
+  "grammar-31": {
+    ".ignore": "*\n!target/\n!group/\n"
+  },
+  "grammar-32": {
+    ".ignore": "target/\n!target/\n"
+  },
+  "grammar-33": {
+    ".ignore": "target/*\n!target/SKILL.*\n"
+  },
+  "grammar-34": {
+    ".ignore": "target/ \n!target/SKILL.md\n"
+  },
+  "neg-basename-parent": {
+    ".ignore": "*\n!target\n!group\n"
+  },
+  "neg-dir-parent": {
+    ".ignore": "*\n!target/\n!group/\n"
+  },
+  "neg-parent-and-manifest": {
+    ".ignore": "*\n!target/\n!SKILL.md\n"
+  },
+  "neg-parent-and-child-star": {
+    ".ignore": "*\n!target/\n!target/*\n"
+  },
+  "neg-parent-and-md-star": {
+    ".ignore": "*\n!target/\n!*.md\n"
+  },
+  "neg-nested-parent-only": {
+    ".ignore": "*\n!group/\n!group/target/\n"
+  },
+  "neg-nested-complete": {
+    ".ignore": "*\n!group/\n!group/target/\n!group/target/SKILL.md\n"
+  },
+  "neg-nested-wildcard-parent": {
+    ".ignore": "*\n!group/\n!group/*\n"
+  },
+  "neg-nested-wildcard-complete": {
+    ".ignore": "*\n!group/\n!group/*\n!group/*/SKILL.md\n"
+  },
+  "neg-basename-anywhere": {
+    ".ignore": "SKILL.md\n!SKILL.md\n"
+  },
+  "neg-dir-with-later-child-exclusion": {
+    ".ignore": "target/*\n!target/\n"
+  },
+  "file-order-parent-then-manifest": {
+    ".gitignore": "*\n!target/\n",
+    ".ignore": "!target/SKILL.md\n"
+  },
+  "file-order-manifest-then-parent": {
+    ".gitignore": "*\n!target/SKILL.md\n",
+    ".ignore": "!target/\n"
+  },
+  "fdignore-child-reexclude": {
+    ".gitignore": "*\n!target/\n",
+    ".ignore": "!target/SKILL.md\n",
+    ".fdignore": "target/*.md\n"
+  },
+  "nested-file-reinclusion": {
+    ".gitignore": "*\n!group/\n!group/target/\n",
+    "group/.ignore": "!target/SKILL.md\n"
+  },
+  "alias-only-parent-negation": {
+    ".ignore": "*\n!alias/\n"
+  },
+  "alias-parent-and-file-negation": {
+    ".ignore": "*\n!alias/\n!alias/SKILL.md\n"
+  },
+  "space-after-dir-then-negate-file": {
+    ".ignore": "target/ \n!target/SKILL.md\n"
+  },
+  "tab-after-dir-then-negate-file": {
+    ".ignore": "target/\t\n!target/SKILL.md\n"
+  },
+  "space-tab-after-dir": {
+    ".ignore": "target/ \t\n!target/SKILL.md\n"
+  }
+}

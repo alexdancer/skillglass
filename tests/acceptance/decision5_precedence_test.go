@@ -54,6 +54,7 @@ func TestDecision5Precedence(t *testing.T) {
 			lowState, highState, code := "unknown", "unknown", 1
 			switch scenario {
 			case "higher-ignore":
+				lowState, highState, code = "available", "unavailable", 0
 				projectSettings["skills"] = []string{filepath.Dir(highManifest)}
 				writeFile(t, filepath.Join(filepath.Dir(highManifest), ".ignore"), []byte("*\n"), 0600)
 			case "higher-settings":

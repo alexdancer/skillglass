@@ -99,15 +99,17 @@ func observeChangePath(path string) (changeFact, error) {
 		fact.ChangeSec = stat.Ctimespec.Sec
 		fact.ChangeNano = stat.Ctimespec.Nsec
 	}
-	fact.Resolved, err = filepath.EvalSymlinks(path)
-	if err != nil {
-		return fact, err
-	}
 	if info.Mode()&os.ModeSymlink != 0 {
 		fact.Symlink, err = os.Readlink(path)
 		if err != nil {
 			return fact, err
 		}
+	}
+	fact.Resolved, err = filepath.EvalSymlinks(path)
+	if err != nil {
+		return fact, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
 		return fact, nil
 	}
 	if info.Mode().IsRegular() {
