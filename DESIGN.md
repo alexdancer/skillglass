@@ -59,6 +59,8 @@ Details contains, in order:
 
 `d` opens Details and `i` returns to Instructions. The [README's control instructions](README.md#build-and-use) own settings and deletion keys, supported application scopes, preview confirmation and unsupported project requests. These letters remain query text in search. Arrow keys, `j`/`k`, `PgUp`/`PgDn`, `Home`/`End`, and `g`/`G` scroll the active reader.
 
+Mutation previews open on a task summary: exact target and scope, known impact, and consequential limits. `d` reveals complete diagnostic evidence and `i` returns to the summary. Browser consent tokens stay internal. Permanent deletion uses the literal phrase `confirm delete`, while the held preview binds consent and revalidation to its exact target. While typing confirmation, letters remain input and cannot switch views or trigger actions.
+
 ## Problems, scope, and help
 
 Problems show a text severity label, problem code, summary, and the distinguishing end of long paths. Problem detail exposes the exact problem ID, code, path, summary, detail, coverage effect, and related source, reference, and root IDs.

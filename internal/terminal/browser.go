@@ -76,6 +76,7 @@ type browserModel struct {
 	changePreview        *collection.ChangePreview
 	changeOutcome        collection.ChangeOutcome
 	changeScroll         int
+	mutationDetails      bool
 	changing             bool
 	mutationFailed       bool
 	marked               collection.SourceID

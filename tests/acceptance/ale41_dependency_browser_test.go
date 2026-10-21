@@ -29,7 +29,7 @@ func TestALE41BrowserManifestImpactAndManagerRevalidation(t *testing.T) {
 				t.Fatal(err)
 			}
 			listed := piList(t, fx, 0)
-			id := codexNamed(t, listed, "delete-impact").ID
+			_ = codexNamed(t, listed, "delete-impact").ID
 			socket := fmt.Sprintf("ale41-impact-%d", os.Getpid())
 			defer runTmuxIgnoringError(tmux, fx, socket, "kill-server")
 			argv := fx.launchArgs(t, skillglassBinary, true, "", "browse", "--agent", "pi", "--project", fx.project, "--theme", "none")
@@ -49,12 +49,14 @@ func TestALE41BrowserManifestImpactAndManagerRevalidation(t *testing.T) {
 			send("Enter", "Enter focus")
 			send("Enter", "Selected:", "Read lines")
 			before := treeManifest(t, fx.home)
-			page := send("X", "PERMANENT DELETE", "ready")
+			summary := send("X", "PERMANENT DELETE", "ready", "independent dependent sources", "Known native consumers:")
+			writeEvidence(t, "tmux/ale41-impact/"+managerInput+"/summary.txt", []byte(summary))
+			page := send("d", "Source ID:")
 			var transcript strings.Builder
 			for n := 0; n < 100; n++ {
 				assertPaneCells(t, page, 120, 28)
 				transcript.WriteString(page)
-				if strings.Contains(page, "Type confirmation on the next screen:") {
+				if strings.Contains(page, "Preview only. No content or settings changed.") {
 					break
 				}
 				old := page
@@ -65,7 +67,7 @@ func TestALE41BrowserManifestImpactAndManagerRevalidation(t *testing.T) {
 			text := transcript.String()
 			assertPiDeleteScopeCopy(t, text)
 			writeEvidence(t, "tmux/ale41-impact/"+managerInput+"/preview.txt", []byte(text))
-			for _, needle := range []string{"Dependent manifest:", "dependent/SKILL.md", "Independent source:", "Dependent provenance:", "Type confirmation on the next screen:"} {
+			for _, needle := range []string{"Dependent manifest:", "dependent/SKILL.md", "Independent source:", "Dependent provenance:", "Preview only. No content or settings changed."} {
 				if !paneContains(text, needle) {
 					t.Fatal("browser omitted dependency impact", needle)
 				}
@@ -73,15 +75,15 @@ func TestALE41BrowserManifestImpactAndManagerRevalidation(t *testing.T) {
 			send("Escape", "Cancelled. No further content changed.")
 			assertTreeUnchanged(t, before, treeManifest(t, fx.home))
 			send("X", "PERMANENT DELETE", "ready")
-			send("Enter", "Type: delete src_")
+			send("Enter", "Type: confirm delete")
 			if managerInput == "pi-settings" {
 				writeFile(t, filepath.Join(fx.home, ".pi/agent/settings.json"), []byte(`{"packages":"invalid"}`), 0600)
 			} else {
 				writeFile(t, filepath.Join(fx.home, ".claude/plugins/installed_plugins.json"), []byte("{invalid"), 0600)
 			}
 			changed := treeManifest(t, fx.home)
-			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "delete "+id)
-			waitForPane(t, tmux, fx, socket, false, "Input: delete src_")
+			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "confirm delete")
+			waitForPane(t, tmux, fx, socket, false, "Input: confirm delete")
 			result := send("Enter", "Permanent delete result: stale", "preview is stale")
 			writeEvidence(t, "tmux/ale41-impact/"+managerInput+"/stale.txt", []byte(result))
 			assertTreeUnchanged(t, changed, treeManifest(t, fx.home))

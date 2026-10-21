@@ -19,6 +19,7 @@ func (model browserModel) openChange(choice collection.ControlChoice) (tea.Model
 		model.feedback = "Controls are unsupported for this agent scope."
 		return model, nil
 	}
+	model.mutationDetails = false
 	model.changeChoice = choice
 	model.changePreview = nil
 	model.changeScroll = 0
@@ -77,6 +78,9 @@ func (model browserModel) updateChange(key tea.KeyPressMsg) (tea.Model, tea.Cmd)
 		}
 		model.mode = browserSourceDetail
 		model.changePreview = nil
+	case "d", "i":
+		model.mutationDetails = key.String() == "d"
+		model.changeScroll = 0
 	case "y":
 		if model.mode == browserChangePreview && model.changePreview != nil && model.changePreview.View().State == "ready" {
 			held := model.changePreview
@@ -116,25 +120,27 @@ func (model browserModel) changePage() pagedView {
 	}
 	header := []string{fitLine("SKILLGLASS | "+controlApplication(model.snapshot.Scope().Agent.Application)+" control", model.width), fitLine("Action: "+action, model.width)}
 	if source, ok := model.snapshot.Source(model.selected); ok {
-		header = append(header, fitLine("Selected: "+safeInline(source.Name), model.width), fitLine("Selector: "+string(source.ID), model.width))
+		header = append(header, "Selected: "+model.fitSourceLabel(source, model.width-len("Selected: ")))
 	}
-	if model.snapshot.Scope().Project.Selected {
-		header = append(header, fitLine("Inspection: selected project (details below)", model.width))
-	}
-	body := []string{"Select the setting scope explicitly.", "g Global user configuration", "p Project control: unavailable", "i Remove project override / inherit: unavailable", "Enter or Esc cancel", inspectionProjectLine(model.snapshot.Scope().Project)}
+	header = append(header, "")
+	body := []string{"Select the setting scope explicitly.", "", "g Global user configuration", "p Project control: unavailable", "i Remove project override / inherit: unavailable", "", inspectionProjectLine(model.snapshot.Scope().Project)}
 	if model.snapshot.Scope().Agent.Application == "hermes" {
-		body[1] = "g Global active-profile configuration"
+		body[2] = "g Global active-profile configuration"
 	}
 	if model.snapshot.Scope().Agent.Application == "gemini" || model.snapshot.Scope().Agent.Application == "claude-code" || model.snapshot.Scope().Agent.Application == "pi" || model.snapshot.Scope().Agent.Application == "opencode" {
-		body[2] = "p Project configuration"
-		body[3] = "i Remove project override / inherit"
+		body[3] = "p Project configuration"
+		body[4] = "i Remove project override / inherit"
 	}
-	help := wrapGroups([]string{"g Global", "p Project", "i Inherit", "↑↓ scroll", "PgUp/PgDn", "Home/End", "Enter/Esc Cancel", "q quit"}, model.width)
+	help := wrapGroups([]string{"g Global", "p Project", "i Inherit", "Esc cancel"}, model.width)
 	if model.mode == browserChangePreview {
-		body = changePreviewLines(model.changePreview.View())
-		help = wrapGroups([]string{"j/k scroll", "PgUp/PgDn", "g/G top/end", "y Apply " + action, "Enter/Esc Cancel", "? help", "q quit"}, model.width)
+		header = append(header[:len(header)-1], mutationTabs(model.mutationDetails), "")
+		body = browserChangeSummary(model.changePreview.View())
+		if model.mutationDetails {
+			body = browserDiagnostics(changePreviewLines(model.changePreview.View()))
+		}
+		help = wrapGroups([]string{"d details", "i summary", "↑↓ scroll", "y Apply " + action, "Enter/Esc Cancel", "? help", "q quit"}, model.width)
 		if model.changePreview.View().State != "ready" {
-			help = wrapGroups([]string{"j/k scroll", "PgUp/PgDn", "Enter/Esc Back", "? help", "q quit"}, model.width)
+			help = wrapGroups([]string{"d details", "i summary", "↑↓ scroll", "Enter/Esc Back"}, model.width)
 		}
 	} else if model.mode == browserChangeResult {
 		body = append(changeOutcomeLines(model.changeOutcome), inspectionProjectLine(model.snapshot.Scope().Project))
