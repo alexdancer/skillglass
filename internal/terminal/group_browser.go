@@ -13,6 +13,7 @@ import (
 type groupFinished struct{ outcome collection.GroupOutcome }
 
 func (model browserModel) openGroup(choice collection.ControlChoice) (tea.Model, tea.Cmd) {
+	model.mutationDetails = false
 	model.changeChoice = choice
 	model.groupApplications = nil
 	model.groupPreview = nil
@@ -86,6 +87,9 @@ func (model browserModel) updateGroup(key tea.KeyPressMsg) (tea.Model, tea.Cmd) 
 			model.feedback = "Cancelled. No settings changed."
 		}
 		model.groupPreview = nil
+	case "d", "i":
+		model.mutationDetails = k == "d"
+		model.changeScroll = 0
 	case "s":
 		// Any reselection destroys the previous token, including a refused request.
 		model.groupPreview = nil
@@ -130,8 +134,9 @@ func (model browserModel) groupPage() pagedView {
 	}
 	header := []string{fitLine("SKILLGLASS | Group control", model.width), fitLine("Action: "+action, model.width)}
 	if source, ok := model.snapshot.Source(model.selected); ok {
-		header = append(header, fitLine("Selected: "+safeInline(source.Name), model.width), fitLine("Selector: "+string(source.ID), model.width))
+		header = append(header, "Selected: "+model.fitSourceLabel(source, model.width-len("Selected: ")))
 	}
+	header = append(header, "")
 	body := []string{"Choose applications explicitly. All start unchecked.", "Space toggles; selection order is execution order."}
 	help := []string{"↑↓ choose", "Space toggle", "Enter scope", "Esc cancel", "q quit"}
 	if model.mode == browserGroupSelect {
@@ -157,8 +162,13 @@ func (model browserModel) groupPage() pagedView {
 	} else {
 		help = []string{"j/k scroll", "PgUp/PgDn", "g/G top/end", "s edit selection", "Enter/Esc Back", "q quit"}
 		if model.mode == browserGroupPreview {
+			header = append(header[:len(header)-1], mutationTabs(model.mutationDetails), "")
 			view := model.groupPreview.View()
-			body = groupPreviewLines(view)
+			body = browserGroupSummary(view)
+			if model.mutationDetails {
+				body = browserDiagnostics(groupPreviewLines(view))
+			}
+			help = []string{"d details", "i summary", "↑↓ scroll", "s edit selection", "Enter/Esc Back"}
 			if view.State == "ready" {
 				help = append([]string{"y Apply group", "Esc Cancel"}, help...)
 			} else {

@@ -16,7 +16,7 @@ func TestALE41BrowserTypedDelete(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, width := range []int{48, 120} {
+	for _, width := range []int{48, 60, 80, 120} {
 		t.Run(strconv.Itoa(width), func(t *testing.T) {
 			fx, _, target := ale40Fixture(t, false)
 			long := filepath.Join(fx.base, "allowed", strings.Repeat("long-delete-directory-", 7), "ale40-target")
@@ -35,16 +35,16 @@ func TestALE41BrowserTypedDelete(t *testing.T) {
 			argv := fx.launchArgs(t, skillglassBinary, true, "", "browse", "--agent", "codex", "--project", fx.project, "--theme", "none")
 			command := exec.Command(argv[0], argv[1:]...)
 			command.Dir, command.Env = fx.project, fx.environment()
-			runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", strconv.Itoa(width), "-y", "28", "-s", "browser")
+			runTmuxProduct(t, tmux, fx, socket, command, "new-session", "-d", "-x", strconv.Itoa(width), "-y", "30", "-s", "browser")
 			runTmux(t, tmux, fx, socket, "set-option", "-g", "status", "off")
 			runTmux(t, tmux, fx, socket, "set-option", "-g", "remain-on-exit", "on")
-			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(width), "-y", "28")
+			runTmux(t, tmux, fx, socket, "resize-window", "-t", "browser:0", "-x", strconv.Itoa(width), "-y", "30")
 			waitForPane(t, tmux, fx, socket, false, "Skillglass", "ale40-target")
 			send := func(key string, needles ...string) string {
 				return actForPaneAt(t, tmux, fx, socket, "browser:0.0", false, func() { runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", key) }, needles...)
 			}
 			capture := func(name, text string) {
-				assertPaneCells(t, text, width, 28)
+				assertPaneCells(t, text, width, 30)
 				writeEvidence(t, fmt.Sprintf("tmux/ale41/%d/%s.txt", width, name), []byte(text))
 			}
 			send("/", "Enter keep")
@@ -61,28 +61,45 @@ func TestALE41BrowserTypedDelete(t *testing.T) {
 			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "y")
 			waitForPane(t, tmux, fx, socket, false, "PERMANENT DELETE", "ready")
 			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
-			capture("02-bottom", send("G", "Type confirmation on the next screen:"))
-			send("Enter", "Type: delete src_")
+			send("d", "Source ID:")
+			capture("02-bottom", send("G", "Preview only. No content or settings changed."))
+			capture("02-summary", send("i", "Exact target:", "Known references:"))
+			send("Enter", "Type: confirm delete")
 			capture("03-empty-refused", send("Enter", "Confirmation does not match"))
+			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "delete "+id)
+			waitForPane(t, tmux, fx, socket, false, "Input: delete "+id)
+			capture("03-old-phrase-refused", send("Enter", "Confirmation does not match"))
+			actOnPane(t, tmux, fx, socket, "browser:0.0", func() {
+				runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "C-u")
+			}, func(frame paneSnapshot) bool {
+				for _, line := range strings.Split(frame.cells, "\n") {
+					if strings.TrimSpace(line) == "Input:" {
+						return true
+					}
+				}
+				return false
+			})
+			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "digrqy")
+			capture("03-literal-input", waitForPane(t, tmux, fx, socket, false, "Input: digrqy"))
 			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 			send("Escape", "Cancelled. No further content changed.")
 			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 			send("X", "PERMANENT DELETE", "ready")
-			send("Enter", "Type: delete src_")
+			send("Enter", "Type: confirm delete")
 			manifest := filepath.Join(long, "SKILL.md")
 			writeFile(t, manifest, append(readBytes(t, manifest), []byte("external edit\n")...), 0600)
 			changed := treeManifest(t, fx.base)
-			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "delete "+id)
-			waitForPane(t, tmux, fx, socket, false, "Input: delete src_")
+			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "confirm delete")
+			waitForPane(t, tmux, fx, socket, false, "Input: confirm delete")
 			capture("04-stale", send("Enter", "Permanent delete result: stale", "preview is stale"))
 			assertTreeUnchanged(t, changed, treeManifest(t, fx.base))
 			send("Escape", "Delete result: stale")
 			send("Enter", "Read lines", "Selected:")
 			send("X", "PERMANENT DELETE", "ready")
-			send("Enter", "Type: delete src_")
-			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "delete "+id)
-			waitForPane(t, tmux, fx, socket, false, "Input: delete src_")
-			capture("04-consent", waitForPane(t, tmux, fx, socket, false, "Input: delete src_"))
+			send("Enter", "Type: confirm delete")
+			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "confirm delete")
+			waitForPane(t, tmux, fx, socket, false, "Input: confirm delete")
+			capture("04-consent", waitForPane(t, tmux, fx, socket, false, "Input: confirm delete"))
 			capture("05-result", send("Enter", "Permanent delete result: removed", "Verified removal: true"))
 			if _, err := os.Lstat(long); !os.IsNotExist(err) {
 				t.Fatal("selected source survives", err)

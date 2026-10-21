@@ -15,6 +15,7 @@ type deleteFinished struct{ outcome collection.DeleteOutcome }
 func (model browserModel) openDelete() (tea.Model, tea.Cmd) {
 	model.deletePreview = model.snapshot.PreviewDelete(context.Background(), model.selected)
 	model.deleteInput = ""
+	model.mutationDetails = false
 	model.changeScroll = 0
 	model.mode = browserDeletePreview
 	model.feedback = ""
@@ -51,7 +52,7 @@ func (model browserModel) updateDelete(key tea.KeyPressMsg) (tea.Model, tea.Cmd)
 		switch k {
 		case "enter":
 			view := model.deletePreview.View()
-			if model.deleteInput != view.Phrase {
+			if model.deleteInput != browserDeletePhrase {
 				model.feedback = "Confirmation does not match. No content changed."
 				return model, nil
 			}
@@ -65,23 +66,33 @@ func (model browserModel) updateDelete(key tea.KeyPressMsg) (tea.Model, tea.Cmd)
 			if len(model.deleteInput) > 0 {
 				_, size := utf8.DecodeLastRuneInString(model.deleteInput)
 				model.deleteInput = model.deleteInput[:len(model.deleteInput)-size]
+				model.feedback = ""
 			}
 		case "ctrl+u":
 			model.deleteInput = ""
+			model.feedback = ""
 		case "up", "down", "pgup", "pgdown":
 			return model.scrollDelete(k)
 		default:
 			if key.Text != "" && len(model.deleteInput) < 256 {
 				model.deleteInput += key.Text
+				model.feedback = ""
 			}
 		}
+		return model, nil
+	}
+	if k == "d" || k == "i" {
+		model.mutationDetails = k == "d"
+		model.changeScroll = 0
 		return model, nil
 	}
 	if k == "enter" {
 		if model.mode == browserDeletePreview && model.deletePreview.View().State == "ready" {
 			model.mode = browserDeleteConfirm
 			model.deleteInput = ""
-			model.feedback = "Type the complete target-specific phrase, then Enter."
+			model.mutationDetails = false
+			model.changeScroll = 0
+			model.feedback = ""
 			return model, nil
 		}
 		model.deletePreview = nil
@@ -117,18 +128,13 @@ func (model browserModel) deletePage() pagedView {
 		help = []string{"↑↓ scroll", "PgUp/PgDn", "Enter/Esc Back", "q quit"}
 	} else {
 		v := model.deletePreview.View()
-		body = deletePreviewLines(v)
+		body = browserDeleteSummary(v)
+		if model.mutationDetails {
+			body = browserDiagnostics(deletePreviewLines(v))
+		}
+		help = []string{"d details", "i summary", "↑↓ scroll", "Enter confirmation", "Esc cancel"}
 		if v.State != "ready" {
-			help = []string{"↑↓ scroll", "PgUp/PgDn", "Enter back", "Esc cancel", "q quit"}
-		}
-		if model.mode == browserDeleteConfirm && (ansi.StringWidth("Type: "+v.Phrase) > model.width || ansi.StringWidth("Input: "+model.deleteInput) > model.width) {
-			body = append([]string{"Type: " + v.Phrase, "Input: " + model.deleteInput}, body...)
-		}
-		// CLI digests are not browser input. The held preview is authorized only by its exact typed phrase.
-		for i, line := range body {
-			if strings.HasPrefix(line, "Confirm with --confirm ") {
-				body[i] = "Type confirmation on the next screen: " + v.Phrase
-			}
+			help = []string{"d details", "i summary", "↑↓ scroll", "Enter back", "Esc cancel"}
 		}
 		if model.mode == browserDeleteConfirm {
 			help = []string{"↑↓ scroll", "PgUp/PgDn", "Enter delete", "Esc cancel"}
@@ -145,9 +151,16 @@ func (model browserModel) deletePage() pagedView {
 		}
 	}
 	header := []string{fitLine("SKILLGLASS | PERMANENT DELETE", model.width)}
+	if source, ok := model.snapshot.Source(model.selected); ok {
+		header = append(header, "Selected: "+model.fitSourceLabel(source, model.width-len("Selected: ")))
+	}
 	if model.mode == browserDeleteConfirm {
-		header = append(header, fitLine("Type: "+model.deletePreview.View().Phrase, model.width))
+		header = append(header, fitLine("Type: "+browserDeletePhrase, model.width))
 		header = append(header, fitLine("Input: "+safeInline(model.deleteInput), model.width))
 	}
+	if model.mode == browserDeletePreview {
+		header = append(header, mutationTabs(model.mutationDetails))
+	}
+	header = append(header, "")
 	return pagedView{palette: model.palette(), header: header, body: lines, help: wrapGroups(help, model.width), statusLabel: "Delete lines", feedback: model.feedback, scroll: model.changeScroll, width: model.width, height: model.height}
 }

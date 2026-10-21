@@ -75,7 +75,8 @@ func TestALE40BrowserGroupJourney(t *testing.T) {
 				}
 				send("Enter", "Select the group setting scope explicitly")
 				capture("02-preview", send("g", "Group global disable | ready", "y Apply group"))
-				capture("03-preview-bottom", send("G", "Confirm group with --confirm", "Session adoption is unknown"))
+				send("d", "Source ID:")
+				capture("03-preview-bottom", send("G", "Preview only. No settings changed.", "Session adoption is unknown"))
 				send("Escape", "Cancelled. No settings changed.")
 				assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 				send("A", "All start unchecked", "[ ] Codex")
