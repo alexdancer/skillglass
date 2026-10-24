@@ -17,7 +17,7 @@ import (
 
 // Every directory hop is descriptor-relative and refuses symlinks. Publication
 // uses RENAME_EXCL, preserving any competing/customized destination.
-func installSetup(home, destination string) error {
+func installSetup(home, destination string, bundle companion.Bundle) error {
 	if err := safeSetupPath(home, destination); err != nil {
 		return err
 	}
@@ -51,11 +51,11 @@ func installSetup(home, destination string) error {
 	if _, err = rand.Read(random[:]); err != nil {
 		return err
 	}
-	stage := "." + companion.Name + "-setup-" + hex.EncodeToString(random[:])
+	stage := "." + bundle.Name + "-setup-" + hex.EncodeToString(random[:])
 	if err = unix.Mkdirat(fd, stage, 0700); err != nil {
 		return err
 	}
-	directories := bundleDirectories()
+	directories := bundleDirectories(bundle)
 	stageFD, err := unix.Openat(fd, stage, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {
 		unix.Unlinkat(fd, stage, unix.AT_REMOVEDIR)
@@ -68,7 +68,7 @@ func installSetup(home, destination string) error {
 		if published {
 			return
 		}
-		for _, file := range companion.Bundled().Files {
+		for _, file := range bundle.Files {
 			unix.Unlinkat(stageFD, file.Path, 0)
 		}
 		for i := len(directories) - 1; i >= 0; i-- {
@@ -81,7 +81,7 @@ func installSetup(home, destination string) error {
 			return err
 		}
 	}
-	for _, file := range companion.Bundled().Files {
+	for _, file := range bundle.Files {
 		child, e := unix.Openat(stageFD, file.Path, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0600)
 		if e != nil {
 			return e
@@ -110,9 +110,9 @@ func installSetup(home, destination string) error {
 	return err
 }
 
-func bundleDirectories() []string {
+func bundleDirectories(bundle companion.Bundle) []string {
 	unique := map[string]bool{}
-	for _, file := range companion.Bundled().Files {
+	for _, file := range bundle.Files {
 		for parent := filepath.Dir(file.Path); parent != "."; parent = filepath.Dir(parent) {
 			unique[parent] = true
 		}

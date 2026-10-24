@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/alexdancer/skillglass/internal/companion"
 	"github.com/alexdancer/skillglass/internal/setup"
 )
 
@@ -18,6 +19,7 @@ func runSetup(args []string, stdout, stderr io.Writer) int {
 	var apps, sharedApps stringList
 	flags.Var(&apps, "app", "explicitly selected installation target; repeat")
 	flags.Var(&sharedApps, "allow-shared-app", "explicitly acknowledge indirect discovery by this application; repeat; installs no separate target")
+	selectedCompanion := flags.String("companion", companion.Name, "select the exact bundled companion to preview or install")
 	install := flags.Bool("install", false, "install only the bundled companion for the explicit applications")
 	check := flags.Bool("check", false, "check PATH executable compatibility without installing")
 	machine := flags.Bool("json", false, "emit one JSON setup report")
@@ -51,7 +53,7 @@ func runSetup(args []string, stdout, stderr io.Writer) int {
 		if len(apps) > 0 || len(sharedApps) > 0 || *install {
 			return fail(errors.New("--check is a separate read-only executable check; omit --app, --allow-shared-app and --install"), 2)
 		}
-		result := setup.CheckExecutable(context.Background())
+		result := setup.CheckExecutableFor(context.Background(), *selectedCompanion)
 		code := 0
 		if result.State != "compatible" {
 			code = 1
@@ -65,7 +67,7 @@ func runSetup(args []string, stdout, stderr io.Writer) int {
 		}
 		return code
 	}
-	report, err := setup.Setup(context.Background(), apps, sharedApps, *install)
+	report, err := setup.SetupNamed(context.Background(), apps, sharedApps, *install, *selectedCompanion)
 	if err != nil {
 		return fail(err, 2)
 	}

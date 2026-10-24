@@ -18,16 +18,17 @@ import (
 )
 
 type ConsolidationApplyOutcome struct {
-	SchemaVersion int                   `json:"schema_version"`
-	Operation     string                `json:"operation"`
-	Outcome       string                `json:"outcome"`
-	ExitCode      int                   `json:"exit_code"`
-	State         string                `json:"state"`
-	Reason        string                `json:"reason"`
-	RecoveryID    string                `json:"recovery_id,omitempty"`
-	Effects       []ConsolidationEffect `json:"effects"`
-	Verified      bool                  `json:"verified"`
-	Failure       *ConsolidationFailure `json:"failure,omitempty"`
+	SchemaVersion    int                   `json:"schema_version"`
+	Operation        string                `json:"operation"`
+	Outcome          string                `json:"outcome"`
+	ExitCode         int                   `json:"exit_code"`
+	State            string                `json:"state"`
+	Reason           string                `json:"reason"`
+	RecoveryID       string                `json:"recovery_id,omitempty"`
+	Effects          []ConsolidationEffect `json:"effects"`
+	Verified         bool                  `json:"verified"`
+	SelectionUpdated bool                  `json:"selection_updated,omitempty"`
+	Failure          *ConsolidationFailure `json:"failure,omitempty"`
 }
 
 type consolidationJournal struct {
@@ -50,6 +51,8 @@ type consolidationJournal struct {
 
 type consolidationJournalEntry struct {
 	SourceID             SourceID          `json:"source_id"`
+	CanonicalSourceID    SourceID          `json:"canonical_source_id,omitempty"`
+	BackupSourceID       SourceID          `json:"backup_source_id,omitempty"`
 	Action               string            `json:"action"`
 	SourcePath           string            `json:"source_path"`
 	Fingerprint          string            `json:"fingerprint"`
@@ -96,6 +99,7 @@ func ApplyConsolidation(ctx context.Context, draft ConsolidationDraft, confirmat
 			return out
 		}
 		desiredSelection := RememberedSelectionID(draft.Scope.Applications, draft.Scope.Roots, draft.Scope.Library)
+		selectionUpdated := false
 		if currentSelection != desiredSelection {
 			if err := RememberConsolidationSelection(draft.Scope); err != nil {
 				out.RecoveryID = ""
@@ -103,6 +107,7 @@ func ApplyConsolidation(ctx context.Context, draft ConsolidationDraft, confirmat
 				out.Reason = out.Failure.Message
 				return out
 			}
+			selectionUpdated = true
 		}
 		for i := range out.Effects {
 			if out.Effects[i].Action == "share" {
@@ -112,7 +117,13 @@ func ApplyConsolidation(ctx context.Context, draft ConsolidationDraft, confirmat
 			}
 		}
 		out.RecoveryID = ""
-		out.State, out.Outcome, out.ExitCode, out.Reason, out.Verified = "unchanged", "success", 0, "all choices already match current bundle and link state; no filesystem changes were needed", true
+		out.SelectionUpdated = selectionUpdated
+		out.Outcome, out.ExitCode, out.Verified = "success", 0, true
+		if selectionUpdated {
+			out.State, out.Reason = "selection-updated", "bundle and link state already matched; the last-successful application selection was updated"
+		} else {
+			out.State, out.Reason = "unchanged", "all choices and the remembered selection already matched; no filesystem changes were needed"
+		}
 		return out
 	}
 	journal, err := newConsolidationJournal(ctx, draft, preview)
@@ -189,26 +200,14 @@ func newConsolidationJournal(ctx context.Context, draft ConsolidationDraft, prev
 	if err != nil {
 		return consolidationJournal{}, fmt.Errorf("inspect remembered selection before mutation: %w", err)
 	}
-	if err := ensureConsolidationDirectory(filepath.Dir(selectionPath), true); err != nil {
-		return consolidationJournal{}, fmt.Errorf("remembered selection directory is not private and safely reachable: %w", err)
-	}
 	newSelection, err := encodeConsolidationSelection(draft.Scope)
 	if err != nil {
 		return consolidationJournal{}, err
 	}
 	root := consolidationBackupRoot()
-	if err := ensureConsolidationDirectory(filepath.Dir(root), true); err != nil {
-		return consolidationJournal{}, fmt.Errorf("recovery parent is not private and safely reachable: %w", err)
-	}
-	if err := ensureConsolidationDirectory(root, true); err != nil {
-		return consolidationJournal{}, fmt.Errorf("recovery store is not private and safely reachable: %w", err)
-	}
 	planDir := filepath.Join(root, planID)
 	if pathExists(planDir) {
 		return consolidationJournal{}, fmt.Errorf("recovery plan already exists: %s", planID)
-	}
-	if err := ensureConsolidationDirectory(draft.Scope.Library, true); err != nil {
-		return consolidationJournal{}, fmt.Errorf("canonical library is not private and safely reachable: %w", err)
 	}
 	journal := consolidationJournal{SchemaVersion: ConsolidationSchemaVersion, ID: planID, State: "prepared", Scope: draft.Scope, Draft: draft, Confirmation: preview.Confirmation, Entries: []consolidationJournalEntry{}, SelectionPath: selectionPath, PriorSelection: oldBytes, PriorSelectionExists: oldExists, AppliedSelection: newSelection}
 	inventory := ScanConsolidation(ctx, draft.Scope)
@@ -229,6 +228,41 @@ func newConsolidationJournal(ctx context.Context, draft ConsolidationDraft, prev
 	} else if strings.EqualFold(draft.Scope.SelectionFrom, "remembered") {
 		return consolidationJournal{}, errors.New("remembered selection evidence ID is missing")
 	}
+	canonicalOwners := map[string]SourceID{}
+	for _, effect := range preview.Effects {
+		if effect.Action != "share" {
+			continue
+		}
+		path := filepath.Clean(effect.CanonicalPath)
+		if _, exists := canonicalOwners[path]; exists {
+			continue
+		}
+		owner := effect.SourceID
+		if pathExists(path) {
+			inventoryID, found := consolidationInventoryIdentityAtPath(inventory, path, effect.BundleFingerprint)
+			if !found {
+				return consolidationJournal{}, fmt.Errorf("complete scan did not prove the existing canonical source identity at %s", path)
+			}
+			canonical, fingerprint, complete, reason := consolidationFingerprintPath(ctx, path)
+			if !complete || fingerprint != effect.BundleFingerprint || canonical.ID != inventoryID {
+				return consolidationJournal{}, fmt.Errorf("existing canonical source identity changed after scan at %s: %s", path, reason)
+			}
+			owner = canonical.ID
+		}
+		canonicalOwners[path] = owner
+	}
+	if err := ensureConsolidationDirectory(filepath.Dir(selectionPath), true); err != nil {
+		return consolidationJournal{}, fmt.Errorf("remembered selection directory is not private and safely reachable: %w", err)
+	}
+	if err := ensureConsolidationDirectory(filepath.Dir(root), true); err != nil {
+		return consolidationJournal{}, fmt.Errorf("recovery parent is not private and safely reachable: %w", err)
+	}
+	if err := ensureConsolidationDirectory(root, true); err != nil {
+		return consolidationJournal{}, fmt.Errorf("recovery store is not private and safely reachable: %w", err)
+	}
+	if err := ensureConsolidationDirectory(draft.Scope.Library, true); err != nil {
+		return consolidationJournal{}, fmt.Errorf("canonical library is not private and safely reachable: %w", err)
+	}
 	if err := createConsolidationPlanDirectory(planDir); err != nil {
 		return consolidationJournal{}, err
 	}
@@ -236,7 +270,13 @@ func newConsolidationJournal(ctx context.Context, draft ConsolidationDraft, prev
 		if effect.Action == "keep" {
 			continue
 		}
-		entry := consolidationJournalEntry{SourceID: effect.SourceID, Action: effect.Action, SourcePath: effect.SourcePath, Fingerprint: effect.BundleFingerprint, BackupPath: effect.BackupPath, CanonicalPath: effect.CanonicalPath, CreatedLinks: []string{}, PendingLinks: []string{}, RemovedLinks: []string{}, PendingRecoveryLinks: []string{}, ExpectedLinks: append([]string(nil), effect.Destinations...), ExpectedAvailability: map[string]string{}}
+		entry := consolidationJournalEntry{SourceID: effect.SourceID, BackupSourceID: effect.SourceID, Action: effect.Action, SourcePath: effect.SourcePath, Fingerprint: effect.BundleFingerprint, BackupPath: effect.BackupPath, CanonicalPath: effect.CanonicalPath, CreatedLinks: []string{}, PendingLinks: []string{}, RemovedLinks: []string{}, PendingRecoveryLinks: []string{}, ExpectedLinks: append([]string(nil), effect.Destinations...), ExpectedAvailability: map[string]string{}}
+		if entry.Action == "share" {
+			entry.CanonicalSourceID = canonicalOwners[filepath.Clean(entry.CanonicalPath)]
+			if entry.CanonicalSourceID == "" {
+				return consolidationJournal{}, fmt.Errorf("canonical physical source identity is unavailable at %s", entry.CanonicalPath)
+			}
+		}
 		for _, source := range inventory.Sources {
 			if source.ID != effect.SourceID {
 				continue
@@ -251,10 +291,45 @@ func newConsolidationJournal(ctx context.Context, draft ConsolidationDraft, prev
 			}
 			break
 		}
+		if entry.Action == "share" && filepath.Clean(entry.CanonicalPath) != filepath.Clean(entry.SourcePath) {
+			for _, source := range inventory.Sources {
+				if source.ID != entry.CanonicalSourceID || source.BundleFingerprint != entry.Fingerprint || source.FingerprintCoverage != Complete || !consolidationPathResolvesTo(source.SourcePath, entry.CanonicalPath) {
+					continue
+				}
+				for _, ref := range source.KnownReferences {
+					entry.BeforeRefs = append(entry.BeforeRefs, ref.Reference.DiscoveredPath)
+				}
+			}
+		}
 		entry.BeforeRefs = uniqueJournalPaths(entry.BeforeRefs)
 		journal.Entries = append(journal.Entries, entry)
 	}
 	return journal, nil
+}
+
+func consolidationInventoryIdentityAtPath(inventory ConsolidationInventory, path, fingerprint string) (SourceID, bool) {
+	for _, source := range inventory.Sources {
+		if source.BundleFingerprint != fingerprint || source.FingerprintCoverage != Complete || source.ID == "" {
+			continue
+		}
+		if consolidationPathResolvesTo(source.SourcePath, path) {
+			return source.ID, true
+		}
+		for _, reference := range source.KnownReferences {
+			if consolidationPathResolvesTo(reference.Reference.ResolvedPath, path) {
+				return source.ID, true
+			}
+		}
+	}
+	return "", false
+}
+
+func consolidationPathResolvesTo(path, target string) bool {
+	if path == "" {
+		return false
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	return err == nil && filepath.Clean(resolved) == filepath.Clean(target)
 }
 
 func consolidationMovesPreflight(ctx context.Context, effects []ConsolidationEffect) error {
@@ -263,9 +338,8 @@ func consolidationMovesPreflight(ctx context.Context, effects []ConsolidationEff
 			continue
 		}
 		kind := "directory"
-		_, fingerprint, complete, reason := consolidationFingerprintPath(ctx, effect.SourcePath)
-		if !complete || fingerprint != effect.BundleFingerprint {
-			return fmt.Errorf("source changed or became uninspectable before apply: %s: %s", effect.SourcePath, reason)
+		if err := verifyMoveSource(ctx, effect.SourcePath, effect.BundleFingerprint, effect.SourceID); err != nil {
+			return fmt.Errorf("source changed or physical identity changed before apply: %w", err)
 		}
 		target := DeleteTarget{Source: effect.SourceID, Path: effect.SourcePath, Kind: kind, Identity: Identity{Method: "darwin-directory-object", Certainty: "proven"}}
 		_, _, ownership, err := inventoryDelete(ctx, target)
@@ -303,6 +377,10 @@ func consolidationMovesPreflight(ctx context.Context, effects []ConsolidationEff
 }
 
 func applyConsolidationEntries(ctx context.Context, journal *consolidationJournal) error {
+	// Move every original bundle out of native destinations before creating
+	// links. Identical selected copies can occupy each other's planned link
+	// paths; linking one entry first would make a safe whole-bundle dedup look
+	// like an unexpected collision.
 	for i := range journal.Entries {
 		entry := &journal.Entries[i]
 		if err := ctx.Err(); err != nil {
@@ -312,15 +390,18 @@ func applyConsolidationEntries(ctx context.Context, journal *consolidationJourna
 			if err := ensureConsolidationDirectory(filepath.Dir(entry.BackupPath), true); err != nil {
 				return err
 			}
-			if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint); err != nil {
+			if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID); err != nil {
 				return err
 			}
 			entry.PendingMove = "archive"
 			if err := writeConsolidationJournal(*journal); err != nil {
 				return fmt.Errorf("cannot journal archive intent: %w", err)
 			}
-			if err := movePathExclusive(entry.SourcePath, entry.BackupPath); err != nil {
+			if err := movePathExclusive(entry.SourcePath, entry.BackupPath, entry.BackupSourceID); err != nil {
 				return fmt.Errorf("move source %s to recovery: %w", entry.SourcePath, err)
+			}
+			if err := verifyMoveSource(ctx, entry.BackupPath, entry.Fingerprint, entry.BackupSourceID); err != nil {
+				return fmt.Errorf("archived source identity changed during move: %w", err)
 			}
 			entry.MovedToBackup = true
 			entry.PendingMove = ""
@@ -336,21 +417,23 @@ func applyConsolidationEntries(ctx context.Context, journal *consolidationJourna
 			return err
 		}
 		if pathExists(entry.CanonicalPath) {
-			_, fingerprint, complete, reason := consolidationFingerprintPath(ctx, entry.CanonicalPath)
-			if !complete || fingerprint != entry.Fingerprint {
-				return fmt.Errorf("canonical collision changed during apply at %s: %s", entry.CanonicalPath, reason)
+			if err := verifyMoveSource(ctx, entry.CanonicalPath, entry.Fingerprint, entry.CanonicalSourceID); err != nil {
+				return fmt.Errorf("canonical collision changed during apply at %s: %w", entry.CanonicalPath, err)
 			}
 			entry.CanonicalWasPresent = true
 		} else if filepath.Clean(entry.SourcePath) != filepath.Clean(entry.CanonicalPath) {
-			if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint); err != nil {
+			if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID); err != nil {
 				return err
 			}
 			entry.PendingMove = "canonical"
 			if err := writeConsolidationJournal(*journal); err != nil {
 				return fmt.Errorf("cannot journal canonical move intent: %w", err)
 			}
-			if err := movePathExclusive(entry.SourcePath, entry.CanonicalPath); err != nil {
+			if err := movePathExclusive(entry.SourcePath, entry.CanonicalPath, entry.CanonicalSourceID); err != nil {
 				return fmt.Errorf("move source %s into canonical library: %w", entry.SourcePath, err)
+			}
+			if err := verifyMoveSource(ctx, entry.CanonicalPath, entry.Fingerprint, entry.CanonicalSourceID); err != nil {
+				return fmt.Errorf("canonical source identity changed during move: %w", err)
 			}
 			entry.MovedToCanonical = true
 			entry.PendingMove = ""
@@ -362,21 +445,34 @@ func applyConsolidationEntries(ctx context.Context, journal *consolidationJourna
 			if err := ensureConsolidationDirectory(filepath.Dir(entry.BackupPath), true); err != nil {
 				return err
 			}
-			if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint); err != nil {
+			if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID); err != nil {
 				return err
 			}
 			entry.PendingMove = "duplicate"
 			if err := writeConsolidationJournal(*journal); err != nil {
 				return fmt.Errorf("cannot journal duplicate move intent: %w", err)
 			}
-			if err := movePathExclusive(entry.SourcePath, entry.BackupPath); err != nil {
+			if err := movePathExclusive(entry.SourcePath, entry.BackupPath, entry.BackupSourceID); err != nil {
 				return fmt.Errorf("move identical duplicate %s into recovery: %w", entry.SourcePath, err)
+			}
+			if err := verifyMoveSource(ctx, entry.BackupPath, entry.Fingerprint, entry.BackupSourceID); err != nil {
+				return fmt.Errorf("duplicate backup identity changed during move: %w", err)
 			}
 			entry.MovedToBackup = true
 			entry.PendingMove = ""
 			if err := writeConsolidationJournal(*journal); err != nil {
 				return fmt.Errorf("duplicate moved but recovery journal update failed: %w", err)
 			}
+		}
+	}
+
+	for i := range journal.Entries {
+		entry := &journal.Entries[i]
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if entry.Action != "share" {
+			continue
 		}
 		if filepath.Clean(entry.SourcePath) != filepath.Clean(entry.CanonicalPath) {
 			if err := ensureLink(journal, entry, entry.SourcePath); err != nil {
@@ -388,9 +484,8 @@ func applyConsolidationEntries(ctx context.Context, journal *consolidationJourna
 				return err
 			}
 		}
-		_, fingerprint, complete, reason := consolidationFingerprintPath(ctx, entry.CanonicalPath)
-		if !complete || fingerprint != entry.Fingerprint {
-			return fmt.Errorf("canonical bundle failed verification after relocation: %s: %s", entry.CanonicalPath, reason)
+		if err := verifyMoveSource(ctx, entry.CanonicalPath, entry.Fingerprint, entry.CanonicalSourceID); err != nil {
+			return fmt.Errorf("canonical bundle failed verification after relocation: %s: %w", entry.CanonicalPath, err)
 		}
 	}
 	return nil
@@ -437,10 +532,16 @@ func removeJournalPath(values []string, path string) []string {
 	return out
 }
 
-func verifyMoveSource(ctx context.Context, path, expected string) error {
-	_, fingerprint, complete, reason := consolidationFingerprintPath(ctx, path)
+func verifyMoveSource(ctx context.Context, path, expected string, expectedID SourceID) error {
+	source, fingerprint, complete, reason := consolidationFingerprintPath(ctx, path)
+	if expectedID == "" {
+		return fmt.Errorf("recovery journal lacks the required physical source identity for %s", path)
+	}
 	if !complete || fingerprint != expected {
 		return fmt.Errorf("source freshness check failed for %s: %s", path, reason)
+	}
+	if source.ID != expectedID {
+		return fmt.Errorf("physical source identity changed at %s: expected %s, found %s", path, expectedID, source.ID)
 	}
 	return nil
 }
@@ -451,13 +552,13 @@ func verifyConsolidationJournal(ctx context.Context, journal consolidationJourna
 			if !entry.MovedToBackup {
 				return fmt.Errorf("archive move was not recorded for %s", entry.SourcePath)
 			}
-			if err := verifyMoveSource(ctx, entry.BackupPath, entry.Fingerprint); err != nil {
+			if err := verifyMoveSource(ctx, entry.BackupPath, entry.Fingerprint, entry.BackupSourceID); err != nil {
 				return err
 			}
 			continue
 		}
-		if _, fingerprint, complete, reason := consolidationFingerprintPath(ctx, entry.CanonicalPath); !complete || fingerprint != entry.Fingerprint {
-			return fmt.Errorf("canonical bundle is not verified at %s: %s", entry.CanonicalPath, reason)
+		if err := verifyMoveSource(ctx, entry.CanonicalPath, entry.Fingerprint, entry.CanonicalSourceID); err != nil {
+			return fmt.Errorf("canonical bundle is not verified at %s: %w", entry.CanonicalPath, err)
 		}
 		for _, link := range append(append([]string(nil), entry.CreatedLinks...), entry.ExpectedLinks...) {
 			if _, ok, err := exactLink(link, entry.CanonicalPath); err != nil || !ok {
@@ -670,9 +771,12 @@ func existingParentDevice(path string) (int32, error) {
 	}
 }
 
-func movePathExclusive(source, destination string) error {
+func movePathExclusive(source, destination string, expectedID SourceID) error {
 	if !filepath.IsAbs(source) || !filepath.IsAbs(destination) || filepath.Clean(source) == filepath.Clean(destination) {
 		return errors.New("move paths must be distinct absolute paths")
+	}
+	if expectedID == "" {
+		return errors.New("move lacks a recorded physical source identity")
 	}
 	sourceParent, err := openAnchored(filepath.Dir(source), true)
 	if err != nil {
@@ -690,6 +794,14 @@ func movePathExclusive(source, destination string) error {
 	}
 	if sourceStat.Mode&unix.S_IFMT != unix.S_IFDIR {
 		return errors.New("source is no longer a directory bundle")
+	}
+	token, err := directoryObjectToken(source)
+	if err != nil {
+		return fmt.Errorf("inspect move source identity at %s: %w", source, err)
+	}
+	actualID := sourceID(token)
+	if actualID != expectedID {
+		return fmt.Errorf("move source physical identity changed at %s: expected %s, found %s", source, expectedID, actualID)
 	}
 	if err := unix.Fstat(int(destinationParent.Fd()), &destinationStat); err != nil {
 		return err
@@ -904,7 +1016,7 @@ func PreviewConsolidationRecovery(ctx context.Context, id string) ConsolidationP
 	var effects []ConsolidationEffect
 	for i := len(journal.Entries) - 1; i >= 0; i-- {
 		entry := journal.Entries[i]
-		if err := validateRecoveryEntry(ctx, entry); err != nil {
+		if err := validateRecoveryEntry(ctx, entry, journal.Entries); err != nil {
 			return consolidationPreviewFailure(preview, "recovery-freshness", err.Error(), "Preserve current files and inspect the changed bundle or link before retrying.")
 		}
 		if entry.Action == "archive" {
@@ -935,44 +1047,50 @@ func PreviewConsolidationRecovery(ctx context.Context, id string) ConsolidationP
 	return preview
 }
 
-func validateRecoveryEntry(ctx context.Context, entry consolidationJournalEntry) error {
+func validateRecoveryEntry(ctx context.Context, entry consolidationJournalEntry, journalEntries []consolidationJournalEntry) error {
 	if entry.Fingerprint == "" || entry.SourcePath == "" {
 		return errors.New("recovery journal entry is missing source identity or fingerprint")
 	}
 	if entry.Action == "archive" {
+		if entry.BackupSourceID == "" {
+			return errors.New("recovery journal lacks the archived bundle's physical identity; preserve it for manual recovery")
+		}
 		backupExists := pathExists(entry.BackupPath)
 		sourceExists := pathExists(entry.SourcePath)
 		if backupExists {
-			if sourceExists {
+			if sourceExists && !journalOwnsExactShareLink(entry.SourcePath, journalEntries) {
 				return fmt.Errorf("both archived backup and original path exist: %s", entry.SourcePath)
 			}
-			if err := verifyMoveSource(ctx, entry.BackupPath, entry.Fingerprint); err != nil {
+			if err := verifyMoveSource(ctx, entry.BackupPath, entry.Fingerprint, entry.BackupSourceID); err != nil {
 				return err
 			}
 		} else if sourceExists {
-			if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint); err != nil {
+			if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID); err != nil {
 				return err
 			}
 		} else if entry.MovedToBackup || entry.PendingMove == "archive" {
 			return fmt.Errorf("both archived backup and source are missing: %s", entry.SourcePath)
 		}
 		if entry.PendingRecoveryMove == "archive" && !backupExists && sourceExists {
-			return verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint)
+			return verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID)
 		}
 		return nil
 	}
 	if entry.Action != "share" {
 		return fmt.Errorf("unknown recovery action %q", entry.Action)
 	}
+	if entry.CanonicalSourceID == "" || entry.BackupSourceID == "" {
+		return errors.New("recovery journal lacks the canonical or duplicate physical identity; preserve it for manual recovery")
+	}
 	canonicalExists := pathExists(entry.CanonicalPath)
 	if canonicalExists {
-		if err := verifyMoveSource(ctx, entry.CanonicalPath, entry.Fingerprint); err != nil {
+		if err := verifyMoveSource(ctx, entry.CanonicalPath, entry.Fingerprint, entry.CanonicalSourceID); err != nil {
 			return err
 		}
 	}
 	backupExists := entry.BackupPath != "" && pathExists(entry.BackupPath)
 	if backupExists {
-		if err := verifyMoveSource(ctx, entry.BackupPath, entry.Fingerprint); err != nil {
+		if err := verifyMoveSource(ctx, entry.BackupPath, entry.Fingerprint, entry.BackupSourceID); err != nil {
 			return err
 		}
 	}
@@ -984,7 +1102,7 @@ func validateRecoveryEntry(ctx context.Context, entry consolidationJournalEntry)
 			continue
 		}
 		if filepath.Clean(path) == filepath.Clean(entry.SourcePath) && !entry.MovedToCanonical && !entry.MovedToBackup && entry.PendingMove == "" {
-			if err := verifyMoveSource(ctx, path, entry.Fingerprint); err == nil {
+			if err := verifyMoveSource(ctx, path, entry.Fingerprint, entry.SourceID); err == nil {
 				continue
 			}
 		}
@@ -994,19 +1112,31 @@ func validateRecoveryEntry(ctx context.Context, entry consolidationJournalEntry)
 	}
 	if entry.MovedToCanonical || entry.PendingMove == "canonical" {
 		if !canonicalExists && !entry.RestoredToSource {
-			if verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint) != nil {
+			if verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID) != nil {
 				return fmt.Errorf("canonical bundle moved by this plan is missing: %s", entry.CanonicalPath)
 			}
 		}
 	}
 	if entry.MovedToBackup || entry.PendingMove == "duplicate" {
 		if !backupExists && !entry.RestoredToSource {
-			if !pathExists(entry.SourcePath) || verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint) != nil {
+			if !pathExists(entry.SourcePath) || verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID) != nil {
 				return fmt.Errorf("duplicate backup and original source are missing: %s", entry.SourcePath)
 			}
 		}
 	}
 	return nil
+}
+
+func journalOwnsExactShareLink(path string, entries []consolidationJournalEntry) bool {
+	for _, entry := range entries {
+		if entry.Action != "share" || !containsString(ownedJournalLinks(entry), path) {
+			continue
+		}
+		if _, exact, err := exactLink(path, entry.CanonicalPath); err == nil && exact {
+			return true
+		}
+	}
+	return false
 }
 
 func ownedJournalLinks(entry consolidationJournalEntry) []string {
@@ -1018,6 +1148,9 @@ func validateNoUnexpectedConsolidationReferences(inventory ConsolidationInventor
 		if entry.Action != "share" || (!entry.MovedToCanonical && entry.PendingMove != "canonical" && !pathExists(entry.CanonicalPath)) {
 			continue
 		}
+		if entry.CanonicalSourceID == "" {
+			return errors.New("recovery journal lacks the canonical source identity; preserve it for manual recovery")
+		}
 		allowed := map[string]bool{}
 		for _, path := range append(append(append([]string(nil), entry.BeforeRefs...), entry.CreatedLinks...), entry.ExpectedLinks...) {
 			allowed[filepath.Clean(path)] = true
@@ -1026,10 +1159,13 @@ func validateNoUnexpectedConsolidationReferences(inventory ConsolidationInventor
 			allowed[filepath.Clean(path)] = true
 		}
 		for _, source := range inventory.Sources {
-			if source.BundleFingerprint != entry.Fingerprint {
+			if source.ID != entry.CanonicalSourceID || !consolidationPathResolvesTo(source.SourcePath, entry.CanonicalPath) {
 				continue
 			}
 			for _, reference := range source.KnownReferences {
+				if reference.Reference.Source != entry.CanonicalSourceID || !consolidationPathResolvesTo(reference.Reference.ResolvedPath, entry.CanonicalPath) {
+					continue
+				}
 				path := filepath.Clean(reference.Reference.DiscoveredPath)
 				if !allowed[path] {
 					return fmt.Errorf("new or unrecorded %s reference %s now reaches canonical bundle %s", reference.Application, path, entry.CanonicalPath)
@@ -1155,6 +1291,13 @@ func ApplyConsolidationRecovery(ctx context.Context, id, confirmation string) Co
 		out.State, out.Outcome, out.ExitCode, out.Reason, out.Verified = "recovered", "success", 0, "recovery was already completed; no files changed", true
 		return out
 	}
+	for _, entry := range journal.Entries {
+		if err := validateRecoveryEntry(ctx, entry, journal.Entries); err != nil {
+			out.Failure = &ConsolidationFailure{Code: "stale-recovery", Message: err.Error(), Action: "Review the current paths and run a new recovery preview before any recovery write."}
+			out.Reason = out.Failure.Message
+			return out
+		}
+	}
 	journal.State = "recovering"
 	if err := writeConsolidationJournal(journal); err != nil {
 		out.Failure = &ConsolidationFailure{Code: "recovery-journal", Message: err.Error(), Action: "Resolve the private journal write failure before recovery."}
@@ -1168,24 +1311,31 @@ func ApplyConsolidationRecovery(ctx context.Context, id, confirmation string) Co
 		out.Failure = &ConsolidationFailure{Code: "partial-recovery", Message: err.Error(), Action: "Review the recovery journal and rerun recover preview; completed exact steps are retained."}
 		return out
 	}
+	// Remove every owned link before restoring any source directory. A selected
+	// duplicate can occupy another entry's original destination path, so
+	// restoring it while a sibling entry still owns that link would fail or
+	// overwrite an independent source.
 	for i := len(journal.Entries) - 1; i >= 0; i-- {
 		entry := &journal.Entries[i]
 		if entry.RestoredToSource {
-			continue
-		}
-		if entry.PendingRecoveryMove != "" && verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint) == nil {
-			entry.RestoredToSource = true
-			entry.PendingRecoveryMove = ""
-			if err := writeConsolidationJournal(journal); err != nil {
-				return partial(err)
-			}
 			continue
 		}
 		for _, link := range ownedJournalLinks(*entry) {
 			if containsString(entry.RemovedLinks, link) || !pathExists(link) {
 				continue
 			}
-			if filepath.Clean(link) == filepath.Clean(entry.SourcePath) && verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint) == nil {
+			if pathExists(entry.CanonicalPath) {
+				if err := verifyMoveSource(ctx, entry.CanonicalPath, entry.Fingerprint, entry.CanonicalSourceID); err != nil {
+					return partial(err)
+				}
+			} else if entry.RestoredToSource || filepath.Clean(entry.SourcePath) == filepath.Clean(entry.CanonicalPath) {
+				if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID); err != nil {
+					return partial(err)
+				}
+			} else {
+				return partial(fmt.Errorf("canonical source identity is missing before removing link %s", link))
+			}
+			if filepath.Clean(link) == filepath.Clean(entry.SourcePath) && verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID) == nil {
 				continue
 			}
 			entry.PendingRecoveryLinks = append(entry.PendingRecoveryLinks, link)
@@ -1201,7 +1351,19 @@ func ApplyConsolidationRecovery(ctx context.Context, id, confirmation string) Co
 				return partial(err)
 			}
 		}
+	}
+
+	for i := len(journal.Entries) - 1; i >= 0; i-- {
+		entry := &journal.Entries[i]
 		if entry.RestoredToSource {
+			continue
+		}
+		if entry.PendingRecoveryMove != "" && verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID) == nil {
+			entry.RestoredToSource = true
+			entry.PendingRecoveryMove = ""
+			if err := writeConsolidationJournal(journal); err != nil {
+				return partial(err)
+			}
 			continue
 		}
 		if entry.Action == "archive" {
@@ -1209,14 +1371,17 @@ func ApplyConsolidationRecovery(ctx context.Context, id, confirmation string) Co
 				if pathExists(entry.SourcePath) {
 					return partial(fmt.Errorf("original source path became occupied: %s", entry.SourcePath))
 				}
-				if err := verifyMoveSource(ctx, entry.BackupPath, entry.Fingerprint); err != nil {
+				if err := verifyMoveSource(ctx, entry.BackupPath, entry.Fingerprint, entry.BackupSourceID); err != nil {
 					return partial(err)
 				}
 				entry.PendingRecoveryMove = "archive"
 				if err := writeConsolidationJournal(journal); err != nil {
 					return partial(err)
 				}
-				if err := movePathExclusive(entry.BackupPath, entry.SourcePath); err != nil {
+				if err := movePathExclusive(entry.BackupPath, entry.SourcePath, entry.BackupSourceID); err != nil {
+					return partial(err)
+				}
+				if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID); err != nil {
 					return partial(err)
 				}
 			}
@@ -1231,14 +1396,17 @@ func ApplyConsolidationRecovery(ctx context.Context, id, confirmation string) Co
 			if pathExists(entry.SourcePath) {
 				return partial(fmt.Errorf("original source path became occupied: %s", entry.SourcePath))
 			}
-			if err := verifyMoveSource(ctx, entry.BackupPath, entry.Fingerprint); err != nil {
+			if err := verifyMoveSource(ctx, entry.BackupPath, entry.Fingerprint, entry.BackupSourceID); err != nil {
 				return partial(err)
 			}
 			entry.PendingRecoveryMove = "duplicate"
 			if err := writeConsolidationJournal(journal); err != nil {
 				return partial(err)
 			}
-			if err := movePathExclusive(entry.BackupPath, entry.SourcePath); err != nil {
+			if err := movePathExclusive(entry.BackupPath, entry.SourcePath, entry.BackupSourceID); err != nil {
+				return partial(err)
+			}
+			if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID); err != nil {
 				return partial(err)
 			}
 		}
@@ -1246,14 +1414,17 @@ func ApplyConsolidationRecovery(ctx context.Context, id, confirmation string) Co
 			if pathExists(entry.SourcePath) {
 				return partial(fmt.Errorf("original source path became occupied: %s", entry.SourcePath))
 			}
-			if err := verifyMoveSource(ctx, entry.CanonicalPath, entry.Fingerprint); err != nil {
+			if err := verifyMoveSource(ctx, entry.CanonicalPath, entry.Fingerprint, entry.CanonicalSourceID); err != nil {
 				return partial(err)
 			}
 			entry.PendingRecoveryMove = "canonical"
 			if err := writeConsolidationJournal(journal); err != nil {
 				return partial(err)
 			}
-			if err := movePathExclusive(entry.CanonicalPath, entry.SourcePath); err != nil {
+			if err := movePathExclusive(entry.CanonicalPath, entry.SourcePath, entry.CanonicalSourceID); err != nil {
+				return partial(err)
+			}
+			if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID); err != nil {
 				return partial(err)
 			}
 		}
@@ -1279,7 +1450,7 @@ func ApplyConsolidationRecovery(ctx context.Context, id, confirmation string) Co
 	}
 	for _, entry := range journal.Entries {
 		if entry.Action == "archive" || entry.MovedToBackup || entry.MovedToCanonical {
-			if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint); err != nil {
+			if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID); err != nil {
 				return partial(err)
 			}
 		}

@@ -19,20 +19,38 @@ import (
 func runCompanion(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("companion", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
+	name := flags.String("name", companion.Name, "select a bundled companion by exact name")
 	machine := flags.Bool("json", false, "emit the versioned bundled files and hashes")
 	file := flags.String("file", "", "emit one exact bundle-relative file as text")
 	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			if reviewJSONRequested(args) {
+				return writeReviewJSON(map[string]any{"schema_version": 1, "operation": "companion-help", "help": usage}, stdout, stderr)
+			}
+			io.WriteString(stdout, usage)
+			return 0
+		}
 		return reviewFailure("companion", err, 2, reviewJSONRequested(args), stdout, stderr)
 	}
 	if flags.NArg() != 0 {
 		return reviewFailure("companion", errors.New("companion accepts no positional arguments"), 2, *machine, stdout, stderr)
 	}
-	bundle := companion.Bundled()
+	bundle, err := companion.BundledNamed(*name)
+	if err != nil {
+		return reviewFailure("companion", err, 2, *machine, stdout, stderr)
+	}
 	if *file != "" {
 		for _, entry := range bundle.Files {
 			if entry.Path == *file {
 				if *machine {
-					return writeReviewJSON(map[string]any{"schema_version": 1, "operation": "companion", "name": bundle.Name, "version": bundle.Version, "review_contract_version": bundle.ContractVersion, "file": entry}, stdout, stderr)
+					payload := map[string]any{"schema_version": 1, "operation": "companion", "name": bundle.Name, "version": bundle.Version, "file": entry}
+					if bundle.ContractVersion != 0 {
+						payload["review_contract_version"] = bundle.ContractVersion
+					}
+					if bundle.ConsolidationContractVersion != 0 {
+						payload["consolidation_contract_version"] = bundle.ConsolidationContractVersion
+					}
+					return writeReviewJSON(payload, stdout, stderr)
 				}
 				_, err := io.WriteString(stdout, entry.Content)
 				if err != nil {
@@ -47,11 +65,19 @@ func runCompanion(args []string, stdout, stderr io.Writer) int {
 	if *machine {
 		return writeReviewJSON(bundle, stdout, stderr)
 	}
-	fmt.Fprintf(stdout, "%s %s | review contract %d\n", bundle.Name, bundle.Version, bundle.ContractVersion)
+	contractName, contractVersion := "review", bundle.ContractVersion
+	if bundle.ConsolidationContractVersion != 0 {
+		contractName, contractVersion = "consolidation", bundle.ConsolidationContractVersion
+	}
+	fmt.Fprintf(stdout, "%s %s | %s contract %d\n", bundle.Name, bundle.Version, contractName, contractVersion)
 	for _, entry := range bundle.Files {
 		fmt.Fprintf(stdout, "%s | sha256 %s\n", entry.Path, entry.SHA256)
 	}
-	io.WriteString(stdout, "Read with: skillglass companion --file SKILL.md\nBundled files only; no installation or availability writes.\n")
+	if bundle.Name == companion.Name {
+		io.WriteString(stdout, "Read with: skillglass companion --file SKILL.md\nBundled files only; no installation or availability writes.\n")
+	} else {
+		fmt.Fprintf(stdout, "Read with: skillglass companion --name %s --file SKILL.md\nBundled files only; no installation or availability writes.\n", bundle.Name)
+	}
 	return 0
 }
 

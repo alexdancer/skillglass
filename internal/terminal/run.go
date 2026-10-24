@@ -21,9 +21,9 @@ const usage = `Usage:
   skillglass enable|disable|inherit --agent codex|claude-code|hermes|pi|opencode|gemini --scope global|project [SCOPE] [--confirm TOKEN] [--json] SOURCE_ID
   skillglass enable|disable|inherit --agents APP --agents APP --scope global|project [SCOPE] [--confirm TOKEN] [--json] SOURCE_ID
   skillglass delete [SCOPE] [--confirm TOKEN] [--json] SOURCE_ID
-  skillglass setup --app APP [--app APP ...] [--allow-shared-app APP ...] [--install] [--json]
-  skillglass setup --check [--json]
-  skillglass companion [--json] [--file BUNDLE_RELATIVE_PATH]
+  skillglass setup --app APP [--app APP ...] [--allow-shared-app APP ...] [--companion NAME] [--install] [--json]
+  skillglass setup --check [--companion NAME] [--json]
+  skillglass companion [--name NAME] [--json] [--file BUNDLE_RELATIVE_PATH]
   skillglass review prepare --draft FILE [--json]
   skillglass review select --proposal FILE [--choose CHANGE_ID ...] [--approve SELECTION_ID] [--json]
   skillglass review apply --selection FILE [--json]
@@ -92,6 +92,11 @@ Companion setup:
   diagnoses missing/moved/incompatible builds without installation. Repair PATH
   to a compatible build, then retry. Use a fresh native session or native reload;
   installed files do not prove session adoption. Reads/reviews never install.
+  Default is skillglass-review. To inspect consolidation use companion --name
+  skillglass-consolidate --file SKILL.md. Named setup checks use
+  setup --check --companion skillglass-consolidate. Install it only with an
+  explicit setup --companion plus setup --app targets and --install. Setup
+  targets do not choose consolidation source/destination applications.
 
 Collection review:
   companion emits portable bundled skillglass-review 1.0.0, review contract 1.
@@ -133,9 +138,12 @@ Skill consolidation:
   Preview checks the complete scan fingerprint and displays every exact path.
   Apply requires the exact confirmation token; moves and links are journaled in
   the private recovery store. Recover first previews --backup ID; repeat with its
-  exact --confirm token. A fresh unchanged rerun succeeds without filesystem
-  changes or a new recovery record. Selection is remembered after successful
-  apply; no watcher runs. Conflicts are never silently merged or renamed.
+  exact --confirm token. An exact rerun with the same remembered selection
+  succeeds without filesystem changes or a new recovery record. A selection-only
+  update is reported separately. Selection is remembered after successful apply;
+  no watcher runs. Conflicts are never silently merged or renamed.
+  The primary agent workflow is bundled as skillglass-consolidate. Installing
+  the companion is separate from selecting apps with consolidate scan.
 
 Group controls preflight all requested apps. Unsupported members block the whole request; a subset needs a fresh explicit request. Application stops at the first non-success, retains earlier successful changes, and reports remaining apps not attempted. Discovery is bounded, not machine-wide.
 

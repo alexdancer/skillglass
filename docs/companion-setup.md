@@ -1,30 +1,38 @@
 # Companion setup
 
-`setup` installs only this executable's exact bundled `skillglass-review` skill.
-The unreleased companion is version 1.0.0 with review contract 1. Exact file bytes
-and documented command capabilities are authoritative; matching version labels
-alone do not establish compatibility. `companion --json` shows every bundled
-file, content and SHA-256. Reading, browsing and collection review never install.
+`setup` installs one exact bundled companion selected by `--companion`; the
+default remains `skillglass-review`. The executable also bundles the primary
+agent workflow `skillglass-consolidate`. Both are version 1.0.0 with separate
+review and consolidation contracts. Exact file bytes and documented command
+capabilities are authoritative; matching version labels alone do not establish
+compatibility. `companion --json` shows the default review bundle; use
+`companion --name skillglass-consolidate --json` for the named workflow. Reading,
+browsing and collection review never install either companion.
 
 ## Preview and explicitly install
 
 The executable must be named `skillglass` and discoverable on the PATH used by
 the native application. A desktop application's PATH can differ from a shell's.
-`skillglass setup --check --json` checks executable discovery without installing.
-For another executable found on PATH it checks the exact companion bytes and
-help's documented reading, setup and review prepare/select/apply commands, with
-bounded output and a timeout. The currently running exact filesystem executable already owns that
-embedded contract. Setup does not pin an absolute binary location or write
-shell/application configuration.
+`skillglass setup --check --json` checks the default review executable without
+installing. Use `skillglass setup --check --companion skillglass-consolidate --json`
+to require the named workflow. For another executable found on PATH the check
+requests that exact bundle and verifies its bytes and required help commands with
+bounded output and a timeout. A review-only old executable fails the named
+consolidation check. The currently running exact filesystem executable already
+owns its embedded contract. Setup does not pin an absolute binary location or
+write shell/application configuration.
 
 ```sh
 skillglass setup --app codex --app opencode --allow-shared-app codeaf --json
 skillglass setup --app codex --app opencode --allow-shared-app codeaf --install --json
+skillglass setup --companion skillglass-consolidate --app codex --app opencode --allow-shared-app codeaf --json
+skillglass setup --companion skillglass-consolidate --app codex --app opencode --allow-shared-app codeaf --install --json
 ```
 
-The first command previews destinations and shared effects without writes. The
-second deliberately installs after those effects have been reviewed. Repeat
-`--app` for every installation target. Repeat `--allow-shared-app` to acknowledge
+Commands without `--install` preview destinations and shared effects without
+writes. Repeat the exact bundle name, `--app` targets and `--allow-shared-app`
+consent with `--install` only after reviewing the preview. Repeat `--app` for
+every installation target. Repeat `--allow-shared-app` to acknowledge
 indirect discovery by named applications without installing separate targets for
 them. Omit `--install` for any fresh preview. Flags accept exact application IDs;
 wildcards, duplicate selections, overlapping target/consent entries, arbitrary
@@ -52,10 +60,18 @@ absolute. Actual native sessions are not inspected or restarted.
 
 | Target | Exact default destination under HOME | Fresh native catalog validation |
 | --- | --- | --- |
-| `codex` | `.codex/skills/skillglass-review` | Codex 0.162.1 `skills/list` |
-| `claude-code` | `.claude/skills/skillglass-review` | Claude Code 2.1.303 initialization catalog |
-| `opencode` | `.config/opencode/skills/skillglass-review` | OpenCode 1.17.15 `debug skill`, including the shared Claude route separately |
+| `codex` | `.codex/skills/<selected-companion>` (`skillglass-review` by default) | Codex 0.162.1 `skills/list` |
+| `claude-code` | `.claude/skills/<selected-companion>` (`skillglass-review` by default) | Claude Code 2.1.303 initialization catalog |
+| `opencode` | `.config/opencode/skills/<selected-companion>` (`skillglass-review` by default) | OpenCode 1.17.15 `debug skill`, including the shared Claude route separately |
 | `hermes`, `pi`, `gemini`, `codeaf` | No setup target | Companion installation discovery is unverified; existing read/control support is separate |
+
+The table describes validated user-level destination mechanisms. Catalog
+observations in the existing native setup record cover the review companion;
+the new consolidation bundle is checked as an exact artifact and installed in
+disposable acceptance fixtures. These results do not establish native session
+adoption or add setup targets for Pi, Hermes, Gemini or CodeAF. Setup `--app`
+values select installation targets only; they do not select the applications
+whose personal skill sources will be consolidated.
 
 Only macOS setup is validated. Non-default `CODEX_HOME`, `CLAUDE_CONFIG_DIR` and
 `XDG_CONFIG_HOME` destinations are reported unsupported without a default-folder
@@ -68,8 +84,10 @@ catalog baselines do not prove custom routes or running-session adoption.
 ## Results and recovery
 
 The JSON object has `schema_version: 1`, operation `setup`, the exact bundle
-version/contract, `applications`, `allowed_shared_applications`, `install`, the
-executable check, and one result per requested installation target. Each result
+name and version, its `review_contract_version` or
+`consolidation_contract_version`, `applications`, `allowed_shared_applications`,
+`install`, the executable check, and one result per requested installation
+target. Each result
 has its destination, validated native baseline, affected applications, isolation
 evidence, reason and next action. Consent-only consumers have no installation
 result. Human output displays the same selection, destinations and limitations.

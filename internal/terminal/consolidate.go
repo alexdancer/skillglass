@@ -207,6 +207,26 @@ func consolidateCLIError(operation string, err error, exitCode int, machine bool
 func renderConsolidationInventory(out io.Writer, inventory collection.ConsolidationInventory) {
 	fmt.Fprintf(out, "Consolidation scan %s | %s | coverage: %s | selected coverage: %s\n", inventory.ScanID, inventory.Outcome, inventory.Coverage, inventory.SelectedCoverage)
 	fmt.Fprintf(out, "Selected applications: %s\nLibrary: %s | safe: %t\n", strings.Join(inventory.Scope.Applications, ", "), inventory.Scope.Library, inventory.LibrarySafe)
+	for _, app := range inventory.Applications {
+		if !app.Selected {
+			continue
+		}
+		if app.NativeRelocationProfile == nil {
+			fmt.Fprintf(out, "Native relocation %s | %s | %s\n", app.Application, app.NativeRelocationStatus, safeInline(app.NativeRelocationReason))
+			continue
+		}
+		fmt.Fprintf(out, "Native relocation %s | %s | %s | %s SHA-256 %s\n", app.Application, app.NativeRelocationStatus, safeInline(app.NativeRelocationProfile.Profile), safeInline(displayOptional(app.NativeRelocationProfile.ArtifactKind)), app.NativeRelocationProfile.BinarySHA256)
+		for _, precondition := range app.NativeRelocationProfile.Preconditions {
+			fmt.Fprintf(out, "  Profile precondition: %s\n", safeInline(precondition))
+		}
+		if app.NativeRelocationProfile.SourceRevision != "" {
+			fmt.Fprintf(out, "  Source revision: %s | loader source SHA-256: %s\n", app.NativeRelocationProfile.SourceRevision, app.NativeRelocationProfile.LoaderSHA256)
+		}
+		fmt.Fprintf(out, "  Observed: %s\n", safeInline(app.NativeRelocationProfile.Observed))
+		for _, limit := range app.NativeRelocationProfile.Limits {
+			fmt.Fprintf(out, "  Profile limit: %s\n", safeInline(limit))
+		}
+	}
 	for _, reason := range inventory.LibraryReasons {
 		fmt.Fprintf(out, "Library restriction: %s\n", safeInline(reason))
 	}
@@ -260,8 +280,48 @@ func renderConsolidationPreview(out io.Writer, preview collection.ConsolidationP
 	if preview.ScanID != "" {
 		fmt.Fprintf(out, "Scan: %s\n", preview.ScanID)
 	}
+	if len(preview.Scope.Applications) != 0 || preview.Scope.Library != "" {
+		fmt.Fprintf(out, "Selected applications: %s\n", safeInline(displayOptional(strings.Join(preview.Scope.Applications, ", "))))
+		fmt.Fprintf(out, "Roots: %s\n", safeInline(displayOptional(strings.Join(preview.Scope.Roots, ", "))))
+		fmt.Fprintf(out, "Canonical library: %s\n", safeInline(preview.Scope.Library))
+		fmt.Fprintf(out, "Selection: %s | remembered-selection evidence: %s\n", safeInline(displayOptional(preview.Scope.SelectionFrom)), safeInline(displayOptional(preview.Scope.RememberedSelectionID)))
+	}
+	for _, choice := range preview.Choices {
+		fmt.Fprintf(out, "Choice %s | %s | %s\n", safeInline(string(choice.SourceID)), safeInline(choice.Action), safeInline(choice.SourcePath))
+		fmt.Fprintf(out, "  Complete bundle fingerprint: %s\n", safeInline(displayOptional(choice.BundleFingerprint)))
+		if choice.CanonicalName != "" {
+			fmt.Fprintf(out, "  Canonical leaf: %s\n", safeInline(choice.CanonicalName))
+		}
+		for _, destination := range choice.Destinations {
+			fmt.Fprintf(out, "  Destination %s | portability: %s | %s\n", safeInline(destination.Application), safeInline(destination.Portability), safeInline(destination.Reason))
+			if destination.UserApproved {
+				fmt.Fprintln(out, "    Unknown portability explicitly approved")
+			}
+			for _, consumer := range destination.AcknowledgedConsumers {
+				fmt.Fprintf(out, "    Possible indirect consumer %s | explicitly acknowledged: %t | evidence IDs: %s\n", safeInline(consumer.Application), consumer.UserApproved, safeInline(displayOptional(strings.Join(consumer.EvidenceIDs, ", "))))
+				fmt.Fprintln(out, "      This is exposure acknowledgement only; it does not import or directly link the consumer's skills.")
+			}
+		}
+	}
+	if preview.RecoveryID != "" {
+		fmt.Fprintf(out, "Recovery ID: %s\n", safeInline(preview.RecoveryID))
+	}
+	fmt.Fprintln(out, "Execution uses a recovery journal; filesystem operations across directories are not atomic. A partial result may need explicit recovery.")
 	for _, effect := range preview.Effects {
 		fmt.Fprintf(out, "%s %s | %s\n", effect.Action, effect.SourceID, safeInline(effect.SourcePath))
+		for _, profile := range effect.RelocationProfiles {
+			fmt.Fprintf(out, "  Native relocation profile %s | %s | %s | %s SHA-256 %s\n", safeInline(profile.ID), safeInline(profile.Application), safeInline(profile.Profile), safeInline(displayOptional(profile.ArtifactKind)), safeInline(profile.BinarySHA256))
+			if profile.SourceRevision != "" {
+				fmt.Fprintf(out, "    Source revision: %s | loader source SHA-256: %s\n", safeInline(profile.SourceRevision), safeInline(profile.LoaderSHA256))
+			}
+			fmt.Fprintf(out, "    Observed: %s\n", safeInline(profile.Observed))
+			for _, precondition := range profile.Preconditions {
+				fmt.Fprintf(out, "    Precondition: %s\n", safeInline(precondition))
+			}
+			for _, limit := range profile.Limits {
+				fmt.Fprintf(out, "    Profile limit: %s\n", safeInline(limit))
+			}
+		}
 		if effect.CanonicalPath != "" {
 			fmt.Fprintf(out, "  Canonical: %s\n", safeInline(effect.CanonicalPath))
 		}

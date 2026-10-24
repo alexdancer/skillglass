@@ -30,6 +30,12 @@ One selected root's path to a candidate skill bundle or standalone instruction f
 A second discovery reference proven to reach the same underlying skill bundle directory or standalone instruction file. Changes to that source can affect every application that uses a shared reference.
 _Avoid_: Duplicate copy when no separate content exists.
 
+**Canonical skill library**:
+The personal collection that holds the chosen source for a skill shared across selected agent applications. Those applications reach the source through shared references.
+
+**Consolidation archive**:
+A recoverable private location for a skill version that is no longer the selected version during consolidation. Recovery is available only while the recorded source and references remain safe to restore.
+
 **Disable**:
 Prevent selected agent applications from using a skill while retaining its content. The requested scope may be one application or all applications.
 _Avoid_: Delete, uninstall.

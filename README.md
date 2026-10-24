@@ -24,6 +24,25 @@ result. Completed writes remain in place. Explicit companion setup is available
 separately. See [the review contract](docs/review-contract.md)
 and `skillglass help` for direct reads, controls and proposal syntax.
 
+## Consolidate selected skill collections
+
+The primary agent workflow is the bundled `skillglass-consolidate` companion.
+Inspect it with `skillglass companion --name skillglass-consolidate --file SKILL.md`.
+It guides source selection, full-bundle reading, per-application
+portability decisions, conflict recommendations, exact approval, application
+and recovery. The CLI remains available directly through
+`skillglass consolidate scan --help`; it handles deterministic evidence and
+filesystem changes without a built-in model service. See
+[the ALE-86 workflow and verification](docs/verification/ale-86.md).
+
+Installing this companion is a separate choice from selecting the applications
+whose collections will be consolidated. Check the named executable with
+`skillglass setup --check --companion skillglass-consolidate --json`, then use
+`setup --companion skillglass-consolidate --app APP` to preview an explicit
+supported installation target. Repeat the same setup targets with `--install`
+only after reviewing the exact destination. The default setup bundle remains
+`skillglass-review`.
+
 ## Install the companion for selected applications
 
 Put the compatible executable named `skillglass` on the same PATH the native

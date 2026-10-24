@@ -202,7 +202,7 @@ func TestLibraryAuditAcceptsOnlyKnownExactLinksIntoCompleteCanonicalBundles(t *t
 		t.Fatal(err)
 	}
 	source := ConsolidationSource{
-		SourcePath: target, BundleFingerprint: fingerprint, Eligible: true,
+		SourcePath: target, BundleFingerprint: fingerprint, Eligible: true, RelocationScope: "consolidation-library",
 		KnownReferences: []ConsolidationReference{{Reference: Reference{DiscoveredPath: alias, ResolvedPath: target, Status: "resolved"}}},
 	}
 	refusal := "codex: prospective alias isolation is unverified: related or unresolved alias " + alias + " targets " + target + "; unsupported isolation"

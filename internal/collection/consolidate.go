@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -62,31 +63,43 @@ type ConsolidationSource struct {
 // ConsolidationRelocationProof is a narrowly scoped recorded native profile,
 // separate from the adapter parser baseline carried by Availability.Evidence.
 type ConsolidationRelocationProof struct {
-	ID            string   `json:"id"`
-	Application   string   `json:"application"`
-	Profile       string   `json:"profile"`
-	BinarySHA256  string   `json:"binary_sha256"`
-	Observed      string   `json:"observed"`
-	Preconditions []string `json:"preconditions"`
-	Limits        []string `json:"limits"`
+	ID             string   `json:"id"`
+	Application    string   `json:"application"`
+	Profile        string   `json:"profile"`
+	ArtifactKind   string   `json:"artifact_kind,omitempty"`
+	BinarySHA256   string   `json:"binary_sha256"`
+	SourceRevision string   `json:"source_revision,omitempty"`
+	LoaderSHA256   string   `json:"loader_source_sha256,omitempty"`
+	Observed       string   `json:"observed"`
+	Preconditions  []string `json:"preconditions"`
+	Limits         []string `json:"limits"`
 }
 
 const (
-	codexConsolidationRelocationProfile = "Codex 0.162.1"
-	codexConsolidationRelocationSHA256  = "74c6a6d263f40d65f99c27a815275f5b4ed0bcc2baecc396b4cf3255498bdfc0"
+	codexConsolidationRelocationProfile   = "Codex 0.162.1"
+	codexConsolidationRelocationSHA256    = "74c6a6d263f40d65f99c27a815275f5b4ed0bcc2baecc396b4cf3255498bdfc0"
+	claudeConsolidationRelocationSHA256   = "5eadc0009cdcdbc0d06e58110d7b2baf88ced6088b1c33a60a21217fe410619c"
+	opencodeConsolidationRelocationSHA256 = "7bdefaeaef5cc4f661988eaba00de047f5f65547fd22a3bed5ba7c4d86a275d3"
+	piConsolidationRelocationSHA256       = "e79626f2dd6f94aa45d30f3fa63cd84319a6eefcd150b353cfaf274366926774"
+	hermesConsolidationSourceRevision     = "5a16635f409e0f5e3d754bb6256bd27707bcec4c"
+	hermesConsolidationPythonSHA256       = "e3938f2a272dafdc33f3dd12b093dfc85354629476cb97a7d7d4a7201b8482dd"
+	hermesConsolidationLoaderSHA256       = "d420eeafd237d7beccb91bf68014f1bc6cb96d3e06ec45cb6c707587d25b909b"
 )
 
 type ConsolidationApplication struct {
-	Application     string                        `json:"application"`
-	Selected        bool                          `json:"selected"`
-	DestinationRoot string                        `json:"destination_root,omitempty"`
-	Scope           Scope                         `json:"scope"`
-	ExistingSources []ConsolidationExistingSource `json:"existing_sources"`
-	Problems        []Problem                     `json:"problems"`
-	ConfigEvidence  []PermissionLayer             `json:"config_evidence,omitempty"`
-	Managers        []ManagerEvidence             `json:"manager_evidence,omitempty"`
-	Gaps            []string                      `json:"gaps,omitempty"`
-	Failure         string                        `json:"failure,omitempty"`
+	Application             string                        `json:"application"`
+	Selected                bool                          `json:"selected"`
+	DestinationRoot         string                        `json:"destination_root,omitempty"`
+	NativeRelocationProfile *ConsolidationRelocationProof `json:"native_relocation_profile,omitempty"`
+	NativeRelocationStatus  string                        `json:"native_relocation_status"`
+	NativeRelocationReason  string                        `json:"native_relocation_reason,omitempty"`
+	Scope                   Scope                         `json:"scope"`
+	ExistingSources         []ConsolidationExistingSource `json:"existing_sources"`
+	Problems                []Problem                     `json:"problems"`
+	ConfigEvidence          []PermissionLayer             `json:"config_evidence,omitempty"`
+	Managers                []ManagerEvidence             `json:"manager_evidence,omitempty"`
+	Gaps                    []string                      `json:"gaps,omitempty"`
+	Failure                 string                        `json:"failure,omitempty"`
 }
 
 // ConsolidationDestinationAudit describes configured-loader routes that could
@@ -191,16 +204,17 @@ type ConsolidationDraft struct {
 }
 
 type ConsolidationEffect struct {
-	Action              string   `json:"action"`
-	SourceID            SourceID `json:"source_id"`
-	SourcePath          string   `json:"source_path"`
-	BundleFingerprint   string   `json:"bundle_fingerprint,omitempty"`
-	CanonicalPath       string   `json:"canonical_path,omitempty"`
-	BackupPath          string   `json:"backup_path,omitempty"`
-	Destinations        []string `json:"destinations,omitempty"`
-	PreservedReferences []string `json:"preserved_references,omitempty"`
-	State               string   `json:"state"`
-	Reason              string   `json:"reason,omitempty"`
+	Action              string                         `json:"action"`
+	SourceID            SourceID                       `json:"source_id"`
+	SourcePath          string                         `json:"source_path"`
+	BundleFingerprint   string                         `json:"bundle_fingerprint,omitempty"`
+	RelocationProfiles  []ConsolidationRelocationProof `json:"native_relocation_profiles,omitempty"`
+	CanonicalPath       string                         `json:"canonical_path,omitempty"`
+	BackupPath          string                         `json:"backup_path,omitempty"`
+	Destinations        []string                       `json:"destinations,omitempty"`
+	PreservedReferences []string                       `json:"preserved_references,omitempty"`
+	State               string                         `json:"state"`
+	Reason              string                         `json:"reason,omitempty"`
 }
 
 type ConsolidationPreview struct {
@@ -224,6 +238,11 @@ type consolidationSnapshot struct {
 	app      string
 	snapshot *Snapshot
 	err      error
+}
+
+type consolidationCanonicalProofKey struct {
+	SourceID SourceID
+	Path     string
 }
 
 // NormalizeConsolidationRequest resolves defaults and validates an explicit app
@@ -323,6 +342,7 @@ func ScanConsolidation(ctx context.Context, request ConsolidationRequest) Consol
 	if len(selected) == 0 || request.Library == "" {
 		return consolidationFailedScan(result, "invalid-scope", "consolidation scope is missing selected applications or library", "Select at least one supported application and a library outside application skill roots.")
 	}
+	canonicalProofs := consolidationCanonicalLibraryProofs(request.Library)
 	customRoots := make([]string, len(request.Roots))
 	copy(customRoots, request.Roots)
 	all := make([]consolidationSnapshot, 0, len(applicationCatalog))
@@ -338,7 +358,12 @@ func ScanConsolidation(ctx context.Context, request ConsolidationRequest) Consol
 		}
 		entry.err = err
 		all = append(all, entry)
-		appView := ConsolidationApplication{Application: capability.Application, Selected: selected[capability.Application], ExistingSources: []ConsolidationExistingSource{}, Problems: []Problem{}, Managers: []ManagerEvidence{}}
+		profile := consolidationNativeRelocationProfile(capability.Application)
+		appView := ConsolidationApplication{Application: capability.Application, Selected: selected[capability.Application], NativeRelocationProfile: profile, NativeRelocationStatus: "unsupported", NativeRelocationReason: "no exact native directory-relocation catalog profile is recorded for this application", ExistingSources: []ConsolidationExistingSource{}, Problems: []Problem{}, Managers: []ManagerEvidence{}}
+		if profile != nil {
+			appView.NativeRelocationStatus = "validated-profile"
+			appView.NativeRelocationReason = "this exact observed profile supports only its stated relocation mechanism and preconditions; installed version and running-session adoption are unknown"
+		}
 		if err != nil {
 			appView.Failure = err.Error()
 			appView.Scope = Scope{Completeness: Incomplete}
@@ -471,10 +496,14 @@ func ScanConsolidation(ctx context.Context, request ConsolidationRequest) Consol
 		item.BundleFingerprint, item.FingerprintCoverage, item.InspectionComplete = fingerprint, coverage, inspectable
 		item.InspectionLimits = limits
 		item.BlockedReasons = append(item.BlockedReasons, reasons...)
-		// A previously consolidated bundle is an authorized source on an
-		// unchanged rerun only when its complete digest names its exact library
-		// path. Arbitrary bundles merely placed under the library remain blocked.
-		if relocationBlock != "" && fingerprint != "" && filepath.Clean(base.Directory) == filepath.Clean(filepath.Join(request.Library, fingerprint)) {
+		// A successful private journal binds a canonical path to the exact
+		// filesystem object that was moved there. Keep that ownership proof
+		// stable when ordinary edits change the complete content fingerprint.
+		// An unmodified content-addressed source remains recognizable only when
+		// its complete current digest still names its exact library path.
+		_, provenCanonical := canonicalProofs[consolidationCanonicalProofKey{SourceID: id, Path: filepath.Clean(base.Directory)}]
+		contentAddressed := fingerprint != "" && filepath.Clean(base.Directory) == filepath.Clean(filepath.Join(request.Library, fingerprint))
+		if relocationBlock != "" && base.Identity.Certainty == "proven" && base.Identity.Method == "darwin-directory-object" && (provenCanonical || contentAddressed) {
 			item.RelocationScope = "consolidation-library"
 			relocationBlock = ""
 		}
@@ -578,7 +607,7 @@ func consolidationLibraryRouteNotes(library string, sources []ConsolidationSourc
 		target := strings.TrimSuffix(parts[1], "; unsupported isolation")
 		approved := false
 		for _, source := range sources {
-			if !source.Eligible || len(source.BundleFingerprint) != sha256.Size*2 || filepath.Clean(source.SourcePath) != filepath.Clean(target) || filepath.Clean(filepath.Join(library, source.BundleFingerprint)) != filepath.Clean(target) {
+			if !source.Eligible || source.RelocationScope != "consolidation-library" || len(source.BundleFingerprint) != sha256.Size*2 || filepath.Clean(source.SourcePath) != filepath.Clean(target) || filepath.Dir(filepath.Clean(target)) != filepath.Clean(library) {
 				continue
 			}
 			if _, err := hex.DecodeString(source.BundleFingerprint); err != nil {
@@ -608,6 +637,82 @@ func consolidationLibraryRouteNotes(library string, sources []ConsolidationSourc
 		}
 	}
 	return uniqueStrings(remaining), uniqueStrings(warnings)
+}
+
+// consolidationCanonicalLibraryProofs recognizes only exact canonical objects
+// recorded by a successful private consolidation journal. Content may change
+// later, so the current complete fingerprint is recomputed by ScanConsolidation
+// and is not inferred from the directory leaf or the journal's older digest.
+func consolidationCanonicalLibraryProofs(library string) map[consolidationCanonicalProofKey]struct{} {
+	proofs := map[consolidationCanonicalProofKey]struct{}{}
+	pathsByID := map[SourceID]string{}
+	ambiguous := map[SourceID]bool{}
+	resolvedLibrary, err := setupProspectivePath(library)
+	if err != nil || filepath.Clean(resolvedLibrary) != filepath.Clean(library) {
+		return proofs
+	}
+	libraryDir, err := openAnchored(library, true)
+	if err != nil {
+		return proofs
+	}
+	var libraryStat unix.Stat_t
+	if err := unix.Fstat(int(libraryDir.Fd()), &libraryStat); err != nil || libraryStat.Uid != uint32(os.Geteuid()) || libraryStat.Mode&0o077 != 0 {
+		_ = libraryDir.Close()
+		return proofs
+	}
+	_ = libraryDir.Close()
+
+	backupRoot := consolidationBackupRoot()
+	resolvedBackupRoot, err := setupProspectivePath(backupRoot)
+	if err != nil || filepath.Clean(resolvedBackupRoot) != filepath.Clean(backupRoot) {
+		return proofs
+	}
+	backupDir, err := openAnchored(backupRoot, true)
+	if err != nil {
+		return proofs
+	}
+	defer backupDir.Close()
+	var backupStat unix.Stat_t
+	if err := unix.Fstat(int(backupDir.Fd()), &backupStat); err != nil || backupStat.Uid != uint32(os.Geteuid()) || backupStat.Mode&0o077 != 0 {
+		return proofs
+	}
+	ids, err := backupDir.Readdirnames(10001)
+	if err != nil && !errors.Is(err, io.EOF) || len(ids) > 10000 {
+		return proofs
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		journal, err := readConsolidationJournal(id)
+		if err != nil || journal.State != "applied" || !journal.SelectionApplied || journal.PendingSelectionApply || filepath.Clean(journal.Scope.Library) != filepath.Clean(library) {
+			continue
+		}
+		for _, entry := range journal.Entries {
+			path := filepath.Clean(entry.CanonicalPath)
+			if entry.Action != "share" || !entry.MovedToCanonical || entry.SourceID == "" || !filepath.IsAbs(entry.CanonicalPath) || filepath.Dir(path) != filepath.Clean(library) {
+				continue
+			}
+			canonicalDir, err := openAnchored(path, true)
+			if err != nil {
+				continue
+			}
+			var canonicalStat unix.Stat_t
+			statErr := unix.Fstat(int(canonicalDir.Fd()), &canonicalStat)
+			_ = canonicalDir.Close()
+			if statErr != nil || canonicalStat.Mode&unix.S_IFMT != unix.S_IFDIR || sourceID(objectToken{uint64(canonicalStat.Dev), canonicalStat.Ino, canonicalStat.Btim.Sec, canonicalStat.Btim.Nsec}) != entry.SourceID {
+				continue
+			}
+			if prior, exists := pathsByID[entry.SourceID]; exists && prior != path {
+				ambiguous[entry.SourceID] = true
+				delete(proofs, consolidationCanonicalProofKey{SourceID: entry.SourceID, Path: prior})
+				continue
+			}
+			if !ambiguous[entry.SourceID] {
+				pathsByID[entry.SourceID] = path
+				proofs[consolidationCanonicalProofKey{SourceID: entry.SourceID, Path: path}] = struct{}{}
+			}
+		}
+	}
+	return proofs
 }
 
 func consolidationFailedScan(result ConsolidationInventory, code, message, action string) ConsolidationInventory {
@@ -832,6 +937,117 @@ func consolidationRootIsPhysicalPersonalRoot(app string, root RootReport) bool {
 	default:
 		return false
 	}
+}
+
+func consolidationNativeSourceOwners(source ConsolidationSource, applications []ConsolidationApplication, selected map[string]bool) []string {
+	if source.RelocationScope == "consolidation-library" {
+		return nil
+	}
+	owners := []string{}
+	for _, app := range applications {
+		if !selected[app.Application] {
+			continue
+		}
+		for _, root := range app.Scope.Roots {
+			if !setupRootParticipates(root) || root.Context != ContextGlobal && root.Context != ContextCustom {
+				continue
+			}
+			customRoot := root.Context == ContextCustom && (root.Origin == "custom" || root.Origin == "" && strings.HasPrefix(string(root.ID), "root-custom-"))
+			if !customRoot && !consolidationRootIsPhysicalPersonalRoot(app.Application, root) {
+				continue
+			}
+			rootPath := root.Resolved
+			if rootPath == "" {
+				rootPath = root.Requested
+			}
+			if pathWithin(rootPath, source.SourcePath) {
+				owners = append(owners, app.Application)
+				break
+			}
+		}
+	}
+	sort.Strings(owners)
+	return uniqueStrings(owners)
+}
+
+func consolidationArchiveReplacementApps(source ConsolidationSource, owners []string, choices map[SourceID]ConsolidationChoice, apps map[string]ConsolidationApplication) []string {
+	replaced := []string{}
+	for _, owner := range owners {
+		app := apps[owner]
+		if app.DestinationRoot == "" {
+			continue
+		}
+		for sourceID, choice := range choices {
+			if sourceID == source.ID || choice.Action != "share" || choice.CanonicalName == "" {
+				continue
+			}
+			assessed := false
+			for _, destination := range choice.Destinations {
+				if destination.Application == owner && destination.Portability != "incompatible" {
+					assessed = true
+					break
+				}
+			}
+			if assessed && filepath.Clean(filepath.Join(app.DestinationRoot, choice.CanonicalName)) == filepath.Clean(source.SourcePath) {
+				replaced = append(replaced, owner)
+				break
+			}
+		}
+	}
+	return uniqueSortedStrings(replaced)
+}
+
+func consolidationProfilesForApplications(applications []string, byName map[string]ConsolidationApplication) ([]ConsolidationRelocationProof, error) {
+	profiles := []ConsolidationRelocationProof{}
+	for _, application := range uniqueSortedStrings(applications) {
+		app, exists := byName[application]
+		if !exists || app.NativeRelocationProfile == nil {
+			return nil, fmt.Errorf("unsupported-native-relocation: %s has no independently observed native personal-directory relocation profile; keep this source or choose only validated owners and destinations", application)
+		}
+		profiles = append(profiles, *app.NativeRelocationProfile)
+	}
+	return profiles, nil
+}
+
+func validateNativeSourceRelocation(source ConsolidationSource, application, action string, app ConsolidationApplication) error {
+	availability, observed := source.Availability[application]
+	if !observed {
+		return fmt.Errorf("unsupported-native-relocation: source ownership by %s has no complete native availability observation", application)
+	}
+	switch availability.State {
+	case AvailabilityAvailable:
+		return nil
+	case AvailabilityDisabled:
+		if action == "share" && consolidationCodexDisableProof(source, application, app, availability) {
+			return nil
+		}
+		return fmt.Errorf("unsupported-native-relocation: %s source is disabled and this action has no matching disabled-state preservation profile", application)
+	default:
+		return fmt.Errorf("unsupported-native-relocation: %s source availability is %s; only an ordinary available source or the exact proven Codex selector case can be relocated", application, availability.State)
+	}
+}
+
+func uniqueSortedStrings(values []string) []string {
+	values = uniqueStrings(values)
+	sort.Strings(values)
+	return values
+}
+
+func mergeConsolidationRelocationProfiles(left, right []ConsolidationRelocationProof) []ConsolidationRelocationProof {
+	byID := make(map[string]ConsolidationRelocationProof, len(left)+len(right))
+	for _, profile := range append(append([]ConsolidationRelocationProof(nil), left...), right...) {
+		byID[profile.ID] = profile
+	}
+	ids := make([]string, 0, len(byID))
+	for id := range byID {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	out := make([]ConsolidationRelocationProof, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, byID[id])
+	}
+	return out
 }
 
 func consolidationOriginIsNativeForApp(app, origin string) bool {
@@ -1104,12 +1320,14 @@ func uniqueProblems(values []Problem) []Problem {
 
 func consolidationScanID(inventory ConsolidationInventory, snapshots []consolidationSnapshot) string {
 	type appFact struct {
-		App           string
-		Scope         Scope
-		Problems      []Problem
-		ConfigDigests []string
-		Environment   map[string]string
-		Sources       []struct {
+		App                     string
+		Scope                   Scope
+		Problems                []Problem
+		ConfigDigests           []string
+		Environment             map[string]string
+		NativeRelocationProfile *ConsolidationRelocationProof
+		NativeRelocationStatus  string
+		Sources                 []struct {
 			ID       SourceID
 			Path     string
 			Identity Identity
@@ -1122,11 +1340,19 @@ func consolidationScanID(inventory ConsolidationInventory, snapshots []consolida
 	var facts []appFact
 	for _, entry := range snapshots {
 		if entry.err != nil {
-			facts = append(facts, appFact{App: entry.app, Problems: []Problem{{Path: entry.app, Detail: entry.err.Error()}}})
+			profile := consolidationNativeRelocationProfile(entry.app)
+			status := "unsupported"
+			if profile != nil {
+				status = "validated-profile"
+			}
+			facts = append(facts, appFact{App: entry.app, Problems: []Problem{{Path: entry.app, Detail: entry.err.Error()}}, NativeRelocationProfile: profile, NativeRelocationStatus: status})
 			continue
 		}
 		view := entry.snapshot.Query(Filters{Context: FilterAll}, QuerySources)
-		fact := appFact{App: entry.app, Scope: entry.snapshot.Scope(), Problems: entry.snapshot.Problems(), Managers: append([]ManagerEvidence(nil), entry.snapshot.managers...), Environment: map[string]string{}}
+		fact := appFact{App: entry.app, Scope: entry.snapshot.Scope(), Problems: entry.snapshot.Problems(), Managers: append([]ManagerEvidence(nil), entry.snapshot.managers...), Environment: map[string]string{}, NativeRelocationProfile: consolidationNativeRelocationProfile(entry.app), NativeRelocationStatus: "unsupported"}
+		if fact.NativeRelocationProfile != nil {
+			fact.NativeRelocationStatus = "validated-profile"
+		}
 		if entry.snapshot.scope.Agent != nil {
 			for _, layer := range entry.snapshot.scope.Agent.ConfigLayers {
 				if layer.Path == "" {
@@ -1213,8 +1439,15 @@ func PreviewConsolidation(ctx context.Context, draft ConsolidationDraft) Consoli
 		return consolidationPreviewFailure(preview, "unsafe-library", "canonical library path is unavailable", "Select a dedicated path outside every discovered consumer root.")
 	}
 	byID := make(map[SourceID]ConsolidationSource, len(inventory.Sources))
+	canonicalByFingerprint := map[string]string{}
 	for _, source := range inventory.Sources {
 		byID[source.ID] = source
+		if source.Eligible && source.RelocationScope == "consolidation-library" && source.FingerprintCoverage == Complete && source.BundleFingerprint != "" && filepath.Dir(filepath.Clean(source.SourcePath)) == filepath.Clean(request.Library) {
+			current, exists := canonicalByFingerprint[source.BundleFingerprint]
+			if !exists || source.SourcePath < current {
+				canonicalByFingerprint[source.BundleFingerprint] = source.SourcePath
+			}
+		}
 	}
 	choices := make(map[SourceID]ConsolidationChoice, len(draft.Choices))
 	for _, choice := range draft.Choices {
@@ -1243,9 +1476,16 @@ func PreviewConsolidation(ctx context.Context, draft ConsolidationDraft) Consoli
 			return consolidationPreviewFailure(preview, "unknown-source", "draft source_id is absent from the full current inventory: "+string(id), "Use source IDs from the exact current scan; do not select by name.")
 		}
 	}
+	if err := validateConsolidationSourcePathOverlaps(inventory.Sources, choices); err != nil {
+		return consolidationPreviewFailure(preview, "overlapping-source-paths", err.Error(), "Keep the overlapping bundles in place or resolve their physical nesting in a separately reviewed step, then rescan.")
+	}
 	appByName := map[string]ConsolidationApplication{}
+	selected := map[string]bool{}
 	for _, app := range inventory.Applications {
 		appByName[app.Application] = app
+	}
+	for _, app := range request.Applications {
+		selected[app] = true
 	}
 	var effects []ConsolidationEffect
 	planID := consolidationPlanID(draft)
@@ -1262,11 +1502,36 @@ func PreviewConsolidation(ctx context.Context, draft ConsolidationDraft) Consoli
 			if !source.Eligible {
 				return consolidationPreviewFailure(preview, "ineligible-source", "cannot archive a source with incomplete or unsupported relocation evidence", "Keep it in place until the listed blocked evidence is resolved.")
 			}
+			if source.RelocationScope == "consolidation-library" {
+				return consolidationPreviewFailure(preview, "canonical-source-archive", "an existing canonical library source cannot be archived while application links may resolve through it", "Keep the canonical source or resolve its exact references in a separately reviewed plan before archiving it.")
+			}
 			for _, reference := range source.KnownReferences {
 				if !containsString(request.Applications, reference.Application) {
 					return consolidationPreviewFailure(preview, "external-reference", "archive would break an existing reference from unselected application "+reference.Application+" at "+reference.Reference.DiscoveredPath, "Keep the source or explicitly resolve that application's existing reference before preparing a new proposal.")
 				}
 			}
+			owners := consolidationNativeSourceOwners(source, inventory.Applications, selected)
+			if len(owners) == 0 {
+				return consolidationPreviewFailure(preview, "unsupported-native-relocation", "the source's physical native owner is not established for archive", "Keep this source until a matching native relocation profile covers its personal root.")
+			}
+			profiles, profileErr := consolidationProfilesForApplications(owners, appByName)
+			if profileErr != nil {
+				return consolidationPreviewFailure(preview, "unsupported-native-relocation", profileErr.Error(), "Keep this source until every source-owning application has a recorded native relocation profile.")
+			}
+			for _, owner := range owners {
+				if err := validateNativeSourceRelocation(source, owner, "archive", appByName[owner]); err != nil {
+					return consolidationPreviewFailure(preview, "unsupported-native-relocation", err.Error(), "Keep this source until native availability and its relocation profile are supported.")
+				}
+			}
+			replacementApps := consolidationArchiveReplacementApps(source, owners, choices, appByName)
+			if len(replacementApps) != len(owners) {
+				return consolidationPreviewFailure(preview, "unsupported-native-relocation", "no recorded native profile proves that this archive may leave the source absent from its native root; archive requires a shared winner that recreates the exact owner path", "Keep the source, or choose a winner whose approved link replaces this exact leaf and review a fresh complete plan.")
+			}
+			replacementProfiles, replacementProfileErr := consolidationProfilesForApplications(replacementApps, appByName)
+			if replacementProfileErr != nil {
+				return consolidationPreviewFailure(preview, "unsupported-native-relocation", replacementProfileErr.Error(), "Keep the source until every exact replacement destination has a recorded native relocation profile.")
+			}
+			profiles = mergeConsolidationRelocationProfiles(profiles, replacementProfiles)
 			if len(choice.Destinations) != 0 || choice.CanonicalName != "" {
 				return consolidationPreviewFailure(preview, "invalid-choice", "archive choices cannot specify a canonical name or destinations", "Use archive only for a divergent version the user chose to retain for recovery.")
 			}
@@ -1274,7 +1539,7 @@ func PreviewConsolidation(ctx context.Context, draft ConsolidationDraft) Consoli
 			if pathExists(archivePath) {
 				return consolidationPreviewFailure(preview, "backup-collision", "planned recovery path already exists: "+archivePath, "Start a fresh proposal after inspecting the existing recovery record.")
 			}
-			effects = append(effects, ConsolidationEffect{Action: "archive", SourceID: source.ID, SourcePath: source.SourcePath, BundleFingerprint: source.BundleFingerprint, BackupPath: archivePath, State: "move-to-recovery"})
+			effects = append(effects, ConsolidationEffect{Action: "archive", SourceID: source.ID, SourcePath: source.SourcePath, BundleFingerprint: source.BundleFingerprint, RelocationProfiles: profiles, BackupPath: archivePath, State: "move-to-recovery"})
 		case "share":
 			if !source.Eligible || choice.SourcePath != source.SourcePath || choice.BundleFingerprint != source.BundleFingerprint {
 				return consolidationPreviewFailure(preview, "source-binding-mismatch", "share choice does not bind the current source path and complete bundle fingerprint", "Use the exact source_id, source_path and bundle_fingerprint from scan.")
@@ -1286,7 +1551,27 @@ func PreviewConsolidation(ctx context.Context, draft ConsolidationDraft) Consoli
 			if err != nil {
 				return consolidationPreviewFailure(preview, "invalid-portability", err.Error(), "Assess every selected destination explicitly; unknown compatibility needs the user's explicit approval.")
 			}
-			canonicalPath := filepath.Join(request.Library, source.BundleFingerprint)
+			profiles := []ConsolidationRelocationProof{}
+			if source.RelocationScope != "consolidation-library" {
+				owners := consolidationNativeSourceOwners(source, inventory.Applications, selected)
+				if len(owners) == 0 {
+					return consolidationPreviewFailure(preview, "unsupported-native-relocation", "the source's physical native owner is not established for relocation", "Keep this source until a matching native relocation profile covers its personal root.")
+				}
+				for _, owner := range owners {
+					if err := validateNativeSourceRelocation(source, owner, "share", appByName[owner]); err != nil {
+						return consolidationPreviewFailure(preview, "unsupported-native-relocation", err.Error(), "Keep this source until native availability and its relocation profile are supported.")
+					}
+				}
+				var profileErr error
+				profiles, profileErr = consolidationProfilesForApplications(owners, appByName)
+				if profileErr != nil {
+					return consolidationPreviewFailure(preview, "unsupported-native-relocation", profileErr.Error(), "Keep this source until every source-owning application has a recorded native relocation profile.")
+				}
+			}
+			canonicalPath := canonicalByFingerprint[source.BundleFingerprint]
+			if canonicalPath == "" {
+				canonicalPath = filepath.Join(request.Library, source.BundleFingerprint)
+			}
 			if pathExists(canonicalPath) {
 				existing, fingerprint, complete, reason := consolidationFingerprintPath(ctx, canonicalPath)
 				if !complete || fingerprint != source.BundleFingerprint {
@@ -1305,12 +1590,12 @@ func PreviewConsolidation(ctx context.Context, draft ConsolidationDraft) Consoli
 					continue
 				}
 				suitableDestinations++
-				if consolidationAlreadyConnected(source, assessment.Application) {
-					preservedReferences = append(preservedReferences, consolidationReferencesForApp(source, assessment.Application)...)
-					continue
-				}
 				app := appByName[assessment.Application]
 				if app.DestinationRoot == "" {
+					if consolidationAlreadyConnected(source, assessment.Application) {
+						preservedReferences = append(preservedReferences, consolidationReferencesForApp(source, assessment.Application)...)
+						continue
+					}
 					return consolidationPreviewFailure(preview, "unsupported-destination", "no recorded per-skill destination root exists for "+assessment.Application, "Keep the source or use a supported application destination.")
 				}
 				destinationRoot := app.DestinationRoot
@@ -1318,7 +1603,15 @@ func PreviewConsolidation(ctx context.Context, draft ConsolidationDraft) Consoli
 				if err := validateDestinationConsumerSet(ctx, destinationRoot, destination, assessment.Application, request.Applications, assessments, inventory.DestinationAudits); err != nil {
 					return consolidationPreviewFailure(preview, "unapproved-consumer", err.Error(), "Acknowledge every exact possible indirect consumer shown in the scan, or keep the source unchanged.")
 				}
-				if err := validateDestinationCollision(destination, source, choice.CanonicalName, inventory, choices); err != nil {
+				if consolidationAlreadyConnected(source, assessment.Application) {
+					preservedReferences = append(preservedReferences, consolidationReferencesForApp(source, assessment.Application)...)
+					continue
+				}
+				if refs := consolidationCanonicalReferencesForApp(source, assessment.Application, canonicalPath, inventory); len(refs) > 0 {
+					preservedReferences = append(preservedReferences, refs...)
+					continue
+				}
+				if err := validateDestinationCollision(destination, source, canonicalPath, choice.CanonicalName, inventory, choices); err != nil {
 					return consolidationPreviewFailure(preview, "destination-collision", err.Error(), "Resolve the existing native skill conflict explicitly, then rescan.")
 				}
 				name := source.Availability[assessment.Application].NativeName
@@ -1334,6 +1627,11 @@ func PreviewConsolidation(ctx context.Context, draft ConsolidationDraft) Consoli
 				if err := nativeNames.add(assessment.Application, name, choice.CanonicalName, source.BundleFingerprint); err != nil {
 					return consolidationPreviewFailure(preview, "native-name-conflict", err.Error(), "Choose one winner, or prepare separately reviewed content edits and rescan before retaining variants.")
 				}
+				destinationProfiles, profileErr := consolidationProfilesForApplications([]string{assessment.Application}, appByName)
+				if profileErr != nil {
+					return consolidationPreviewFailure(preview, "unsupported-native-relocation", profileErr.Error(), "Keep this source out of unvalidated native destinations; an unknown portability approval does not validate loader behavior.")
+				}
+				profiles = mergeConsolidationRelocationProfiles(profiles, destinationProfiles)
 				destinations = append(destinations, destination)
 			}
 			if suitableDestinations == 0 {
@@ -1347,7 +1645,7 @@ func PreviewConsolidation(ctx context.Context, draft ConsolidationDraft) Consoli
 			if len(destinations) == 0 {
 				state = "relocate-and-preserve-existing-references"
 			}
-			effects = append(effects, ConsolidationEffect{Action: "share", SourceID: source.ID, SourcePath: source.SourcePath, BundleFingerprint: source.BundleFingerprint, CanonicalPath: canonicalPath, BackupPath: backupPath, Destinations: destinations, PreservedReferences: uniqueStrings(preservedReferences), State: state})
+			effects = append(effects, ConsolidationEffect{Action: "share", SourceID: source.ID, SourcePath: source.SourcePath, BundleFingerprint: source.BundleFingerprint, RelocationProfiles: profiles, CanonicalPath: canonicalPath, BackupPath: backupPath, Destinations: destinations, PreservedReferences: uniqueStrings(preservedReferences), State: state})
 		default:
 			return consolidationPreviewFailure(preview, "invalid-choice", "action must be share, archive, or keep", "Use one explicit action for every eligible source.")
 		}
@@ -1521,6 +1819,90 @@ func codexRelocationProof() ConsolidationRelocationProof {
 	}
 }
 
+func consolidationNativeRelocationProfile(application string) *ConsolidationRelocationProof {
+	profile := ConsolidationRelocationProof{Application: application}
+	switch application {
+	case "codex":
+		profile.ID = "codex-directory-alias-v1"
+		profile.Profile = "Codex CLI 0.162.1"
+		profile.ArtifactKind = "native executable"
+		profile.BinarySHA256 = codexConsolidationRelocationSHA256
+		profile.Observed = "the bounded native catalog retained the personal skill identity across a complete directory move and original-path symlink; the disabled selector and unrelated enabled sibling were also checked"
+		profile.Preconditions = []string{"selected source is an ordinary complete personal bundle with native availability available; the original native leaf is retained as a directory symlink; manifest identity, all bytes and modes remain unchanged", "disabled-state preservation is separate and applies only to the exact skills.config.path selector proof"}
+		profile.Limits = []string{"observed with Codex CLI 0.162.1 only; installed runtime version and current session are unknown", "does not extend the discovery/control adapter's separate codex-cli 0.155.1 baseline"}
+	case "claude-code":
+		profile.ID = "claude-code-directory-alias-v1"
+		profile.Profile = "Claude Code 2.1.309"
+		profile.ArtifactKind = "native executable"
+		profile.BinarySHA256 = claudeConsolidationRelocationSHA256
+		profile.Observed = "the native initialize catalog retained one personal portable-probe across a complete directory move and original-path symlink; the manifest, text resource and executable resource resolved with identical bytes and modes, and the sibling was unchanged"
+		profile.Preconditions = []string{"selected source is an ordinary complete personal bundle with native availability available; the original native leaf is retained as a directory symlink; manifest identity, all bytes and modes remain unchanged"}
+		profile.Limits = []string{"observed with Claude Code 2.1.309 only; installed runtime version and current session are unknown", "separate from adapter baselines 2.1.282/2.1.300 and companion setup catalog 2.1.303; no disabled-selector proof", "sealed containment retains the documented allow-default-read and inherited child-identity limits"}
+	case "opencode":
+		profile.ID = "opencode-directory-alias-v1"
+		profile.Profile = "OpenCode 1.17.15"
+		profile.ArtifactKind = "native executable"
+		profile.BinarySHA256 = opencodeConsolidationRelocationSHA256
+		profile.Observed = "the bounded native debug skill catalog retained one personal skill across a complete directory move and original-path symlink; the manifest and referenced resource resolved through the alias, and the sibling was unchanged"
+		profile.Preconditions = []string{"selected source is an ordinary complete personal bundle with native availability available; the original native leaf is retained as a directory symlink; manifest identity, all bytes and modes remain unchanged"}
+		profile.Limits = []string{"observed with OpenCode 1.17.15 only; installed runtime version and current session are unknown"}
+	case "pi":
+		profile.ID = "pi-directory-alias-v1"
+		profile.Profile = "Pi 1.4.0"
+		profile.ArtifactKind = "CLI bundle"
+		profile.BinarySHA256 = piConsolidationRelocationSHA256
+		profile.Observed = "the native catalog retained one personal skill with its original lexical path across a complete directory move and symlink; the manifest and referenced resource resolved through the alias, executable mode and sibling were unchanged"
+		profile.Preconditions = []string{"selected source is an ordinary complete personal bundle with native availability available; the original native leaf is retained as a directory symlink; manifest identity, all bytes and modes remain unchanged"}
+		profile.Limits = []string{"observed with Pi 1.4.0 only; installed runtime version and current session are unknown", "separate from and does not replace the maintained ALE-50 Pi 1.1.0 contract"}
+	case "hermes":
+		hermesMode := consolidationHermesRelocationMode()
+		if hermesMode == "" {
+			return nil
+		}
+		profile.ID = "hermes-" + hermesMode + "-index-alias-v1"
+		profile.Profile = "Hermes Agent 0.20.0 " + strings.ReplaceAll(hermesMode, "-", " ") + "; source revision " + hermesConsolidationSourceRevision
+		profile.ArtifactKind = "Python 3.11.15 runtime binary"
+		profile.BinarySHA256 = hermesConsolidationPythonSHA256
+		profile.SourceRevision = hermesConsolidationSourceRevision
+		profile.LoaderSHA256 = hermesConsolidationLoaderSHA256
+		if hermesMode == "default-root" {
+			profile.Observed = "the actual agent.prompt_builder.build_skills_system_prompt index retained portable-probe and its sibling before and after a complete bundle move to a private canonical directory and an original-path symlink under the default skills root"
+			profile.Preconditions = []string{"HERMES_HOME is absent and HOME/.hermes/active_profile is absent; only the default HOME/.hermes/skills index is covered", "selected source is an ordinary complete personal bundle with native availability available; the original default skill leaf is retained as a directory symlink; manifest identity, all bytes and modes remain unchanged"}
+			profile.Limits = []string{"observed with Hermes 0.20.0 source revision " + hermesConsolidationSourceRevision + " and Python 3.11.15 runtime SHA only; this is not a Hermes binary hash", "does not validate active_profile selection, explicit HERMES_HOME, other profile/config roots, CLI/gateway/session, resource reads by a session, disable controls, or reload", "installed runtime version and current session are unknown; sealed containment retains allow-default-read and inherited child-identity limits"}
+		} else {
+			profile.Observed = "the actual agent.prompt_builder.build_skills_system_prompt index retained portable-probe and its sibling before and after a complete bundle move to a private canonical directory and an original-path symlink under one explicitly selected profile root"
+			profile.Preconditions = []string{"HERMES_HOME explicitly names one direct ~/.hermes/profiles/<name> profile root; only that profile's skills index is covered", "selected source is an ordinary complete personal bundle with native availability available; the original profile skill leaf is retained as a directory symlink; manifest identity, all bytes and modes remain unchanged"}
+			profile.Limits = []string{"observed with Hermes 0.20.0 source revision " + hermesConsolidationSourceRevision + " and Python 3.11.15 runtime SHA only; this is not a Hermes binary hash", "does not validate default HOME/.hermes/skills, active_profile selection, other profile/config roots, CLI/gateway/session, resource reads by a session, disable controls, or reload", "installed runtime version and current session are unknown; sealed containment retains allow-default-read and inherited child-identity limits"}
+		}
+	default:
+		return nil
+	}
+	return &profile
+}
+
+func consolidationHermesRelocationMode() string {
+	profileHome := os.Getenv("HERMES_HOME")
+	if profileHome != "" {
+		if !filepath.IsAbs(profileHome) || filepath.Base(filepath.Dir(filepath.Clean(profileHome))) != "profiles" || filepath.Base(filepath.Dir(filepath.Dir(filepath.Clean(profileHome)))) != ".hermes" {
+			return ""
+		}
+		resolved, err := setupProspectivePath(profileHome)
+		if err != nil || filepath.Clean(resolved) != filepath.Clean(profileHome) {
+			return ""
+		}
+		return "explicit-profile"
+	}
+	home := os.Getenv("HOME")
+	if !filepath.IsAbs(home) {
+		return ""
+	}
+	marker := filepath.Join(home, ".hermes", "active_profile")
+	if _, err := os.Lstat(marker); !os.IsNotExist(err) {
+		return ""
+	}
+	return "default-root"
+}
+
 func hasNativeReference(source ConsolidationSource, app string) bool {
 	for _, ref := range source.KnownReferences {
 		if ref.Application == app && ref.Origin != "" && (ref.Reference.Context == ContextGlobal || ref.Reference.Context == ContextCustom) {
@@ -1650,17 +2032,31 @@ func consolidationDestinationRouteNotes(destinationRoot string, refusals, warnin
 	return uniqueStrings(remaining), uniqueStrings(warnings)
 }
 
-func validateDestinationCollision(destination string, source ConsolidationSource, canonicalName string, inventory ConsolidationInventory, choices map[SourceID]ConsolidationChoice) error {
+func validateDestinationCollision(destination string, source ConsolidationSource, canonicalPath, canonicalName string, inventory ConsolidationInventory, choices map[SourceID]ConsolidationChoice) error {
 	info, err := os.Lstat(destination)
 	if err == nil {
 		exactCanonicalLink := false
 		if info.Mode()&os.ModeSymlink != 0 {
 			target, readErr := filepath.EvalSymlinks(destination)
-			if readErr == nil && filepath.Clean(target) == filepath.Clean(filepath.Join(inventory.Scope.Library, source.BundleFingerprint)) {
+			if readErr == nil && filepath.Clean(target) == filepath.Clean(canonicalPath) {
 				exactCanonicalLink = true
 			}
 		}
-		if filepath.Clean(destination) != filepath.Clean(source.SourcePath) && !exactCanonicalLink {
+		plannedVacatedSource := false
+		if filepath.Clean(destination) != filepath.Clean(source.SourcePath) {
+			for _, candidate := range inventory.Sources {
+				if filepath.Clean(candidate.SourcePath) != filepath.Clean(destination) || candidate.ID == source.ID || !candidate.Eligible {
+					continue
+				}
+				choice, chosen := choices[candidate.ID]
+				if chosen && choice.SourcePath == candidate.SourcePath && choice.BundleFingerprint == candidate.BundleFingerprint &&
+					(choice.Action == "archive" || choice.Action == "share" && candidate.BundleFingerprint == source.BundleFingerprint) {
+					plannedVacatedSource = true
+					break
+				}
+			}
+		}
+		if filepath.Clean(destination) != filepath.Clean(source.SourcePath) && !exactCanonicalLink && !plannedVacatedSource {
 			return fmt.Errorf("destination already exists and is not the exact requested canonical link: %s", destination)
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -1705,6 +2101,18 @@ func validateDestinationCollision(destination string, source ConsolidationSource
 	return nil
 }
 
+func consolidationCanonicalReferencesForApp(source ConsolidationSource, app, canonicalPath string, inventory ConsolidationInventory) []string {
+	for _, candidate := range inventory.Sources {
+		if !candidate.Eligible || candidate.RelocationScope != "consolidation-library" || candidate.BundleFingerprint != source.BundleFingerprint || filepath.Clean(candidate.SourcePath) != filepath.Clean(canonicalPath) {
+			continue
+		}
+		if consolidationAlreadyConnected(candidate, app) {
+			return consolidationReferencesForApp(candidate, app)
+		}
+	}
+	return nil
+}
+
 func validateConflictChoices(sources []ConsolidationSource, choices map[SourceID]ConsolidationChoice) error {
 	byNameApp := map[string]map[SourceID]string{}
 	for _, source := range sources {
@@ -1736,6 +2144,26 @@ func validateConflictChoices(sources []ConsolidationSource, choices map[SourceID
 				}
 			}
 			byNameApp[key][source.ID] = source.BundleFingerprint
+		}
+	}
+	return nil
+}
+
+func validateConsolidationSourcePathOverlaps(sources []ConsolidationSource, choices map[SourceID]ConsolidationChoice) error {
+	for i := 0; i < len(sources); i++ {
+		firstPath := filepath.Clean(sources[i].SourcePath)
+		for j := i + 1; j < len(sources); j++ {
+			secondPath := filepath.Clean(sources[j].SourcePath)
+			if firstPath == secondPath || !pathWithin(firstPath, secondPath) && !pathWithin(secondPath, firstPath) {
+				continue
+			}
+			first, firstChosen := choices[sources[i].ID]
+			second, secondChosen := choices[sources[j].ID]
+			firstMoves := firstChosen && (first.Action == "share" || first.Action == "archive")
+			secondMoves := secondChosen && (second.Action == "share" || second.Action == "archive")
+			if firstMoves || secondMoves {
+				return fmt.Errorf("selected source paths overlap physically: %s and %s; moving either would change the other bundle", firstPath, secondPath)
+			}
 		}
 	}
 	return nil

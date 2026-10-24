@@ -37,25 +37,37 @@ type SetupResult struct {
 	Audit            *collection.SetupLocation `json:"isolation,omitempty"`
 }
 type SetupReport struct {
-	SchemaVersion     int             `json:"schema_version"`
-	Operation         string          `json:"operation"`
-	State             string          `json:"state"`
-	ExitCode          int             `json:"exit_code"`
-	Name              string          `json:"name"`
-	Version           string          `json:"version"`
-	ContractVersion   int             `json:"review_contract_version"`
-	Applications      []string        `json:"applications"`
-	AllowedSharedApps []string        `json:"allowed_shared_applications"`
-	Install           bool            `json:"install"`
-	Executable        ExecutableCheck `json:"executable"`
-	Results           []SetupResult   `json:"results"`
-	Notes             []string        `json:"notes"`
+	SchemaVersion                int             `json:"schema_version"`
+	Operation                    string          `json:"operation"`
+	State                        string          `json:"state"`
+	ExitCode                     int             `json:"exit_code"`
+	Name                         string          `json:"name"`
+	Version                      string          `json:"version"`
+	ContractVersion              int             `json:"review_contract_version,omitempty"`
+	ConsolidationContractVersion int             `json:"consolidation_contract_version,omitempty"`
+	Applications                 []string        `json:"applications"`
+	AllowedSharedApps            []string        `json:"allowed_shared_applications"`
+	Install                      bool            `json:"install"`
+	Executable                   ExecutableCheck `json:"executable"`
+	Results                      []SetupResult   `json:"results"`
+	Notes                        []string        `json:"notes"`
 }
 
 // CheckExecutable uses exactly the command the portable skill invokes. A moved
 // build cannot be rescued by an installation-specific absolute-path sidecar.
 func CheckExecutable(ctx context.Context) ExecutableCheck {
-	out := ExecutableCheck{State: "missing", Reason: "skillglass is not executable on PATH", Action: "Put a compatible Skillglass executable named skillglass on the agent application's PATH, then run skillglass setup --check --json in that environment. If a binary moved, repair PATH; setup does not pin its old pathname."}
+	return CheckExecutableFor(ctx, companion.Name)
+}
+
+// CheckExecutableFor verifies the exact named companion and the commands its
+// workflow relies on, while keeping the review check's legacy default intact.
+func CheckExecutableFor(ctx context.Context, name string) ExecutableCheck {
+	expected, bundleErr := companion.BundledNamed(name)
+	out := ExecutableCheck{State: "missing", Reason: "skillglass is not executable on PATH", Action: "Put a compatible Skillglass executable named skillglass on the agent application's PATH, then run skillglass setup --check --companion " + name + " --json in that environment. If a binary moved, repair PATH; setup does not pin its old pathname."}
+	if bundleErr != nil {
+		out.State, out.Reason = "failed", bundleErr.Error()
+		return out
+	}
 	path, err := exec.LookPath("skillglass")
 	if err != nil {
 		return out
@@ -72,13 +84,17 @@ func CheckExecutable(ctx context.Context) ExecutableCheck {
 	b, be := os.Stat(path)
 	if e == nil && ae == nil && be == nil && os.SameFile(a, b) {
 		out.State = "compatible"
-		out.Reason = "PATH resolves to this executable's exact bundled companion and review contract"
+		out.Reason = "PATH resolves to this executable's exact bundled " + name + " companion contract"
 		out.Action = "Use the same PATH in a fresh agent session; running-session discovery is separate."
 		return out
 	}
 	bounded, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	command := exec.CommandContext(bounded, path, "companion", "--json")
+	companionArgs := []string{"companion", "--json"}
+	if name != companion.Name {
+		companionArgs = []string{"companion", "--name", name, "--json"}
+	}
+	command := exec.CommandContext(bounded, path, companionArgs...)
 	command.WaitDelay = 250 * time.Millisecond
 	var stdout, stderr limitedBuffer
 	command.Stdout = &stdout
@@ -89,9 +105,9 @@ func CheckExecutable(ctx context.Context) ExecutableCheck {
 		return out
 	}
 	var actual companion.Bundle
-	if json.Unmarshal(stdout.Bytes(), &actual) != nil || !reflect.DeepEqual(actual, companion.Bundled()) {
+	if json.Unmarshal(stdout.Bytes(), &actual) != nil || !reflect.DeepEqual(actual, expected) {
 		out.State = "incompatible"
-		out.Reason = "PATH executable does not provide the exact bundled companion version and review contract required by this skill"
+		out.Reason = "PATH executable does not provide the exact bundled " + name + " version and contract required by this workflow"
 		return out
 	}
 	command = exec.CommandContext(bounded, path, "help", "--json")
@@ -104,15 +120,30 @@ func CheckExecutable(ctx context.Context) ExecutableCheck {
 		SchemaVersion int    `json:"schema_version"`
 		Help          string `json:"help"`
 	}
-	if err := command.Run(); err != nil || json.Unmarshal(stdout.Bytes(), &capabilities) != nil || capabilities.SchemaVersion != 1 || !strings.Contains(capabilities.Help, "review prepare") || !strings.Contains(capabilities.Help, "review select") || !strings.Contains(capabilities.Help, "review apply") || !strings.Contains(capabilities.Help, "read-resource") || !strings.Contains(capabilities.Help, "setup --check") {
+	commandCapabilities := []string{"read-resource", "setup --check"}
+	if name == companion.Name {
+		commandCapabilities = append(commandCapabilities, "review prepare", "review select", "review apply")
+	} else {
+		commandCapabilities = append(commandCapabilities, "consolidate scan", "consolidate preview", "consolidate apply", "consolidate recover", "setup --companion skillglass-consolidate")
+	}
+	if err := command.Run(); err != nil || json.Unmarshal(stdout.Bytes(), &capabilities) != nil || capabilities.SchemaVersion != 1 || !containsCapabilities(capabilities.Help, commandCapabilities) {
 		out.State = "incompatible"
-		out.Reason = "PATH executable does not advertise the documented setup, resource-reading and review commands"
+		out.Reason = "PATH executable does not advertise the documented setup, resource-reading and " + name + " workflow commands"
 		return out
 	}
 	out.State = "compatible"
-	out.Reason = "PATH executable reports the exact companion files, version, review contract and documented command capabilities"
+	out.Reason = "PATH executable reports the exact " + name + " files, version, contract and documented command capabilities"
 	out.Action = "Keep this executable discoverable in the agent application's PATH."
 	return out
+}
+
+func containsCapabilities(help string, expected []string) bool {
+	for _, capability := range expected {
+		if !strings.Contains(help, capability) {
+			return false
+		}
+	}
+	return true
 }
 
 type limitedBuffer struct{ bytes.Buffer }
@@ -125,7 +156,20 @@ func (b *limitedBuffer) Write(p []byte) (int, error) {
 }
 
 func Setup(ctx context.Context, apps, sharedApps []string, install bool) (SetupReport, error) {
-	out := SetupReport{SchemaVersion: 1, Operation: "setup", State: "preview", Name: companion.Name, Version: companion.Version, ContractVersion: companion.ContractVersion, Applications: append([]string{}, apps...), AllowedSharedApps: append([]string{}, sharedApps...), Install: install, Results: []SetupResult{}, Notes: []string{"Only the exact bundled companion is installed. No settings, managed caches or other skills are updated.", "Shared roots require every affected application to be selected with --app or separately acknowledged with --allow-shared-app; uncertain isolation refuses. Shared consent installs no separate target and does not certify that consumer's native discovery.", "Installed files establish persistence only. Use a fresh native session or its documented reload; no skill workload or session restart is performed.", "Failures do not roll back earlier installations. Preserve customized/conflicting copies; compare manually, relocate them yourself if desired, then retry an explicit preview and installation."}}
+	return SetupNamed(ctx, apps, sharedApps, install, companion.Name)
+}
+
+func SetupNamed(ctx context.Context, apps, sharedApps []string, install bool, name string) (SetupReport, error) {
+	bundle, err := companion.BundledNamed(name)
+	if err != nil {
+		return SetupReport{}, err
+	}
+	out := SetupReport{SchemaVersion: 1, Operation: "setup", State: "preview", Name: bundle.Name, Version: bundle.Version, Applications: append([]string{}, apps...), AllowedSharedApps: append([]string{}, sharedApps...), Install: install, Results: []SetupResult{}, Notes: []string{"Only the exact selected bundled companion is installed. No settings, managed caches or other skills are updated.", "Shared roots require every affected application to be selected with --app or separately acknowledged with --allow-shared-app; uncertain isolation refuses. Shared consent installs no separate target and does not certify that consumer's native discovery.", "Installed files establish persistence only. Use a fresh native session or its documented reload; no skill workload or session restart is performed.", "Failures do not roll back earlier installations. Preserve customized/conflicting copies; compare manually, relocate them yourself if desired, then retry an explicit preview and installation."}}
+	if name == companion.Name {
+		out.ContractVersion = bundle.ContractVersion
+	} else {
+		out.ConsolidationContractVersion = bundle.ConsolidationContractVersion
+	}
 	selected := map[string]bool{}
 	if len(apps) == 0 {
 		return out, errors.New("setup requires at least one explicit --app; use --check alone to diagnose executable discovery")
@@ -153,12 +197,12 @@ func Setup(ctx context.Context, apps, sharedApps []string, install bool) (SetupR
 		}
 		consent[app] = true
 	}
-	out.Executable = CheckExecutable(ctx)
+	out.Executable = CheckExecutableFor(ctx, name)
 	home := os.Getenv("HOME")
 	if !filepath.IsAbs(home) {
 		return out, errors.New("setup requires an absolute HOME")
 	}
-	home, err := filepath.EvalSymlinks(home)
+	home, err = filepath.EvalSymlinks(home)
 	if err != nil {
 		return out, err
 	}
@@ -171,7 +215,7 @@ func Setup(ctx context.Context, apps, sharedApps []string, install bool) (SetupR
 			out.Results = append(out.Results, r)
 			continue
 		}
-		r.Destination = filepath.Join(root, companion.Name)
+		r.Destination = filepath.Join(root, bundle.Name)
 		if reason := unverifiedSetupOverride(app, home); reason != "" {
 			r.Reason = reason
 			r.Action = "Preview and use a validated default native user destination in the matching application environment, or wait for explicit override validation. Setup performs no fallback or settings edits."
@@ -184,7 +228,7 @@ func Setup(ctx context.Context, apps, sharedApps []string, install bool) (SetupR
 			out.Results = append(out.Results, r)
 			continue
 		}
-		state, existingErr := existingSetup(r.Destination)
+		state, existingErr := existingSetupBundle(r.Destination, bundle)
 		if existingErr != nil {
 			r.State = "failed"
 			r.Reason = existingErr.Error()
@@ -250,13 +294,13 @@ func Setup(ctx context.Context, apps, sharedApps []string, install bool) (SetupR
 				r.Reason = "native isolation evidence changed; obtain a fresh setup preview"
 				continue
 			}
-			if err := installSetup(home, r.Destination); err != nil {
+			if err := installSetup(home, r.Destination, bundle); err != nil {
 				r.State = "failed"
 				r.Reason = "installation failed: " + err.Error()
 				r.Action = "Correct destination permissions or filesystem failure, preserve existing files, then preview and retry only the desired applications."
 				continue
 			}
-			state, err := existingSetup(r.Destination)
+			state, err := existingSetupBundle(r.Destination, bundle)
 			if err != nil || state != "identical" {
 				r.State = "failed"
 				r.Reason = "installed bundle verification failed; inspect destination before retrying"
@@ -264,7 +308,7 @@ func Setup(ctx context.Context, apps, sharedApps []string, install bool) (SetupR
 			}
 			r.State = "installed"
 			r.Reason = "exact bundled companion installed and byte-verified"
-			r.Action = "Invoke skillglass-review in a fresh native session with the verified executable on PATH."
+			r.Action = "Invoke " + bundle.Name + " in a fresh native session with the verified executable on PATH."
 		}
 	}
 	successful, failed := 0, 0
@@ -343,6 +387,10 @@ func safeSetupPath(home, path string) error {
 	return nil
 }
 func existingSetup(path string) (string, error) {
+	return existingSetupBundle(path, companion.Bundled())
+}
+
+func existingSetupBundle(path string, bundle companion.Bundle) (string, error) {
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return "missing", nil
@@ -354,7 +402,7 @@ func existingSetup(path string) (string, error) {
 		return "conflict", nil
 	}
 	expected := map[string]string{}
-	for _, file := range companion.Bundled().Files {
+	for _, file := range bundle.Files {
 		expected[file.Path] = file.Content
 	}
 	count := 0
