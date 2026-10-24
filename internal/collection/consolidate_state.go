@@ -22,36 +22,44 @@ type consolidationSelection struct {
 // LastConsolidationSelection reads only the remembered selection. It never
 // creates the state directory or writes a default selection.
 func LastConsolidationSelection() (apps, roots []string, library string, found bool, err error) {
+	apps, roots, library, found, _, err = LastConsolidationSelectionWithID()
+	return
+}
+
+// LastConsolidationSelectionWithID reads the selection and the canonical
+// storage-path identity from one anchored path resolution. The ID therefore
+// goes stale if XDG_CONFIG_HOME is redirected between scan and apply.
+func LastConsolidationSelectionWithID() (apps, roots []string, library string, found bool, id string, err error) {
 	path, err := consolidationSelectionPath()
 	if err != nil {
-		return nil, nil, "", false, err
+		return nil, nil, "", false, "", err
 	}
 	raw, found, err := readPrivateSelection(path)
-	if err != nil || !found {
-		return nil, nil, "", found, err
+	if err != nil {
+		return nil, nil, "", false, "", err
+	}
+	if !found {
+		return nil, nil, "", false, absentConsolidationSelectionID(path), nil
 	}
 	var value consolidationSelection
 	if err := json.Unmarshal(raw, &value); err != nil {
-		return nil, nil, "", false, fmt.Errorf("read remembered consolidation selection: %w", err)
+		return nil, nil, "", false, "", fmt.Errorf("read remembered consolidation selection: %w", err)
 	}
 	if value.SchemaVersion != ConsolidationSchemaVersion || len(value.Applications) == 0 || value.Library == "" {
-		return nil, nil, "", false, errors.New("remembered consolidation selection has an unsupported or incomplete schema")
+		return nil, nil, "", false, "", errors.New("remembered consolidation selection has an unsupported or incomplete schema")
 	}
-	return append([]string(nil), value.Applications...), append([]string(nil), value.Roots...), value.Library, true, nil
+	apps = append([]string(nil), value.Applications...)
+	roots = append([]string(nil), value.Roots...)
+	library = value.Library
+	return apps, roots, library, true, rememberedSelectionID(apps, roots, library, path), nil
 }
 
 // CurrentConsolidationSelectionID pins the last applied selection as evidence.
 // The stable absent marker lets an explicit-scope preview detect a concurrent
 // first write before it replaces the remembered selection after apply.
 func CurrentConsolidationSelectionID() (string, error) {
-	apps, roots, library, found, err := LastConsolidationSelection()
-	if err != nil {
-		return "", err
-	}
-	if !found {
-		return "selection1:none", nil
-	}
-	return rememberedSelectionID(apps, roots, library), nil
+	_, _, _, _, id, err := LastConsolidationSelectionWithID()
+	return id, err
 }
 
 func RememberConsolidationSelection(request ConsolidationRequest) error {
@@ -84,7 +92,7 @@ func consolidationSelectionPath() (string, error) {
 		}
 		base = filepath.Join(home, ".config")
 	}
-	return filepath.Join(base, "skillglass", "consolidation.json"), nil
+	return canonicalizePathParent(filepath.Join(base, "skillglass", "consolidation.json"))
 }
 
 func createPrivateDirectory(path string) error {

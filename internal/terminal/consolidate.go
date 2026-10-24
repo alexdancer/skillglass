@@ -61,7 +61,7 @@ func runConsolidateScan(args []string, stdout, stderr io.Writer) int {
 	selectedRoots := append([]string(nil), roots...)
 	selectedLibrary := library.value
 	if len(apps) == 0 {
-		lastApps, lastRoots, lastLibrary, found, err := collection.LastConsolidationSelection()
+		lastApps, lastRoots, lastLibrary, found, id, err := collection.LastConsolidationSelectionWithID()
 		if err != nil {
 			return consolidateCLIError("consolidate-scan", fmt.Errorf("read last successful selection: %w", err), 2, *machine, stdout, stderr)
 		}
@@ -69,7 +69,7 @@ func runConsolidateScan(args []string, stdout, stderr io.Writer) int {
 			return consolidateCLIError("consolidate-scan", errors.New("no last successful application selection; pass --app explicitly"), 2, *machine, stdout, stderr)
 		}
 		selectionFrom = "remembered"
-		rememberedID = collection.RememberedSelectionID(lastApps, lastRoots, lastLibrary)
+		rememberedID = id
 		selectedApps = lastApps
 		if !*clearRoots {
 			selectedRoots = append(append([]string(nil), lastRoots...), roots...)

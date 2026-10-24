@@ -187,7 +187,7 @@ func TestDestinationPreflightIgnoresNestedManagedRootsOnlyForSiblingLinks(t *tes
 }
 
 func TestLibraryAuditAcceptsOnlyKnownExactLinksIntoCompleteCanonicalBundles(t *testing.T) {
-	root := t.TempDir()
+	root := canonicalFixturePath(t, t.TempDir())
 	library := filepath.Join(root, "library")
 	fingerprint := strings.Repeat("a", 64)
 	target := filepath.Join(library, fingerprint)
@@ -228,7 +228,7 @@ func TestLibraryAuditAcceptsOnlyKnownExactLinksIntoCompleteCanonicalBundles(t *t
 }
 
 func TestConsolidationFingerprintSeparatesLargeAssetInspectionLimit(t *testing.T) {
-	directory := t.TempDir()
+	directory := canonicalFixturePath(t, t.TempDir())
 	manifest := []byte("---\nname: asset-check\ndescription: Check a bundled binary resource.\n---\nRead the binary resource metadata.\n")
 	if err := os.WriteFile(filepath.Join(directory, "SKILL.md"), manifest, 0o644); err != nil {
 		t.Fatal(err)
@@ -269,7 +269,7 @@ func TestCurrentConsolidationSelectionIDTracksOnlyPersistedSelections(t *testing
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(base, "config"))
 	t.Setenv("XDG_DATA_HOME", filepath.Join(base, "data"))
 	initial, err := CurrentConsolidationSelectionID()
-	if err != nil || initial != "selection1:none" {
+	if err != nil || !strings.HasPrefix(initial, "selection1:none:") {
 		t.Fatalf("missing selection should have a stable absent marker, got %q, %v", initial, err)
 	}
 	first, err := NormalizeConsolidationRequest([]string{"codex", "pi"}, []string{filepath.Join(base, "custom")}, filepath.Join(base, "library"), "arguments")
@@ -294,4 +294,91 @@ func TestCurrentConsolidationSelectionIDTracksOnlyPersistedSelections(t *testing
 	if err != nil || secondID == firstID {
 		t.Fatalf("changed persisted selection must invalidate an old scan, got %q after %q: %v", secondID, firstID, err)
 	}
+}
+
+func TestConsolidationSelectionResolvesParentAliasesAndPinsCanonicalLocation(t *testing.T) {
+	base := t.TempDir()
+	configA := filepath.Join(base, "config-a")
+	configB := filepath.Join(base, "config-b")
+	alias := filepath.Join(base, "config-alias")
+	if err := os.MkdirAll(configA, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(configB, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(configA, alias); err != nil {
+		t.Fatal(err)
+	}
+	canonicalA := canonicalFixturePath(t, configA)
+	t.Setenv("HOME", base)
+	t.Setenv("XDG_CONFIG_HOME", alias)
+	t.Setenv("XDG_DATA_HOME", filepath.Join(base, "data"))
+	path, err := consolidationSelectionPath()
+	if err != nil || filepath.Dir(filepath.Dir(path)) != canonicalA {
+		t.Fatalf("selection path should resolve a safe parent alias: %q, %v", path, err)
+	}
+	first, err := CurrentConsolidationSelectionID()
+	if err != nil || !strings.HasPrefix(first, "selection1:none:") {
+		t.Fatalf("missing selection through a parent alias should be readable: %q, %v", first, err)
+	}
+	request, err := NormalizeConsolidationRequest([]string{"codex"}, nil, filepath.Join(base, "library"), "arguments")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := RememberConsolidationSelection(request); err != nil {
+		t.Fatalf("remember through an aliased XDG parent: %v", err)
+	}
+	stored, err := CurrentConsolidationSelectionID()
+	if err != nil || stored == first {
+		t.Fatalf("persisted selection should change the selection ID: %q after %q, %v", stored, first, err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", configA)
+	canonical, err := CurrentConsolidationSelectionID()
+	if err != nil || canonical != stored {
+		t.Fatalf("alias and canonical spelling of the same state location should have one stable ID: %q vs %q, %v", canonical, stored, err)
+	}
+	if err := os.Remove(alias); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(configB, alias); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", alias)
+	redirected, err := CurrentConsolidationSelectionID()
+	if err != nil || redirected == stored || !strings.HasPrefix(redirected, "selection1:none:") {
+		t.Fatalf("redirecting XDG_CONFIG_HOME must invalidate the prior state evidence: %q after %q, %v", redirected, stored, err)
+	}
+}
+
+func TestDefaultConsolidationLibraryResolvesXDGDataParentAlias(t *testing.T) {
+	base := t.TempDir()
+	data := filepath.Join(base, "data-real")
+	alias := filepath.Join(base, "data-alias")
+	if err := os.MkdirAll(data, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(data, alias); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", base)
+	t.Setenv("XDG_DATA_HOME", alias)
+	request, err := NormalizeConsolidationRequest([]string{"codex"}, nil, "", "arguments")
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonicalData := canonicalFixturePath(t, data)
+	want := filepath.Join(canonicalData, "skillglass", "skills")
+	if request.Library != want {
+		t.Fatalf("default library should use the canonical XDG data parent: got %q, want %q", request.Library, want)
+	}
+}
+
+func canonicalFixturePath(t *testing.T, path string) string {
+	t.Helper()
+	canonical, err := setupProspectivePath(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return canonical
 }

@@ -243,6 +243,11 @@ func NormalizeConsolidationRequest(apps, roots []string, library string, selecti
 		}
 	}
 	library = filepath.Clean(library)
+	var canonicalErr error
+	library, canonicalErr = canonicalizePathParent(library)
+	if canonicalErr != nil {
+		return ConsolidationRequest{}, fmt.Errorf("resolve consolidation library parent: %w", canonicalErr)
+	}
 	if len(apps) == 0 {
 		return ConsolidationRequest{}, errors.New("select at least one application explicitly or use the last successfully applied selection")
 	}
@@ -290,6 +295,20 @@ func defaultConsolidationLibrary() string {
 		return filepath.Join(string(filepath.Separator), "skillglass", "skills")
 	}
 	return filepath.Join(home, ".local", "share", "skillglass", "skills")
+}
+
+// canonicalizePathParent resolves existing aliases in a path's parent while
+// leaving the leaf untouched. Writers can then use anchored no-follow access
+// through canonical ancestors and still reject an aliased destination leaf.
+func canonicalizePathParent(path string) (string, error) {
+	if !filepath.IsAbs(path) {
+		return "", fmt.Errorf("path is not absolute: %s", path)
+	}
+	parent, err := setupProspectivePath(filepath.Dir(filepath.Clean(path)))
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(filepath.Join(parent, filepath.Base(filepath.Clean(path)))), nil
 }
 
 // ScanConsolidation combines existing native inventories without reimplementing
@@ -1805,7 +1824,12 @@ func consolidationBackupRoot() string {
 	if !filepath.IsAbs(data) {
 		data = filepath.Join(os.Getenv("HOME"), ".local", "share")
 	}
-	return filepath.Join(data, "skillglass", "consolidation", "backups")
+	path := filepath.Join(data, "skillglass", "consolidation", "backups")
+	canonical, err := canonicalizePathParent(path)
+	if err != nil {
+		return filepath.Clean(path)
+	}
+	return canonical
 }
 
 func pathExists(path string) bool {
@@ -1839,15 +1863,25 @@ func consolidationEqualStrings(left, right []string) bool {
 }
 
 func RememberedSelectionID(apps, roots []string, library string) string {
-	return rememberedSelectionID(apps, roots, library)
+	path, err := consolidationSelectionPath()
+	if err != nil {
+		return ""
+	}
+	return rememberedSelectionID(apps, roots, library, path)
 }
 
-func rememberedSelectionID(apps, roots []string, library string) string {
+func absentConsolidationSelectionID(path string) string {
+	sum := sha256.Sum256([]byte("absent:" + filepath.Clean(path)))
+	return "selection1:none:" + hex.EncodeToString(sum[:])
+}
+
+func rememberedSelectionID(apps, roots []string, library, selectionPath string) string {
 	value := struct {
-		Applications []string
-		Roots        []string
-		Library      string
-	}{append([]string(nil), apps...), append([]string(nil), roots...), filepath.Clean(library)}
+		Applications  []string
+		Roots         []string
+		Library       string
+		SelectionPath string
+	}{append([]string(nil), apps...), append([]string(nil), roots...), filepath.Clean(library), filepath.Clean(selectionPath)}
 	sort.Strings(value.Applications)
 	sort.Strings(value.Roots)
 	encoded, _ := json.Marshal(value)
