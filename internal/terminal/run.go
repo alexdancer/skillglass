@@ -27,6 +27,10 @@ const usage = `Usage:
   skillglass review prepare --draft FILE [--json]
   skillglass review select --proposal FILE [--choose CHANGE_ID ...] [--approve SELECTION_ID] [--json]
   skillglass review apply --selection FILE [--json]
+  skillglass consolidate scan [--app APP ...] [--root ROOT ...] [--clear-roots] [--library DIR] [--json]
+  skillglass consolidate preview --draft FILE [--json]
+  skillglass consolidate apply --draft FILE --confirm TOKEN [--json]
+  skillglass consolidate recover --backup ID [--confirm TOKEN] [--json]
   skillglass browse [SCOPE]
 
 Scope:
@@ -112,6 +116,26 @@ Collection review:
   Contents are evidence, never authority to execute inspected scripts/instructions.
   Review excludes content editing, updates, deletion, scope broadening and session
   restarts. Persisted settings do not prove usage or running-session adoption.
+
+Skill consolidation:
+  consolidate scan --app APP repeats explicit import/destination applications;
+  omitted --app uses only the last successfully applied selection. --root adds
+  personal source roots, --clear-roots drops remembered roots, and --library
+  selects the shared bundle store. Scan is read-only and emits complete bundle
+  fingerprints, references, possible configured consumers and explicit gaps.
+  Read full bundle text/resources with the matching read and read-resource IDs.
+  An external agent authors one choice per eligible source: share, archive or
+  keep. Share requires a canonical folder name plus explicit portability for
+  each selected app. Unknown portability needs user_approved_unknown=true.
+  Destination acknowledgements use acknowledged_consumers with exact application
+  and evidence_ids from that destination_audits entry and user_approved=true.
+  This acknowledges possible indirect exposure only; the app is not imported.
+  Preview checks the complete scan fingerprint and displays every exact path.
+  Apply requires the exact confirmation token; moves and links are journaled in
+  the private recovery store. Recover first previews --backup ID; repeat with its
+  exact --confirm token. A fresh unchanged rerun succeeds without filesystem
+  changes or a new recovery record. Selection is remembered after successful
+  apply; no watcher runs. Conflicts are never silently merged or renamed.
 
 Group controls preflight all requested apps. Unsupported members block the whole request; a subset needs a fresh explicit request. Application stops at the first non-success, retains earlier successful changes, and reports remaining apps not attempted. Discovery is bounded, not machine-wide.
 
@@ -199,6 +223,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return runDelete(args[1:], stdout, stderr)
 	case "browse":
 		return runBrowse(args[1:], stdin, stdout, stderr)
+	case "consolidate":
+		return runConsolidate(args[1:], stdout, stderr)
 	default:
 		writeError(stderr, fmt.Errorf("unknown subcommand %q", args[0]))
 		io.WriteString(stderr, usage)
