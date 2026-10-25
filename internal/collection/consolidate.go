@@ -1241,12 +1241,8 @@ func relocatableBundleLink(root, relative, rawTarget string) string {
 	if filepath.IsAbs(rawTarget) {
 		return "absolute resource links change meaning when the bundle is relocated"
 	}
-	start := filepath.Clean(filepath.Join(root, filepath.Dir(filepath.FromSlash(relative)), rawTarget))
-	rel, err := filepath.Rel(root, start)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "relative target escapes the bundle"
-	}
-	pending := strings.Split(filepath.ToSlash(rel), "/")
+	parent := filepath.ToSlash(filepath.Dir(filepath.FromSlash(relative)))
+	pending := append(strings.Split(parent, "/"), strings.Split(filepath.ToSlash(rawTarget), "/")...)
 	resolved := []string{}
 	links := 0
 	seen := map[string]bool{}
@@ -1288,14 +1284,7 @@ func relocatableBundleLink(root, relative, rawTarget string) string {
 			return "link chain contains an absolute target"
 		}
 		resolved = resolved[:len(resolved)-1]
-		targetParts := append([]string{root}, resolved...)
-		targetPath := filepath.Clean(filepath.Join(filepath.Join(targetParts...), target))
-		targetRelative, err := filepath.Rel(root, targetPath)
-		if err != nil || targetRelative == ".." || strings.HasPrefix(targetRelative, ".."+string(filepath.Separator)) {
-			return "link chain escapes the bundle"
-		}
-		pending = append(strings.Split(filepath.ToSlash(targetRelative), "/"), pending...)
-		resolved = nil
+		pending = append(strings.Split(filepath.ToSlash(target), "/"), pending...)
 	}
 	return ""
 }
