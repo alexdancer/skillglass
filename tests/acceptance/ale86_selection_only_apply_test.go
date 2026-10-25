@@ -65,10 +65,11 @@ func TestALE86SelectionOnlyApplyReportsPreferenceWriteAndExactRerunIsNoop(t *tes
 		SelectionUpdated bool                             `json:"selection_updated"`
 		Verified         bool                             `json:"verified"`
 		Reason           string                           `json:"reason"`
+		RecoveryID       string                           `json:"recovery_id"`
 		Effects          []collection.ConsolidationEffect `json:"effects"`
 	}
 	decodeJSON(t, selectionApply.stdout, &selectionOutcome)
-	if selectionOutcome.State != "selection-updated" || !selectionOutcome.SelectionUpdated || !selectionOutcome.Verified {
+	if selectionOutcome.State != "selection-updated" || !selectionOutcome.SelectionUpdated || !selectionOutcome.Verified || selectionOutcome.RecoveryID == "" || selectionOutcome.RecoveryID != selectionPlan.RecoveryID {
 		t.Fatalf("selection-only apply must report the persisted preference change truthfully: %#v", selectionOutcome)
 	}
 	for _, effect := range selectionOutcome.Effects {
@@ -93,6 +94,38 @@ func TestALE86SelectionOnlyApplyReportsPreferenceWriteAndExactRerunIsNoop(t *tes
 	if !reflect.DeepEqual(remembered.Applications, []string{"pi"}) || reflect.DeepEqual(selectionBefore, selectionAfter) {
 		t.Fatalf("selection-only apply did not persist the Pi-only selection: before=%s after=%s", selectionBefore, selectionAfter)
 	}
+	backupRoot := filepath.Join(fx.xdgData, "skillglass", "consolidation", "backups")
+	recordPath := filepath.Join(backupRoot, selectionOutcome.RecoveryID, "record.json")
+	recordRaw, err := os.ReadFile(recordPath)
+	if err != nil {
+		t.Fatalf("selection-only apply did not persist its recovery record: %v", err)
+	}
+	var record struct {
+		State                 string            `json:"state"`
+		Entries               []json.RawMessage `json:"entries"`
+		PriorSelection        []byte            `json:"prior_selection"`
+		PriorSelectionExists  bool              `json:"prior_selection_exists"`
+		AppliedSelection      []byte            `json:"applied_selection"`
+		PendingSelectionApply bool              `json:"pending_selection_apply"`
+		SelectionApplied      bool              `json:"selection_applied"`
+		Draft                 struct {
+			Choices []json.RawMessage `json:"choices"`
+		} `json:"draft"`
+	}
+	if err := json.Unmarshal(recordRaw, &record); err != nil {
+		t.Fatal(err)
+	}
+	if record.State != "applied" || len(record.Entries) != 0 || len(record.Draft.Choices) != 0 || !record.PriorSelectionExists || !reflect.DeepEqual(record.PriorSelection, selectionBefore) || !reflect.DeepEqual(record.AppliedSelection, selectionAfter) || record.PendingSelectionApply || !record.SelectionApplied {
+		t.Fatalf("selection-only recovery record included layout provenance or lost exact selection state: %#v", record)
+	}
+	recoveryPreviewResult := fx.run(t, "consolidate", "recover", "--backup", selectionOutcome.RecoveryID, "--json")
+	assertExit(t, recoveryPreviewResult, 0)
+	var recoveryPreview collection.ConsolidationPreview
+	decodeJSON(t, recoveryPreviewResult.stdout, &recoveryPreview)
+	if recoveryPreview.State != "ready" || len(recoveryPreview.Effects) != 1 || recoveryPreview.Effects[0].Action != "restore-selection" {
+		t.Fatalf("metadata-only recovery should offer only selection restoration: %#v", recoveryPreview)
+	}
+	backupTreeBeforeNoop := treeManifest(t, backupRoot)
 
 	piOnly = selectionOnlyDraft(t, fx, library)
 	noOpPreview := fx.run(t, "consolidate", "preview", "--draft", piOnly.path, "--json")
@@ -105,10 +138,11 @@ func TestALE86SelectionOnlyApplyReportsPreferenceWriteAndExactRerunIsNoop(t *tes
 		State            string                           `json:"state"`
 		SelectionUpdated bool                             `json:"selection_updated"`
 		Verified         bool                             `json:"verified"`
+		RecoveryID       string                           `json:"recovery_id"`
 		Effects          []collection.ConsolidationEffect `json:"effects"`
 	}
 	decodeJSON(t, noOpApply.stdout, &noOpOutcome)
-	if noOpOutcome.State != "unchanged" || noOpOutcome.SelectionUpdated || !noOpOutcome.Verified {
+	if noOpOutcome.State != "unchanged" || noOpOutcome.SelectionUpdated || !noOpOutcome.Verified || noOpOutcome.RecoveryID != "" {
 		t.Fatalf("exact rerun must report an unchanged, write-free selection: %#v", noOpOutcome)
 	}
 	for _, effect := range noOpOutcome.Effects {
@@ -126,6 +160,9 @@ func TestALE86SelectionOnlyApplyReportsPreferenceWriteAndExactRerunIsNoop(t *tes
 	}
 	if !selectionStatAfter.ModTime().Equal(selectionStatFinal.ModTime()) || !reflect.DeepEqual(selectionAfter, selectionFinal) {
 		t.Fatal("unchanged rerun changed remembered selection bytes or timestamp")
+	}
+	if !reflect.DeepEqual(backupTreeBeforeNoop, treeManifest(t, backupRoot)) {
+		t.Fatal("unchanged rerun created or changed a recovery journal")
 	}
 }
 

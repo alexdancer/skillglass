@@ -109,36 +109,22 @@ func ApplyConsolidation(ctx context.Context, draft ConsolidationDraft, confirmat
 		desiredSelection := RememberedSelectionID(draft.Scope.Applications, draft.Scope.Roots, draft.Scope.Library)
 		selectionUpdated := false
 		if currentSelection != desiredSelection {
-			selectionPath, priorSelection, priorExists, err := captureConsolidationSelection()
+			journal, err := newConsolidationJournal(ctx, draft, preview)
 			if err != nil {
-				out.RecoveryID = ""
-				out.Failure = &ConsolidationFailure{Code: "selection-write", Message: "no bundle or link changed, but the last-successful selection could not be inspected: " + err.Error(), Action: "Resolve the private selection-state issue and prepare a fresh scan."}
-				out.Reason = out.Failure.Message
-				return out
+				return consolidationSelectionRefusal(out, "no bundle or link changed, but the selection-only recovery plan could not be prepared: "+err.Error(), "Resolve the private recovery-store issue and prepare a fresh scan.")
 			}
-			appliedSelection, err := encodeConsolidationSelection(draft.Scope)
-			if err != nil {
-				out.RecoveryID = ""
-				out.Failure = &ConsolidationFailure{Code: "selection-write", Message: "no bundle or link changed, but the last-successful selection could not be encoded: " + err.Error(), Action: "Resolve the private selection-state issue and prepare a fresh scan."}
-				out.Reason = out.Failure.Message
-				return out
-			}
-			selectionJournal := consolidationJournal{
-				SelectionPath:         selectionPath,
-				PriorSelection:        priorSelection,
-				PriorSelectionExists:  priorExists,
-				AppliedSelection:      appliedSelection,
-				PendingSelectionApply: true,
-			}
-			if err := writeConsolidationSelectionWithRollback(&selectionJournal, writePrivateAtomic); err != nil {
-				out.RecoveryID = ""
-				out.Failure = &ConsolidationFailure{Code: "selection-write", Message: "no bundle or link changed, but the last-successful selection could not be remembered: " + err.Error(), Action: "Resolve the private selection-state issue and prepare a fresh scan."}
-				out.Reason = out.Failure.Message
-				return out
+			journal.Draft = ConsolidationDraft{}
+			journal.Confirmation = ""
+			journal.Entries = []consolidationJournalEntry{}
+			if err := commitConsolidationSelection(&journal, writeConsolidationJournal, writePrivateAtomic); err != nil {
+				return consolidationSelectionOnlyFailure(out, journal, err)
 			}
 			selectionUpdated = true
+			out.RecoveryID = journal.ID
 		}
-		out.RecoveryID = ""
+		if !selectionUpdated {
+			out.RecoveryID = ""
+		}
 		out.SelectionUpdated = selectionUpdated
 		out.Outcome, out.ExitCode, out.Verified = "success", 0, true
 		if selectionUpdated {
@@ -202,17 +188,19 @@ func commitConsolidationSelection(journal *consolidationJournal, writeJournal fu
 	journal.SelectionApplied = true
 	journal.PendingSelectionApply = false
 	if err := writeJournal(*journal); err != nil {
-		journal.PendingSelectionApply = true
-		compensationErr := rollbackConsolidationSelection(journal, writeSelection)
-		return selectionCommitFailure("selection was written but the selection-applied journal update failed", err, compensationErr, *journal)
+		return compensateConsolidationSelectionAfterJournalFailure(journal, "selection was written but the selection-applied journal update failed", err, writeSelection)
 	}
 	journal.State = "applied"
 	if err := writeJournal(*journal); err != nil {
-		journal.PendingSelectionApply = true
-		compensationErr := rollbackConsolidationSelection(journal, writeSelection)
-		return selectionCommitFailure("selection was written but the final recovery record could not be persisted", err, compensationErr, *journal)
+		return compensateConsolidationSelectionAfterJournalFailure(journal, "selection was written but the final recovery record could not be persisted", err, writeSelection)
 	}
 	return nil
+}
+
+func compensateConsolidationSelectionAfterJournalFailure(journal *consolidationJournal, message string, writeErr error, writeSelection func(string, []byte) error) error {
+	journal.PendingSelectionApply = true
+	compensationErr := rollbackConsolidationSelection(journal, writeSelection)
+	return selectionCommitFailure(message, writeErr, compensationErr, *journal)
 }
 
 func writeConsolidationSelectionWithRollback(journal *consolidationJournal, writeSelection func(string, []byte) error) error {
@@ -263,6 +251,87 @@ func consolidationSelectionVisibleState(journal consolidationJournal) string {
 	return "a different selection is currently visible and was preserved"
 }
 
+func consolidationSelectionRefusal(out ConsolidationApplyOutcome, message, action string) ConsolidationApplyOutcome {
+	out.RecoveryID = ""
+	out.State, out.Outcome, out.ExitCode = "refused", "failed", 1
+	out.Reason, out.Verified, out.SelectionUpdated = message, false, false
+	out.Failure = &ConsolidationFailure{Code: "selection-write", Message: message, Action: action}
+	return out
+}
+
+func consolidationSelectionOnlyFailure(out ConsolidationApplyOutcome, journal consolidationJournal, applyErr error) ConsolidationApplyOutcome {
+	persisted, err := readConsolidationJournal(journal.ID)
+	if err != nil {
+		cleanupErr := removeEmptyConsolidationPlan(journal.ID)
+		message := "selection-only apply failed before a durable recovery record was available: " + applyErr.Error()
+		if cleanupErr != nil && !errors.Is(cleanupErr, unix.ENOENT) {
+			message += "; empty recovery plan cleanup failed: " + cleanupErr.Error()
+		}
+		proposedVisible := sameBytesOrAbsent(journal.SelectionPath, journal.AppliedSelection, true) == nil
+		if proposedVisible {
+			message += "; the proposed selection remains visible, but no usable recovery record could be read"
+		}
+		out = consolidationSelectionRefusal(out, message, "Resolve the selection and private recovery-store issue before retrying.")
+		if proposedVisible {
+			out.State = "partial"
+			out.Failure.Action = "Resolve the missing recovery record before restoring the previous selection."
+		}
+		return out
+	}
+	if !consolidationSelectionOnlyJournalMatches(journal, persisted) || (!persisted.PendingSelectionApply && !persisted.SelectionApplied) {
+		proposedVisible := sameBytesOrAbsent(journal.SelectionPath, journal.AppliedSelection, true) == nil
+		out = consolidationSelectionRefusal(out, "selection-only apply failed and its recovery record changed or contains non-selection effects: "+applyErr.Error(), "Preserve the recovery record and inspect it before retrying.")
+		if proposedVisible {
+			out.State = "partial"
+			out.Failure.Action = "Preserve the current state and inspect the mismatched recovery record before restoring the previous selection."
+		}
+		return out
+	}
+
+	priorVisible := sameBytesOrAbsent(journal.SelectionPath, journal.PriorSelection, journal.PriorSelectionExists) == nil
+	proposedVisible := sameBytesOrAbsent(journal.SelectionPath, journal.AppliedSelection, true) == nil
+	persisted.State = "partial"
+	persisted.PendingSelectionApply = true
+	if priorVisible {
+		persisted.SelectionApplied = false
+	}
+	journalErr := writeConsolidationJournal(persisted)
+
+	out.RecoveryID = journal.ID
+	out.Outcome, out.ExitCode, out.Verified, out.SelectionUpdated = "failed", 1, false, false
+	if proposedVisible {
+		out.State = "partial"
+		out.Reason = "selection-only apply failed and the proposed selection remains visible: " + applyErr.Error()
+		out.Failure = &ConsolidationFailure{Code: "selection-write", Message: out.Reason, Action: "Run consolidate recover --backup " + journal.ID + " to restore the previous selection."}
+	} else if priorVisible {
+		out.State = "refused"
+		out.Reason = "selection-only apply failed; the exact prior selection is visible and a recovery record is available: " + applyErr.Error()
+		out.Failure = &ConsolidationFailure{Code: "selection-write", Message: out.Reason, Action: "Run consolidate recover --backup " + journal.ID + " to confirm or finish selection restoration."}
+	} else {
+		out.State = "refused"
+		out.Reason = "selection-only apply failed; " + consolidationSelectionVisibleState(journal) + ": " + applyErr.Error()
+		out.Failure = &ConsolidationFailure{Code: "selection-write", Message: out.Reason, Action: "Preserve the current selection and resolve it against recovery record " + journal.ID + " before retrying recovery."}
+	}
+	if journalErr != nil {
+		out.Reason += "; pending recovery journal update failed: " + journalErr.Error()
+		out.Failure.Message = out.Reason
+	}
+	return out
+}
+
+func consolidationSelectionOnlyJournalMatches(expected, actual consolidationJournal) bool {
+	if expected.ID != actual.ID || expected.SelectionPath != actual.SelectionPath || expected.PriorSelectionExists != actual.PriorSelectionExists || !bytes.Equal(expected.PriorSelection, actual.PriorSelection) || !bytes.Equal(expected.AppliedSelection, actual.AppliedSelection) {
+		return false
+	}
+	if RememberedSelectionID(expected.Scope.Applications, expected.Scope.Roots, expected.Scope.Library) != RememberedSelectionID(actual.Scope.Applications, actual.Scope.Roots, actual.Scope.Library) || expected.Scope.SelectionFrom != actual.Scope.SelectionFrom || expected.Scope.RememberedSelectionID != actual.Scope.RememberedSelectionID {
+		return false
+	}
+	if len(actual.Entries) != 0 || actual.Confirmation != "" || actual.Draft.SchemaVersion != 0 || actual.Draft.ScanID != "" || len(actual.Draft.Choices) != 0 || len(actual.Draft.Scope.Applications) != 0 || len(actual.Draft.Scope.Roots) != 0 || actual.Draft.Scope.Library != "" || actual.Draft.Scope.SelectionFrom != "" || actual.Draft.Scope.RememberedSelectionID != "" {
+		return false
+	}
+	return actual.State == "prepared" || actual.State == "applied" || actual.State == "partial"
+}
+
 func consolidationEffectsAreNoop(effects []ConsolidationEffect) bool {
 	for _, effect := range effects {
 		switch effect.Action {
@@ -286,6 +355,12 @@ func newConsolidationJournal(ctx context.Context, draft ConsolidationDraft, prev
 	selectionPath, oldBytes, oldExists, err := captureConsolidationSelection()
 	if err != nil {
 		return consolidationJournal{}, fmt.Errorf("inspect remembered selection before mutation: %w", err)
+	}
+	if draft.Scope.RememberedSelectionID != "" {
+		capturedID, selectionErr := consolidationSelectionIDFromBytes(selectionPath, oldBytes, oldExists)
+		if selectionErr != nil || capturedID != draft.Scope.RememberedSelectionID {
+			return consolidationJournal{}, errors.New("remembered selection captured for recovery does not match the proposal evidence")
+		}
 	}
 	newSelection, err := encodeConsolidationSelection(draft.Scope)
 	if err != nil {
@@ -1449,16 +1524,7 @@ func consolidationRecoveryCoverageAllowed(inventory ConsolidationInventory, jour
 }
 
 func validateSelectionForRecovery(journal consolidationJournal) error {
-	if journal.PendingSelectionRestore {
-		if journal.PriorSelectionExists {
-			if err := sameBytesOrAbsent(journal.SelectionPath, journal.PriorSelection, true); err == nil {
-				return nil
-			}
-		} else if err := sameBytesOrAbsent(journal.SelectionPath, nil, false); err == nil {
-			return nil
-		}
-	}
-	if journal.SelectionApplied {
+	if journal.PendingSelectionRestore || journal.SelectionApplied {
 		if journal.PriorSelectionExists {
 			if err := sameBytesOrAbsent(journal.SelectionPath, journal.PriorSelection, true); err == nil {
 				return nil

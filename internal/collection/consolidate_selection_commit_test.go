@@ -61,6 +61,7 @@ func TestConsolidationSelectionWriteCompensatesAbsentPrior(t *testing.T) {
 
 func TestConsolidationSelectionRollbackPreservesThirdPartyValue(t *testing.T) {
 	journal, _, applied := selectionCommitFixture(t, true)
+	journal.Entries = []consolidationJournalEntry{}
 	thirdParty := []byte("{\"schema_version\":1,\"applications\":[\"claude-code\"],\"library\":\"/other/library\"}\n")
 	writes := 0
 	write := func(path string, data []byte) error {
@@ -90,6 +91,108 @@ func TestConsolidationSelectionRollbackPreservesThirdPartyValue(t *testing.T) {
 	}
 	if !journal.PendingSelectionApply {
 		t.Fatalf("failed rollback did not retain pending recovery: %#v", journal)
+	}
+}
+
+func TestConsolidationSelectionIntentWriteFailureDoesNotWriteB(t *testing.T) {
+	journal, prior, _ := selectionCommitFixture(t, true)
+	journal.Draft = ConsolidationDraft{}
+	journal.Confirmation = ""
+	journal.Entries = []consolidationJournalEntry{}
+	selectionWrites := 0
+	writeJournal := func(consolidationJournal) error {
+		return errors.New("simulated failure before durable intent write")
+	}
+	writeSelection := func(string, []byte) error {
+		selectionWrites++
+		return nil
+	}
+
+	err := commitConsolidationSelection(&journal, writeJournal, writeSelection)
+	if err == nil || !strings.Contains(err.Error(), "before durable intent write") {
+		t.Fatalf("selection intent write failure was not returned: %v", err)
+	}
+	if selectionWrites != 0 {
+		t.Fatalf("selection B was written before durable intent: writes=%d", selectionWrites)
+	}
+	got, found, readErr := readPrivateSelection(journal.SelectionPath)
+	if readErr != nil || !found || !bytes.Equal(got, prior) {
+		t.Fatalf("intent failure changed prior selection: found=%t err=%v got=%q want=%q", found, readErr, got, prior)
+	}
+	if _, err := readConsolidationJournal(journal.ID); err == nil {
+		t.Fatal("failed intent write unexpectedly left a recovery record")
+	}
+}
+
+func TestConsolidationSelectionOnlyJournalRestoresOnlySelection(t *testing.T) {
+	for _, priorExists := range []bool{true, false} {
+		name := "absent prior"
+		if priorExists {
+			name = "existing prior"
+		}
+		t.Run(name, func(t *testing.T) {
+			journal, prior, applied := selectionCommitFixture(t, priorExists)
+			journal.Draft = ConsolidationDraft{}
+			journal.Confirmation = ""
+			journal.Entries = []consolidationJournalEntry{}
+			if err := commitConsolidationSelection(&journal, writeConsolidationJournal, writePrivateAtomic); err != nil {
+				t.Fatal(err)
+			}
+			persisted, err := readConsolidationJournal(journal.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if persisted.State != "applied" || len(persisted.Entries) != 0 || persisted.Draft.SchemaVersion != 0 || persisted.Confirmation != "" || !persisted.SelectionApplied || persisted.PendingSelectionApply || persisted.PriorSelectionExists != priorExists || !bytes.Equal(persisted.AppliedSelection, applied) {
+				t.Fatalf("preference-only journal carried layout provenance or lost selection state: %#v", persisted)
+			}
+			if priorExists && !bytes.Equal(persisted.PriorSelection, prior) {
+				t.Fatalf("metadata journal lost exact prior bytes: got=%q want=%q", persisted.PriorSelection, prior)
+			}
+			if err := validateSelectionForRecovery(persisted); err != nil {
+				t.Fatalf("metadata journal cannot validate current B for recovery: %v", err)
+			}
+			if err := restoreSelection(persisted); err != nil {
+				t.Fatalf("metadata recovery could not restore prior selection: %v", err)
+			}
+			if priorExists {
+				got, found, readErr := readPrivateSelection(journal.SelectionPath)
+				if readErr != nil || !found || !bytes.Equal(got, prior) {
+					t.Fatalf("metadata recovery did not restore exact prior selection: found=%t err=%v got=%q want=%q", found, readErr, got, prior)
+				}
+			} else if _, found, readErr := readPrivateSelection(journal.SelectionPath); readErr != nil || found {
+				t.Fatalf("metadata recovery did not restore absent prior selection: found=%t err=%v", found, readErr)
+			}
+		})
+	}
+}
+
+func TestConsolidationSelectionOnlyRecoveryRefusesLaterValue(t *testing.T) {
+	journal, _, applied := selectionCommitFixture(t, true)
+	journal.Draft = ConsolidationDraft{}
+	journal.Confirmation = ""
+	journal.Entries = []consolidationJournalEntry{}
+	journal.SelectionApplied = true
+	thirdParty := []byte("{\"schema_version\":1,\"applications\":[\"claude-code\"],\"library\":\"/other/library\"}\n")
+	if err := writePrivateAtomic(journal.SelectionPath, applied); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeConsolidationJournal(journal); err != nil {
+		t.Fatal(err)
+	}
+	if err := writePrivateAtomic(journal.SelectionPath, thirdParty); err != nil {
+		t.Fatal(err)
+	}
+
+	persisted, err := readConsolidationJournal(journal.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateSelectionForRecovery(persisted); err == nil {
+		t.Fatal("metadata recovery accepted a later selection")
+	}
+	got, found, readErr := readPrivateSelection(journal.SelectionPath)
+	if readErr != nil || !found || !bytes.Equal(got, thirdParty) {
+		t.Fatalf("recovery validation changed the later selection: found=%t err=%v got=%q", found, readErr, got)
 	}
 }
 
@@ -209,8 +312,8 @@ func selectionCommitFixture(t *testing.T, priorExists bool) (consolidationJourna
 		PriorSelectionExists: priorExists,
 		AppliedSelection:     applied,
 	}
-	if err := writeConsolidationJournal(journal); err != nil {
-		t.Fatal(err)
+	if !priorExists {
+		journal.PriorSelection = nil
 	}
 	return journal, prior, applied
 }

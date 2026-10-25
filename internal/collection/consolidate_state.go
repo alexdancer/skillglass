@@ -41,12 +41,9 @@ func LastConsolidationSelectionWithID() (apps, roots []string, library string, f
 	if !found {
 		return nil, nil, "", false, absentConsolidationSelectionID(path), nil
 	}
-	var value consolidationSelection
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return nil, nil, "", false, "", fmt.Errorf("read remembered consolidation selection: %w", err)
-	}
-	if value.SchemaVersion != ConsolidationSchemaVersion || len(value.Applications) == 0 || value.Library == "" {
-		return nil, nil, "", false, "", errors.New("remembered consolidation selection has an unsupported or incomplete schema")
+	value, err := decodeConsolidationSelection(raw)
+	if err != nil {
+		return nil, nil, "", false, "", err
 	}
 	apps = append([]string(nil), value.Applications...)
 	roots = append([]string(nil), value.Roots...)
@@ -60,6 +57,28 @@ func LastConsolidationSelectionWithID() (apps, roots []string, library string, f
 func CurrentConsolidationSelectionID() (string, error) {
 	_, _, _, _, id, err := LastConsolidationSelectionWithID()
 	return id, err
+}
+
+func consolidationSelectionIDFromBytes(path string, raw []byte, exists bool) (string, error) {
+	if !exists {
+		return absentConsolidationSelectionID(path), nil
+	}
+	value, err := decodeConsolidationSelection(raw)
+	if err != nil {
+		return "", err
+	}
+	return rememberedSelectionID(value.Applications, value.Roots, value.Library, path), nil
+}
+
+func decodeConsolidationSelection(raw []byte) (consolidationSelection, error) {
+	var value consolidationSelection
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return consolidationSelection{}, fmt.Errorf("read remembered consolidation selection: %w", err)
+	}
+	if value.SchemaVersion != ConsolidationSchemaVersion || len(value.Applications) == 0 || value.Library == "" {
+		return consolidationSelection{}, errors.New("remembered consolidation selection has an unsupported or incomplete schema")
+	}
+	return value, nil
 }
 
 func RememberConsolidationSelection(request ConsolidationRequest) error {

@@ -2,6 +2,7 @@ package acceptance_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -242,7 +243,15 @@ func TestALE86NoopSelectionWriteFailureReportsUnchangedEffects(t *testing.T) {
 		t.Fatal(err)
 	}
 	originalMode := parentInfo.Mode().Perm()
-	treeBefore := treeManifest(t, fx.base)
+	selectionStatBefore, err := os.Stat(selectionPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backupRoot := filepath.Join(fx.xdgData, "skillglass", "consolidation", "backups")
+	backupTreeBefore := treeManifest(t, backupRoot)
+	piTreeBefore := treeManifest(t, filepath.Join(fx.home, ".pi", "agent", "skills"))
+	codexTreeBefore := treeManifest(t, filepath.Join(fx.home, ".codex", "skills"))
+	libraryTreeBefore := treeManifest(t, library)
 	if err := os.Chmod(selectionParent, 0o500); err != nil {
 		t.Fatal(err)
 	}
@@ -262,7 +271,7 @@ func TestALE86NoopSelectionWriteFailureReportsUnchangedEffects(t *testing.T) {
 	restoredPermissions = true
 	var outcome collection.ConsolidationApplyOutcome
 	decodeJSON(t, failedApply.stdout, &outcome)
-	if outcome.State != "refused" || outcome.Failure == nil || outcome.Failure.Code != "selection-write" || outcome.RecoveryID != "" {
+	if outcome.State != "refused" || outcome.Failure == nil || outcome.Failure.Code != "selection-write" || outcome.RecoveryID == "" || outcome.RecoveryID != noOpPlan.RecoveryID {
 		t.Fatalf("no-op preference failure was not reported distinctly: %#v", outcome)
 	}
 	var sharedEffect *collection.ConsolidationEffect
@@ -277,7 +286,53 @@ func TestALE86NoopSelectionWriteFailureReportsUnchangedEffects(t *testing.T) {
 	if !bytes.Equal(selectionBefore, readBytes(t, selectionPath)) {
 		t.Fatal("failed no-op changed remembered selection bytes")
 	}
-	assertTreeUnchanged(t, treeBefore, treeManifest(t, fx.base))
+	if !reflect.DeepEqual(piTreeBefore, treeManifest(t, filepath.Join(fx.home, ".pi", "agent", "skills"))) || !reflect.DeepEqual(codexTreeBefore, treeManifest(t, filepath.Join(fx.home, ".codex", "skills"))) || !reflect.DeepEqual(libraryTreeBefore, treeManifest(t, library)) {
+		t.Fatal("failed selection-only apply changed a source, link, or canonical library tree")
+	}
+	backupTreeAfter := treeManifest(t, backupRoot)
+	if reflect.DeepEqual(backupTreeBefore, backupTreeAfter) {
+		t.Fatal("failed selection-only scope change did not retain its durable recovery journal")
+	}
+	recordPath := filepath.Join(backupRoot, outcome.RecoveryID, "record.json")
+	recordRaw := readBytes(t, recordPath)
+	var record struct {
+		State                 string            `json:"state"`
+		Entries               []json.RawMessage `json:"entries"`
+		PriorSelection        []byte            `json:"prior_selection"`
+		AppliedSelection      []byte            `json:"applied_selection"`
+		PendingSelectionApply bool              `json:"pending_selection_apply"`
+		SelectionApplied      bool              `json:"selection_applied"`
+		Draft                 struct {
+			Choices []json.RawMessage `json:"choices"`
+		} `json:"draft"`
+	}
+	if err := json.Unmarshal(recordRaw, &record); err != nil {
+		t.Fatal(err)
+	}
+	if record.State != "partial" || len(record.Entries) != 0 || len(record.Draft.Choices) != 0 || !bytes.Equal(record.PriorSelection, selectionBefore) || !record.PendingSelectionApply || record.SelectionApplied {
+		t.Fatalf("failed preference-only apply did not retain metadata-only pending recovery: %#v", record)
+	}
+	recoveryPreviewResult := fx.run(t, "consolidate", "recover", "--backup", outcome.RecoveryID, "--json")
+	assertExit(t, recoveryPreviewResult, 0)
+	var recoveryPreview collection.ConsolidationPreview
+	decodeJSON(t, recoveryPreviewResult.stdout, &recoveryPreview)
+	if recoveryPreview.State != "ready" || len(recoveryPreview.Effects) != 1 || recoveryPreview.Effects[0].Action != "restore-selection" {
+		t.Fatalf("failed preference-only apply did not expose selection-only recovery: %#v", recoveryPreview)
+	}
+	recoveryApply := changeCommand(t, fx, "", "consolidate", "recover", "--backup", outcome.RecoveryID, "--confirm", recoveryPreview.Confirmation, "--json")
+	assertExit(t, recoveryApply, 0)
+	var recovered collection.ConsolidationApplyOutcome
+	decodeJSON(t, recoveryApply.stdout, &recovered)
+	if recovered.State != "recovered" || !recovered.Verified {
+		t.Fatalf("selection-only recovery did not complete: %#v", recovered)
+	}
+	selectionStatAfterRecovery, err := os.Stat(selectionPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(selectionBefore, readBytes(t, selectionPath)) || !selectionStatBefore.ModTime().Equal(selectionStatAfterRecovery.ModTime()) {
+		t.Fatal("recovery changed the already-restored prior selection")
+	}
 }
 
 type ale86RecoveryFixture struct {

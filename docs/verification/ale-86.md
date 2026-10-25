@@ -91,7 +91,10 @@ Coverage includes selected Codex/Pi/OpenCode sources with excluded Hermes
 unchanged; exact indirect CodeAF route acknowledgements; omitted acknowledgments
 and stale/extra route IDs refusing; remembered applications, roots and library;
 `--clear-roots`; preview and exact apply; verified no-op and selection-only
-reporting; fresh recovery; stale source/selection refusal; exact disabled
+reporting; successful preference-only changes persist a metadata-only recovery
+record that restores the prior selection without changing bundles or links;
+genuinely unchanged reruns create no recovery record and write no selection
+state; fresh recovery; stale source/selection refusal; exact disabled
 Codex selector preservation with config bytes unchanged; custom roots and
 library overlap refusal; subset portability and unknown approval; identical
 complete bundles with large opaque assets; divergent resource winner/archive

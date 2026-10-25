@@ -1,6 +1,7 @@
 package collection
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -293,6 +294,54 @@ func TestCurrentConsolidationSelectionIDTracksOnlyPersistedSelections(t *testing
 	secondID, err := CurrentConsolidationSelectionID()
 	if err != nil || secondID == firstID {
 		t.Fatalf("changed persisted selection must invalidate an old scan, got %q after %q: %v", secondID, firstID, err)
+	}
+}
+
+func TestConsolidationJournalDoesNotAdoptSelectionChangedAfterScan(t *testing.T) {
+	request, _, library := consolidationLibraryAuditFixture(t)
+	if err := RememberConsolidationSelection(request); err != nil {
+		t.Fatal(err)
+	}
+	approvedID, err := CurrentConsolidationSelectionID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.RememberedSelectionID = approvedID
+	inventory := ScanConsolidation(context.Background(), request)
+	if inventory.Failure != nil || inventory.SelectedCoverage != Complete || !inventory.LibrarySafe {
+		t.Fatalf("initial isolated library scan is not safe: failure=%+v coverage=%q safe=%t", inventory.Failure, inventory.SelectedCoverage, inventory.LibrarySafe)
+	}
+
+	later, err := NormalizeConsolidationRequest([]string{"pi"}, nil, library, "arguments")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := RememberConsolidationSelection(later); err != nil {
+		t.Fatal(err)
+	}
+	selectionPath, err := consolidationSelectionPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	laterBytes, laterExists, err := readPrivateSelection(selectionPath)
+	if err != nil || !laterExists {
+		t.Fatalf("later selection is not readable: exists=%t err=%v", laterExists, err)
+	}
+
+	draft := ConsolidationDraft{SchemaVersion: ConsolidationSchemaVersion, Scope: inventory.Scope}
+	preview := ConsolidationPreview{ScanID: inventory.ScanID, RecoveryID: "c-0123456789abcdef01234567", Effects: []ConsolidationEffect{}}
+	if _, err := newConsolidationJournal(context.Background(), draft, preview); err == nil {
+		t.Fatal("journal accepted a selection that changed after the proposal was scanned")
+	}
+	got, exists, err := readPrivateSelection(selectionPath)
+	if err != nil || !exists || !bytes.Equal(got, laterBytes) {
+		t.Fatalf("stale proposal changed the later selection: exists=%t err=%v got=%q want=%q", exists, err, got, laterBytes)
+	}
+	if _, err := readConsolidationJournal(preview.RecoveryID); err == nil {
+		t.Fatal("stale proposal left a recovery record for an unapproved selection")
+	}
+	if currentID, err := CurrentConsolidationSelectionID(); err != nil || currentID == approvedID {
+		t.Fatalf("later selection did not remain the current selection: got=%q approved=%q err=%v", currentID, approvedID, err)
 	}
 }
 
