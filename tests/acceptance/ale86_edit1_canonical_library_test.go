@@ -36,10 +36,10 @@ func TestEDIT1EditedCanonicalLibrarySourceCanBeDeduplicatedOnFreshRun(t *testing
 		t.Fatalf("initial source is not complete and eligible: %#v", initialSource)
 	}
 	oldFingerprint := initialSource.BundleFingerprint
-	initialDraft := edit1Draft(initialInventory, map[collection.SourceID]string{initialSource.ID: "share"})
+	initialDraft := buildConsolidationDraft(initialInventory, map[collection.SourceID]string{initialSource.ID: "share"})
 	initialDraftPath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "edit1-initial-draft.json")
-	edit1WriteDraft(t, initialDraftPath, initialDraft)
-	writeEvidence(t, "edited-library/edit1-initial-draft.json", edit1MustJSON(t, initialDraft))
+	writeConsolidationDraft(t, initialDraftPath, initialDraft)
+	writeEvidence(t, "edited-library/edit1-initial-draft.json", mustMarshalJSON(t, initialDraft))
 	initialPreview := fx.run(t, "consolidate", "preview", "--draft", initialDraftPath, "--json")
 	writeEvidence(t, "edited-library/edit1-initial-preview.json", initialPreview.stdout)
 	assertExit(t, initialPreview, 0)
@@ -124,10 +124,10 @@ func TestEDIT1EditedCanonicalLibrarySourceCanBeDeduplicatedOnFreshRun(t *testing
 	}
 	if copySource.Eligible {
 		shareIDs := map[collection.SourceID]string{copySource.ID: "share"}
-		freshDraft := edit1Draft(freshInventory, shareIDs)
+		freshDraft := buildConsolidationDraft(freshInventory, shareIDs)
 		freshDraftPath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "edit1-fresh-draft.json")
-		edit1WriteDraft(t, freshDraftPath, freshDraft)
-		freshDraftBytes := edit1MustJSON(t, freshDraft)
+		writeConsolidationDraft(t, freshDraftPath, freshDraft)
+		freshDraftBytes := mustMarshalJSON(t, freshDraft)
 		writeEvidence(t, "edited-library/edit1-fresh-draft.json", freshDraftBytes)
 		beforePreview := treeManifest(t, fx.base)
 		freshPreviewResult := fx.run(t, "consolidate", "preview", "--draft", freshDraftPath, "--json")
@@ -208,13 +208,13 @@ func TestEDIT1EditedCanonicalLibrarySourceCanBeDeduplicatedOnFreshRun(t *testing
 						var restoredInventory collection.ConsolidationInventory
 						decodeJSON(t, rescan.stdout, &restoredInventory)
 						restoredCopy := sourceAtPath(t, restoredInventory, codexSource)
-						secondDraft := edit1Draft(restoredInventory, map[collection.SourceID]string{restoredCopy.ID: "share"})
+						secondDraft := buildConsolidationDraft(restoredInventory, map[collection.SourceID]string{restoredCopy.ID: "share"})
 						secondChoice := consolidationChoice(t, &secondDraft, restoredCopy.ID)
 						for destinationIndex := range secondChoice.Destinations {
 							secondChoice.Destinations[destinationIndex].Reason = "fresh re-approval for later-edit recovery verification"
 						}
 						secondDraftPath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "edit1-later-edit-draft.json")
-						edit1WriteDraft(t, secondDraftPath, secondDraft)
+						writeConsolidationDraft(t, secondDraftPath, secondDraft)
 						secondPreviewResult := fx.run(t, "consolidate", "preview", "--draft", secondDraftPath, "--json")
 						assertExit(t, secondPreviewResult, 0)
 						var secondPreview collection.ConsolidationPreview
@@ -295,7 +295,7 @@ func sourceAtPath(t *testing.T, inventory collection.ConsolidationInventory, pat
 	return collection.ConsolidationSource{}
 }
 
-func edit1Draft(inventory collection.ConsolidationInventory, actions map[collection.SourceID]string) collection.ConsolidationDraft {
+func buildConsolidationDraft(inventory collection.ConsolidationInventory, actions map[collection.SourceID]string) collection.ConsolidationDraft {
 	selected := make(map[string]bool, len(inventory.Scope.Applications))
 	for _, app := range inventory.Scope.Applications {
 		selected[app] = true
@@ -333,12 +333,12 @@ func edit1Draft(inventory collection.ConsolidationInventory, actions map[collect
 	return draft
 }
 
-func edit1WriteDraft(t *testing.T, path string, draft collection.ConsolidationDraft) {
+func writeConsolidationDraft(t *testing.T, path string, draft collection.ConsolidationDraft) {
 	t.Helper()
-	writeFile(t, path, edit1MustJSON(t, draft), 0o600)
+	writeFile(t, path, mustMarshalJSON(t, draft), 0o600)
 }
 
-func edit1MustJSON(t *testing.T, value any) []byte {
+func mustMarshalJSON(t *testing.T, value any) []byte {
 	t.Helper()
 	raw, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {

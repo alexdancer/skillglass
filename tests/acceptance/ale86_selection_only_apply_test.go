@@ -25,9 +25,9 @@ func TestALE86SelectionOnlyApplyReportsPreferenceWriteAndExactRerunIsNoop(t *tes
 	var firstInventory collection.ConsolidationInventory
 	decodeJSON(t, firstScan.stdout, &firstInventory)
 	firstSource := sourceAtPath(t, firstInventory, piSource)
-	firstDraft := edit1Draft(firstInventory, map[collection.SourceID]string{firstSource.ID: "share"})
+	firstDraft := buildConsolidationDraft(firstInventory, map[collection.SourceID]string{firstSource.ID: "share"})
 	firstDraftPath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "selection-first-draft.json")
-	edit1WriteDraft(t, firstDraftPath, firstDraft)
+	writeConsolidationDraft(t, firstDraftPath, firstDraft)
 	firstPreview := fx.run(t, "consolidate", "preview", "--draft", firstDraftPath, "--json")
 	assertExit(t, firstPreview, 0)
 	var firstPlan collection.ConsolidationPreview
@@ -142,8 +142,8 @@ func selectionOnlyDraft(t *testing.T, fx fixture, library string) selectionDraft
 	if !source.Eligible {
 		t.Fatalf("shared canonical source became ineligible in Pi-only selection: %#v", source)
 	}
-	draft := edit1Draft(inventory, map[collection.SourceID]string{source.ID: "share"})
+	draft := buildConsolidationDraft(inventory, map[collection.SourceID]string{source.ID: "share"})
 	path := filepath.Join(fx.base, "allowed", "ownership-artifacts", "selection-pi-only-draft.json")
-	edit1WriteDraft(t, path, draft)
+	writeConsolidationDraft(t, path, draft)
 	return selectionDraftFile{path: path}
 }

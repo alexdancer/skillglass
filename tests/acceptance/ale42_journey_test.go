@@ -303,6 +303,27 @@ func TestALE42DeliveredCLIJourney(t *testing.T) {
 	}
 }
 
+func paneContainsUnwrappedPath(frame, path string) bool {
+	var text strings.Builder
+	for _, line := range strings.Split(frame, "\n") {
+		text.WriteString(strings.TrimRight(line, " "))
+	}
+	return strings.Contains(text.String(), path)
+}
+
+func assertALE42DeleteWarning(t *testing.T, frame string) {
+	t.Helper()
+	const warning = "Other projects and consumers outside this checked scope are unverified."
+	if !paneContains(frame, warning) {
+		t.Fatalf("delete warning is missing or unreadable:\n%s", frame)
+	}
+	for _, row := range strings.Split(frame, "\n") {
+		if strings.TrimSpace(row) == "-" {
+			t.Fatalf("delete warning leaves a standalone hyphen on the grid:\n%s", frame)
+		}
+	}
+}
+
 func TestALE42DeliveredBrowserJourney(t *testing.T) {
 	tmux, err := exec.LookPath("tmux")
 	if err != nil {
@@ -440,27 +461,45 @@ func TestALE42DeliveredBrowserJourney(t *testing.T) {
 			selectName("journey-copy", "2")
 			send("j", "Focus: 2/2")
 			send("Enter", "Read lines", "Selected: journey-copy")
-			capture("18-copy-details", send("d", "Availability:", "Source ID:"))
-			// The public selected path resolves the exact copy; no same-name substitution.
+			copyDetails := send("d", "Availability:", "Source ID:")
+			capture("18-copy-details", copyDetails)
+			// Bind the selected browser item to its exact public SourceID and path.
 			ids := codexListResult(t, fx, 0)
-			selected := ale42SourceAt(t, ids, c.independentManifests[1])
-			other := c.independentManifests[0]
+			first := ale42SourceAt(t, ids, c.independentManifests[0])
+			second := ale42SourceAt(t, ids, c.independentManifests[1])
+			var selected codexSource
+			var other string
+			switch {
+			case paneContains(copyDetails, first.ID):
+				selected, other = first, c.independentManifests[1]
+			case paneContains(copyDetails, second.ID):
+				selected, other = second, c.independentManifests[0]
+			default:
+				t.Fatal("browser details do not show either exact independent SourceID", copyDetails)
+			}
 			before = treeManifest(t, fx.base)
-			capture("19-delete-preview", send("X", "PERMANENT DELETE", "ready"))
+			deletePreview := send("X", "PERMANENT DELETE", "ready")
+			capture("19-delete-preview", deletePreview)
+			if !paneContainsUnwrappedPath(deletePreview, selected.SourcePath) {
+				t.Fatalf("delete preview target does not match selected source path %s:\n%s", selected.SourcePath, deletePreview)
+			}
+			warningFrame := deletePreview
+			if !paneContains(warningFrame, "unverified.") {
+				warningFrame = send("G", "unverified.")
+			}
+			capture("19b-delete-warning-bottom", warningFrame)
+			assertALE42DeleteWarning(t, warningFrame)
 			send("Escape", "Cancelled. No further content changed.")
 			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
-			send("X", "PERMANENT DELETE", "ready")
-			bottom := send("G", "Type confirmation on the next screen:")
-			first := ale42SourceAt(t, ids, c.independentManifests[0])
-			if paneContains(bottom, first.ID) {
-				selected = first
-				other = c.independentManifests[1]
-			} else if !paneContains(bottom, selected.ID) {
-				t.Fatal("exact source ID missing from delete preview", bottom)
+			deletePreview = send("X", "PERMANENT DELETE", "ready")
+			if !paneContainsUnwrappedPath(deletePreview, selected.SourcePath) {
+				t.Fatalf("second delete preview target changed from selected source path %s:\n%s", selected.SourcePath, deletePreview)
 			}
-			send("Enter", "Type: delete src_")
-			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "delete "+selected.ID)
-			capture("20-exact-confirmation", waitForPane(t, tmux, fx, socket, false, "Input: delete "+selected.ID))
+			send("Enter", "Type: confirm delete", "Input:")
+			runTmux(t, tmux, fx, socket, "send-keys", "-t", "browser:0.0", "-l", "confirm delete")
+			confirmation := waitForPane(t, tmux, fx, socket, false, "Type: confirm delete", "Input: confirm delete")
+			capture("20-exact-confirmation", confirmation)
+			assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 			capture("21-removed", send("Enter", "Permanent delete result: removed", "Verified removal: true"))
 			if _, err := os.Stat(filepath.Join(selected.SourcePath, "SKILL.md")); !os.IsNotExist(err) {
 				t.Fatal("wrong source deleted", err)

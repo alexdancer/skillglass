@@ -63,9 +63,9 @@ func browserDeleteSummary(v collection.DeleteView) []string {
 	}
 	lines = append(lines, "References and settings stay in place and may stop working. Running sessions may retain loaded content.", "")
 	if v.Project.Selected {
-		lines = append(lines, "Discovery checks seven native integrations and the selected project. Other projects and machine-wide consumers are unverified.")
+		lines = append(lines, "Discovery checks seven native integrations and the selected project. Other projects and consumers outside this checked scope are unverified.")
 	} else {
-		lines = append(lines, "Discovery checks seven native integrations without a selected project. Project and machine-wide consumers are unverified.")
+		lines = append(lines, "Discovery checks seven native integrations without a selected project. Project consumers and other consumers outside this checked scope are unverified.")
 	}
 	if len(gaps) > 0 {
 		lines = append(lines, "Discovery gaps: "+strings.Join(gaps, ", ")+". See Details.")

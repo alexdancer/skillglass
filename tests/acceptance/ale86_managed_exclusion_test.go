@@ -41,14 +41,14 @@ func TestALE86ManagedCodexPluginCannotBeSharedOrArchived(t *testing.T) {
 	assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 
 	// A forged choice must not promote a manager-owned source into a relocation.
-	draft := edit1Draft(inventory, nil)
+	draft := buildConsolidationDraft(inventory, nil)
 	draft.Choices = append(draft.Choices, collection.ConsolidationChoice{
 		SourceID:   managedExclusion.SourceID,
 		SourcePath: managedExclusion.Path,
 		Action:     "archive",
 	})
 	draftPath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "managed-plugin-share.json")
-	edit1WriteDraft(t, draftPath, draft)
+	writeConsolidationDraft(t, draftPath, draft)
 	beforePreview := treeManifest(t, fx.base)
 	previewResult := fx.run(t, "consolidate", "preview", "--draft", draftPath, "--json")
 	writeEvidence(t, "consolidation/managed-plugin-preview.json", previewResult.stdout)

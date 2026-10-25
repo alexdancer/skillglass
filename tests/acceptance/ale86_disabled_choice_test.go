@@ -35,9 +35,9 @@ func TestALE86CodexDisabledManifestChoiceStaysDisabledAndSettingsStayUntouched(t
 	if source.Availability["codex"].Evidence == nil || source.Availability["codex"].Evidence.Rule != "configured-availability" || source.Availability["codex"].Evidence.AgentVersion != "codex-cli 0.155.1" || len(source.RelocationProofs) != 1 || source.RelocationProofs[0].Profile != "Codex 0.162.1" {
 		t.Fatalf("disabled move must be bound to separate adapter and native relocation evidence: availability=%#v proofs=%#v", source.Availability["codex"], source.RelocationProofs)
 	}
-	draft := edit1Draft(inventory, map[collection.SourceID]string{source.ID: "share"})
+	draft := buildConsolidationDraft(inventory, map[collection.SourceID]string{source.ID: "share"})
 	draftPath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "disabled-choice.json")
-	edit1WriteDraft(t, draftPath, draft)
+	writeConsolidationDraft(t, draftPath, draft)
 	previewResult := fx.run(t, "consolidate", "preview", "--draft", draftPath, "--json")
 	writeEvidence(t, "consolidation/disabled-choice-preview.json", previewResult.stdout)
 	assertExit(t, previewResult, 0)

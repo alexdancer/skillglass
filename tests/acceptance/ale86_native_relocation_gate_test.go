@@ -70,9 +70,9 @@ func TestALE86UnvalidatedNativeSourceRemainsVisibleAndKeepable(t *testing.T) {
 		t.Fatalf("readable Gemini source should remain inspectable and keepable: %#v", source.BlockedReasons)
 	}
 
-	keep := edit1Draft(inventory, nil)
+	keep := buildConsolidationDraft(inventory, nil)
 	keepPath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "gemini-keep.json")
-	edit1WriteDraft(t, keepPath, keep)
+	writeConsolidationDraft(t, keepPath, keep)
 	keepPreview := fx.run(t, "consolidate", "preview", "--draft", keepPath, "--json")
 	assertExit(t, keepPreview, 0)
 
@@ -89,7 +89,7 @@ func TestALE86UnknownPortabilityApprovalCannotWaiveNativeDestinationGate(t *test
 	var inventory collection.ConsolidationInventory
 	decodeJSON(t, scan.stdout, &inventory)
 	pi := sourceAtPath(t, inventory, piSource)
-	draft := edit1Draft(inventory, map[collection.SourceID]string{pi.ID: "share"})
+	draft := buildConsolidationDraft(inventory, map[collection.SourceID]string{pi.ID: "share"})
 	choiceIndex := -1
 	for index := range draft.Choices {
 		if draft.Choices[index].SourceID == pi.ID {
@@ -108,7 +108,7 @@ func TestALE86UnknownPortabilityApprovalCannotWaiveNativeDestinationGate(t *test
 		}
 	}
 	draftPath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "unknown-gemini-destination.json")
-	edit1WriteDraft(t, draftPath, draft)
+	writeConsolidationDraft(t, draftPath, draft)
 	before := treeManifest(t, fx.base)
 	result := fx.run(t, "consolidate", "preview", "--draft", draftPath, "--json")
 	assertExit(t, result, 1)
@@ -141,9 +141,9 @@ func TestALE86HermesDefaultRootProfileAllowsOnlyProvenAliasRelocation(t *testing
 		t.Fatalf("ordinary default-root Hermes probe was not scoped and exposed: %#v", hermes)
 	}
 	pi := sourceAtPath(t, inventory, piSource)
-	draft := edit1Draft(inventory, map[collection.SourceID]string{pi.ID: "share"})
+	draft := buildConsolidationDraft(inventory, map[collection.SourceID]string{pi.ID: "share"})
 	draftPath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "hermes-default-root-share.json")
-	edit1WriteDraft(t, draftPath, draft)
+	writeConsolidationDraft(t, draftPath, draft)
 	before := treeManifest(t, fx.base)
 	result := fx.run(t, "consolidate", "preview", "--draft", draftPath, "--json")
 	assertExit(t, result, 0)
@@ -187,15 +187,15 @@ func TestALE86HermesActiveProfileSelectionWithoutProfileEvidenceStaysKeepOnly(t 
 	if !source.Eligible {
 		t.Fatalf("readable active-profile source should remain inspectable and keepable: %#v", source.BlockedReasons)
 	}
-	keep := edit1Draft(inventory, nil)
+	keep := buildConsolidationDraft(inventory, nil)
 	keepPath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "hermes-active-profile-keep.json")
-	edit1WriteDraft(t, keepPath, keep)
+	writeConsolidationDraft(t, keepPath, keep)
 	keepPreview := fx.run(t, "consolidate", "preview", "--draft", keepPath, "--json")
 	assertExit(t, keepPreview, 0)
 
-	archive := edit1Draft(inventory, map[collection.SourceID]string{source.ID: "archive"})
+	archive := buildConsolidationDraft(inventory, map[collection.SourceID]string{source.ID: "archive"})
 	archivePath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "hermes-active-profile-archive.json")
-	edit1WriteDraft(t, archivePath, archive)
+	writeConsolidationDraft(t, archivePath, archive)
 	refused := fx.run(t, "consolidate", "preview", "--draft", archivePath, "--json")
 	assertExit(t, refused, 1)
 	var preview collection.ConsolidationPreview

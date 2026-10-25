@@ -82,9 +82,9 @@ the live home directory.
 Run the ALE-86 public journeys with:
 
 ```sh
-SKILLGLASS_EVIDENCE=/private/tmp/skillglass-ale86/delivery-matrix-tests \
+SKILLGLASS_TEST_RUN='^Test(ALE86|EDIT1|OWN1|REC)' \
 GOCACHE=/private/tmp/skillglass-ale86/go-cache GOPROXY=off GOSUMDB=off \
-go test ./tests/acceptance -run '^Test(ALE86|EDIT1|OWN1|REC)' -count=1 -v
+sh tests/acceptance/run.sh /private/tmp/skillglass-ale86/documented-ale86-run
 ```
 
 Coverage includes selected Codex/Pi/OpenCode sources with excluded Hermes

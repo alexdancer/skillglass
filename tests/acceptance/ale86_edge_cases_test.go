@@ -23,7 +23,7 @@ func TestALE86SubsetPortabilityAndUnknownApproval(t *testing.T) {
 	var inventory collection.ConsolidationInventory
 	decodeJSON(t, scan.stdout, &inventory)
 	source := sourceAtPath(t, inventory, piSource)
-	draft := edit1Draft(inventory, map[collection.SourceID]string{source.ID: "share"})
+	draft := buildConsolidationDraft(inventory, map[collection.SourceID]string{source.ID: "share"})
 	choice := consolidationChoice(t, &draft, source.ID)
 	for index := range choice.Destinations {
 		if choice.Destinations[index].Application == "codex" {
@@ -33,7 +33,7 @@ func TestALE86SubsetPortabilityAndUnknownApproval(t *testing.T) {
 		}
 	}
 	unknownPath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "subset-unknown.json")
-	edit1WriteDraft(t, unknownPath, draft)
+	writeConsolidationDraft(t, unknownPath, draft)
 	before := treeManifest(t, fx.base)
 	unknown := fx.run(t, "consolidate", "preview", "--draft", unknownPath, "--json")
 	assertExit(t, unknown, 1)
@@ -56,7 +56,7 @@ func TestALE86SubsetPortabilityAndUnknownApproval(t *testing.T) {
 		}
 	}
 	subsetPath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "subset-compatible-only.json")
-	edit1WriteDraft(t, subsetPath, draft)
+	writeConsolidationDraft(t, subsetPath, draft)
 	previewResult := fx.run(t, "consolidate", "preview", "--draft", subsetPath, "--json")
 	assertExit(t, previewResult, 0)
 	var preview collection.ConsolidationPreview
@@ -98,7 +98,7 @@ func TestALE86SubsetPortabilityAndUnknownApproval(t *testing.T) {
 	var freshInventory collection.ConsolidationInventory
 	decodeJSON(t, fresh.stdout, &freshInventory)
 	canonical := sourceAtPath(t, freshInventory, filepath.Join(library, source.BundleFingerprint))
-	approvedUnknownDraft := edit1Draft(freshInventory, map[collection.SourceID]string{canonical.ID: "share"})
+	approvedUnknownDraft := buildConsolidationDraft(freshInventory, map[collection.SourceID]string{canonical.ID: "share"})
 	approvedChoice := consolidationChoice(t, &approvedUnknownDraft, canonical.ID)
 	for index := range approvedChoice.Destinations {
 		if approvedChoice.Destinations[index].Application == "codex" {
@@ -108,7 +108,7 @@ func TestALE86SubsetPortabilityAndUnknownApproval(t *testing.T) {
 		}
 	}
 	approvedUnknownPath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "subset-approved-unknown.json")
-	edit1WriteDraft(t, approvedUnknownPath, approvedUnknownDraft)
+	writeConsolidationDraft(t, approvedUnknownPath, approvedUnknownDraft)
 	approvedUnknownResult := fx.run(t, "consolidate", "preview", "--draft", approvedUnknownPath, "--json")
 	assertExit(t, approvedUnknownResult, 0)
 	var approvedUnknown collection.ConsolidationPreview
@@ -153,9 +153,9 @@ func TestALE86DivergentResourceArchiveIsRecoverableAndPreservesWinner(t *testing
 		t.Fatalf("same native name with divergent full bundle was not reported: %#v", inventory.Conflicts)
 	}
 
-	keepDraft := edit1Draft(inventory, map[collection.SourceID]string{codex.ID: "share"})
+	keepDraft := buildConsolidationDraft(inventory, map[collection.SourceID]string{codex.ID: "share"})
 	keepPath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "divergent-keep-refusal.json")
-	edit1WriteDraft(t, keepPath, keepDraft)
+	writeConsolidationDraft(t, keepPath, keepDraft)
 	before := treeManifest(t, fx.base)
 	keepResult := fx.run(t, "consolidate", "preview", "--draft", keepPath, "--json")
 	assertExit(t, keepResult, 1)
@@ -168,9 +168,9 @@ func TestALE86DivergentResourceArchiveIsRecoverableAndPreservesWinner(t *testing
 
 	// Retain the Pi variant under the private recovery store while sharing the
 	// Codex winner. Consolidation preserves bytes; it does not merge content.
-	winnerDraft := edit1Draft(inventory, map[collection.SourceID]string{codex.ID: "share", pi.ID: "archive"})
+	winnerDraft := buildConsolidationDraft(inventory, map[collection.SourceID]string{codex.ID: "share", pi.ID: "archive"})
 	winnerPath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "divergent-winner-archive.json")
-	edit1WriteDraft(t, winnerPath, winnerDraft)
+	writeConsolidationDraft(t, winnerPath, winnerDraft)
 	previewResult := fx.run(t, "consolidate", "preview", "--draft", winnerPath, "--json")
 	writeEvidence(t, "consolidation/divergent-winner-preview.json", previewResult.stdout)
 	assertExit(t, previewResult, 0)
@@ -247,9 +247,9 @@ func TestALE86StaleSourceAndRememberedSelectionRefuseWithoutExtraWrites(t *testi
 		var inventory collection.ConsolidationInventory
 		decodeJSON(t, scan.stdout, &inventory)
 		source := sourceAtPath(t, inventory, piSource)
-		draft := edit1Draft(inventory, map[collection.SourceID]string{source.ID: "share"})
+		draft := buildConsolidationDraft(inventory, map[collection.SourceID]string{source.ID: "share"})
 		draftPath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "stale-source.json")
-		edit1WriteDraft(t, draftPath, draft)
+		writeConsolidationDraft(t, draftPath, draft)
 		previewResult := fx.run(t, "consolidate", "preview", "--draft", draftPath, "--json")
 		assertExit(t, previewResult, 0)
 		var preview collection.ConsolidationPreview
@@ -284,9 +284,9 @@ func TestALE86StaleSourceAndRememberedSelectionRefuseWithoutExtraWrites(t *testi
 		assertExit(t, seedScan, 0)
 		var seedInventory collection.ConsolidationInventory
 		decodeJSON(t, seedScan.stdout, &seedInventory)
-		seedDraft := edit1Draft(seedInventory, nil)
+		seedDraft := buildConsolidationDraft(seedInventory, nil)
 		seedPath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "selection-seed.json")
-		edit1WriteDraft(t, seedPath, seedDraft)
+		writeConsolidationDraft(t, seedPath, seedDraft)
 		seedPreviewResult := fx.run(t, "consolidate", "preview", "--draft", seedPath, "--json")
 		assertExit(t, seedPreviewResult, 0)
 		var seedPreview collection.ConsolidationPreview
@@ -302,9 +302,9 @@ func TestALE86StaleSourceAndRememberedSelectionRefuseWithoutExtraWrites(t *testi
 		var staleInventory collection.ConsolidationInventory
 		decodeJSON(t, staleScan.stdout, &staleInventory)
 		staleSource := sourceAtPath(t, staleInventory, piSource)
-		staleDraft := edit1Draft(staleInventory, map[collection.SourceID]string{staleSource.ID: "keep"})
+		staleDraft := buildConsolidationDraft(staleInventory, map[collection.SourceID]string{staleSource.ID: "keep"})
 		stalePath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "selection-stale.json")
-		edit1WriteDraft(t, stalePath, staleDraft)
+		writeConsolidationDraft(t, stalePath, staleDraft)
 		stalePreviewResult := fx.run(t, "consolidate", "preview", "--draft", stalePath, "--json")
 		assertExit(t, stalePreviewResult, 0)
 		var stalePreview collection.ConsolidationPreview
@@ -317,9 +317,9 @@ func TestALE86StaleSourceAndRememberedSelectionRefuseWithoutExtraWrites(t *testi
 		assertExit(t, otherScan, 0)
 		var otherInventory collection.ConsolidationInventory
 		decodeJSON(t, otherScan.stdout, &otherInventory)
-		otherDraft := edit1Draft(otherInventory, nil)
+		otherDraft := buildConsolidationDraft(otherInventory, nil)
 		otherPath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "selection-other.json")
-		edit1WriteDraft(t, otherPath, otherDraft)
+		writeConsolidationDraft(t, otherPath, otherDraft)
 		otherPreviewResult := fx.run(t, "consolidate", "preview", "--draft", otherPath, "--json")
 		assertExit(t, otherPreviewResult, 0)
 		var otherPreview collection.ConsolidationPreview
@@ -385,10 +385,10 @@ func TestALE86SelectedAliasCannotMoveExcludedHermesOwnedSource(t *testing.T) {
 	if len(inventory.Scope.Applications) != 1 || inventory.Scope.Applications[0] != "pi" {
 		t.Fatalf("Hermes entered direct consolidation selection: %#v", inventory.Scope.Applications)
 	}
-	shareDraft := edit1Draft(inventory, nil)
+	shareDraft := buildConsolidationDraft(inventory, nil)
 	shareDraft.Choices = append(shareDraft.Choices, collection.ConsolidationChoice{SourceID: found.ID, SourcePath: found.SourcePath, BundleFingerprint: found.BundleFingerprint, Action: "share", CanonicalName: found.Name, Destinations: []collection.ConsolidationDestinationChoice{{Application: "pi", Portability: "compatible", Reason: "fixture-only invalid request to verify excluded physical ownership"}}})
 	sharePath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "hermes-share-refusal.json")
-	edit1WriteDraft(t, sharePath, shareDraft)
+	writeConsolidationDraft(t, sharePath, shareDraft)
 	sharePreviewResult := fx.run(t, "consolidate", "preview", "--draft", sharePath, "--json")
 	assertExit(t, sharePreviewResult, 1)
 	var sharePreview collection.ConsolidationPreview
@@ -404,7 +404,7 @@ func TestALE86SelectedAliasCannotMoveExcludedHermesOwnedSource(t *testing.T) {
 		}
 	}
 	archivePath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "hermes-archive-refusal.json")
-	edit1WriteDraft(t, archivePath, archiveDraft)
+	writeConsolidationDraft(t, archivePath, archiveDraft)
 	before := treeManifest(t, fx.base)
 	archiveResult := fx.run(t, "consolidate", "preview", "--draft", archivePath, "--json")
 	assertExit(t, archiveResult, 1)
@@ -448,9 +448,9 @@ func TestALE86NestedSourcesCannotMoveAcrossEachOther(t *testing.T) {
 
 	for _, moving := range []collection.SourceID{parentSource.ID, childSource.ID} {
 		actions := map[collection.SourceID]string{moving: "share"}
-		draft := edit1Draft(inventory, actions)
+		draft := buildConsolidationDraft(inventory, actions)
 		path := filepath.Join(fx.base, "allowed", "ownership-artifacts", "nested-"+string(moving)+".json")
-		edit1WriteDraft(t, path, draft)
+		writeConsolidationDraft(t, path, draft)
 		before := treeManifest(t, fx.base)
 		result := fx.run(t, "consolidate", "preview", "--draft", path, "--json")
 		assertExit(t, result, 1)
@@ -462,9 +462,9 @@ func TestALE86NestedSourcesCannotMoveAcrossEachOther(t *testing.T) {
 		assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 	}
 
-	keepDraft := edit1Draft(inventory, nil)
+	keepDraft := buildConsolidationDraft(inventory, nil)
 	keepPath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "nested-both-kept.json")
-	edit1WriteDraft(t, keepPath, keepDraft)
+	writeConsolidationDraft(t, keepPath, keepDraft)
 	keepResult := fx.run(t, "consolidate", "preview", "--draft", keepPath, "--json")
 	assertExit(t, keepResult, 0)
 	var keepPreview collection.ConsolidationPreview

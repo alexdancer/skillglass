@@ -79,7 +79,7 @@ func TestALE86SelectedApplicationsAcknowledgmentApplyNoopAndRecovery(t *testing.
 		}
 		actions[source.ID] = "share"
 	}
-	draft := edit1Draft(inventory, actions)
+	draft := buildConsolidationDraft(inventory, actions)
 	noAck := draft
 	noAck.Choices = append([]collection.ConsolidationChoice(nil), draft.Choices...)
 	for choiceIndex := range noAck.Choices {
@@ -89,7 +89,7 @@ func TestALE86SelectedApplicationsAcknowledgmentApplyNoopAndRecovery(t *testing.
 		}
 	}
 	noAckPath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "journey-unacknowledged.json")
-	edit1WriteDraft(t, noAckPath, noAck)
+	writeConsolidationDraft(t, noAckPath, noAck)
 	previewBefore := treeManifest(t, fx.base)
 	refused := fx.run(t, "consolidate", "preview", "--draft", noAckPath, "--json")
 	writeEvidence(t, "consolidation/journey-unacknowledged-preview.json", refused.stdout)
@@ -140,7 +140,7 @@ func TestALE86SelectedApplicationsAcknowledgmentApplyNoopAndRecovery(t *testing.
 			t.Fatalf("fixture has no indirect consumer acknowledgement to mutate: %s", scenario)
 		}
 		alteredPath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "journey-"+scenario+".json")
-		edit1WriteDraft(t, alteredPath, altered)
+		writeConsolidationDraft(t, alteredPath, altered)
 		alteredBefore := treeManifest(t, fx.base)
 		alteredResult := fx.run(t, "consolidate", "preview", "--draft", alteredPath, "--json")
 		writeEvidence(t, "consolidation/journey-"+scenario+"-preview.json", alteredResult.stdout)
@@ -154,7 +154,7 @@ func TestALE86SelectedApplicationsAcknowledgmentApplyNoopAndRecovery(t *testing.
 	}
 
 	draftPath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "journey-approved.json")
-	edit1WriteDraft(t, draftPath, draft)
+	writeConsolidationDraft(t, draftPath, draft)
 	approvedBefore := treeManifest(t, fx.base)
 	approved := fx.run(t, "consolidate", "preview", "--draft", draftPath, "--json")
 	writeEvidence(t, "consolidation/journey-approved-preview.json", approved.stdout)
@@ -219,9 +219,9 @@ func TestALE86SelectedApplicationsAcknowledgmentApplyNoopAndRecovery(t *testing.
 	if rememberedInventory.Scope.SelectionFrom != "remembered" || !reflect.DeepEqual(rememberedInventory.Scope.Applications, []string{"codex", "opencode", "pi"}) || filepath.Clean(rememberedInventory.Scope.Library) != filepath.Clean(library) {
 		t.Fatalf("omitted-app scan did not use the saved applications/library: %#v", rememberedInventory.Scope)
 	}
-	allCanonical := edit1Draft(rememberedInventory, nil)
+	allCanonical := buildConsolidationDraft(rememberedInventory, nil)
 	noopPath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "journey-noop.json")
-	edit1WriteDraft(t, noopPath, allCanonical)
+	writeConsolidationDraft(t, noopPath, allCanonical)
 	stable := treeManifest(t, fx.base)
 	noopPreviewResult := fx.run(t, "consolidate", "preview", "--draft", noopPath, "--json")
 	assertExit(t, noopPreviewResult, 0)
@@ -307,9 +307,9 @@ func TestALE86LargeAssetsAreFingerprintableWithoutSemanticInspection(t *testing.
 	if pi.InspectionComplete || codex.InspectionComplete || len(pi.InspectionLimits) == 0 || len(codex.InspectionLimits) == 0 {
 		t.Fatalf("large-resource display limit was not kept separate from full bundle hashing: pi=%#v codex=%#v", pi.InspectionLimits, codex.InspectionLimits)
 	}
-	draft := edit1Draft(inventory, map[collection.SourceID]string{pi.ID: "share", codex.ID: "share"})
+	draft := buildConsolidationDraft(inventory, map[collection.SourceID]string{pi.ID: "share", codex.ID: "share"})
 	draftPath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "large-duplicate.json")
-	edit1WriteDraft(t, draftPath, draft)
+	writeConsolidationDraft(t, draftPath, draft)
 	previewResult := fx.run(t, "consolidate", "preview", "--draft", draftPath, "--json")
 	writeEvidence(t, "consolidation/large-identical-preview.json", previewResult.stdout)
 	assertExit(t, previewResult, 0)
@@ -391,9 +391,9 @@ func TestALE86CustomRootIsExplicitAndLibraryOverlapRefuses(t *testing.T) {
 	if unsafeInventory.LibrarySafe {
 		t.Fatal("library overlapping an explicit source root was reported safe")
 	}
-	unsafeDraft := edit1Draft(unsafeInventory, map[collection.SourceID]string{sourceAtPath(t, unsafeInventory, customSkill).ID: "share"})
+	unsafeDraft := buildConsolidationDraft(unsafeInventory, map[collection.SourceID]string{sourceAtPath(t, unsafeInventory, customSkill).ID: "share"})
 	unsafePath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "custom-overlap.json")
-	edit1WriteDraft(t, unsafePath, unsafeDraft)
+	writeConsolidationDraft(t, unsafePath, unsafeDraft)
 	stable := treeManifest(t, fx.base)
 	refused := fx.run(t, "consolidate", "preview", "--draft", unsafePath, "--json")
 	assertExit(t, refused, 1)
@@ -406,9 +406,9 @@ func TestALE86CustomRootIsExplicitAndLibraryOverlapRefuses(t *testing.T) {
 
 	// A successful keep-only apply remembers the custom scope without moving
 	// the source; a later omitted-app scan reuses that scope unless cleared.
-	rememberDraft := edit1Draft(inventory, nil)
+	rememberDraft := buildConsolidationDraft(inventory, nil)
 	rememberPath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "remember-custom-root.json")
-	edit1WriteDraft(t, rememberPath, rememberDraft)
+	writeConsolidationDraft(t, rememberPath, rememberDraft)
 	rememberPreviewResult := fx.run(t, "consolidate", "preview", "--draft", rememberPath, "--json")
 	assertExit(t, rememberPreviewResult, 0)
 	var rememberPreview collection.ConsolidationPreview
