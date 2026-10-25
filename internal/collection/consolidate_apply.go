@@ -533,9 +533,10 @@ func consolidationMovesPreflightWithDevice(ctx context.Context, effects []Consol
 					destination = effect.CanonicalPath
 				}
 			}
+			duplicateBackupMove := shareEffect && filepath.Clean(destination) == filepath.Clean(effect.BackupPath)
 			device, err := deviceForPath(destination)
 			if err != nil {
-				if shareEffect && filepath.Clean(destination) == filepath.Clean(effect.BackupPath) {
+				if duplicateBackupMove {
 					return fmt.Errorf("duplicate recovery path must be on the source filesystem: %s", effect.BackupPath)
 				}
 				return fmt.Errorf("destination filesystem is unavailable: %s: %w", destination, err)
@@ -545,7 +546,7 @@ func consolidationMovesPreflightWithDevice(ctx context.Context, effects []Consol
 				return fmt.Errorf("source disappeared before apply: %s: %w", effect.SourcePath, err)
 			}
 			if source.Dev != device {
-				if shareEffect && filepath.Clean(destination) == filepath.Clean(effect.BackupPath) {
+				if duplicateBackupMove {
 					return fmt.Errorf("duplicate recovery path must be on the source filesystem: %s", effect.BackupPath)
 				}
 				return fmt.Errorf("cross-device relocation is unsupported for %s (source device %d, destination device %d)", effect.SourcePath, source.Dev, device)

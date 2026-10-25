@@ -79,14 +79,14 @@ func runConsolidateScan(args []string, stdout, stderr io.Writer) int {
 			selectedLibrary = lastLibrary
 		}
 	} else {
-		var err error
-		rememberedID, err = collection.CurrentConsolidationSelectionID()
+		_, rememberedRoots, _, found, id, err := collection.LastConsolidationSelectionWithID()
 		if err != nil {
 			return consolidateCLIError("consolidate-scan", fmt.Errorf("read remembered-selection freshness evidence: %w", err), 2, *machine, stdout, stderr)
 		}
-	}
-	if *clearRoots && len(apps) != 0 {
-		selectedRoots = append([]string(nil), roots...)
+		rememberedID = id
+		if found && !*clearRoots {
+			selectedRoots = append(append([]string(nil), rememberedRoots...), roots...)
+		}
 	}
 	selectedRoots = uniqueCLIStrings(selectedRoots)
 	request, err := collection.NormalizeConsolidationRequest(selectedApps, selectedRoots, selectedLibrary, selectionFrom)
