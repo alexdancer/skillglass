@@ -132,45 +132,103 @@ func TestConsolidationMoveDevicePreflightChecksOnlyEffectsThatMoveBundles(t *tes
 	move.SourceID = moveSource.ID
 	move.BundleFingerprint = moveFingerprint
 	deviceCalls = 0
-	deviceForPath = func(string) (int32, error) {
+	var devicePaths []string
+	deviceForPath = func(path string) (int32, error) {
 		deviceCalls++
+		devicePaths = append(devicePaths, path)
 		return sourceStat.Dev + 1, nil
 	}
 	err := consolidationMovesPreflightWithDevice(context.Background(), []ConsolidationEffect{linkOnly, move}, true, deviceForPath)
 	if err == nil || !strings.Contains(err.Error(), "cross-device relocation is unsupported") {
 		t.Fatalf("mixed plan did not retain cross-device refusal for its actual move: calls=%d err=%v", deviceCalls, err)
 	}
-	if deviceCalls == 0 {
-		t.Fatal("actual move in mixed plan skipped move-device lookup")
+	if len(devicePaths) != 1 || filepath.Clean(devicePaths[0]) != filepath.Clean(move.CanonicalPath) {
+		t.Fatalf("absent-canonical move checked destinations %v, want only %s", devicePaths, move.CanonicalPath)
 	}
+
+	multiCanonical := filepath.Join(library, "multi-move-destination")
+	first := move
+	first.CanonicalPath = multiCanonical
+	first.BackupPath = filepath.Join(library, ".backups", "multi-move-first")
+	secondSourcePath := canonicalFixturePath(t, filepath.Join(t.TempDir(), "second-move-source"))
+	if err := os.MkdirAll(secondSourcePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	bundleBytes, err := os.ReadFile(filepath.Join(move.SourcePath, "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(secondSourcePath, "SKILL.md"), bundleBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	secondSource, secondFingerprint, secondComplete, secondReason := consolidationFingerprintPath(context.Background(), secondSourcePath)
+	if !secondComplete || secondFingerprint != first.BundleFingerprint || secondSource.ID == first.SourceID {
+		t.Fatalf("second selected copy lacks matching content and distinct identity: complete=%t fingerprint=%t source=%q reason=%s", secondComplete, secondFingerprint == first.BundleFingerprint, secondSource.ID, secondReason)
+	}
+	second := first
+	second.SourcePath = secondSourcePath
+	second.SourceID = secondSource.ID
+	second.BundleFingerprint = secondFingerprint
+	second.BackupPath = filepath.Join(library, ".backups", "multi-move-second")
+	deviceCalls = 0
+	devicePaths = nil
+	deviceForPath = func(path string) (int32, error) {
+		deviceCalls++
+		devicePaths = append(devicePaths, path)
+		return sourceStat.Dev, nil
+	}
+	if err := consolidationMovesPreflightWithDevice(context.Background(), []ConsolidationEffect{first, second}, true, deviceForPath); err != nil {
+		t.Fatalf("multi-source plan did not preflight each sequential move destination: %v", err)
+	}
+	if len(devicePaths) != 2 || filepath.Clean(devicePaths[0]) != filepath.Clean(first.CanonicalPath) || filepath.Clean(devicePaths[1]) != filepath.Clean(second.BackupPath) {
+		t.Fatalf("multi-source plan checked destinations %v, want canonical then duplicate backup", devicePaths)
+	}
+
 	if err := os.MkdirAll(move.CanonicalPath, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	deviceCalls = 0
+	devicePaths = nil
 	deviceForPath = func(path string) (int32, error) {
 		deviceCalls++
+		devicePaths = append(devicePaths, path)
 		if filepath.Clean(path) == filepath.Clean(move.CanonicalPath) {
-			return sourceStat.Dev, nil
+			return sourceStat.Dev + 1, nil
 		}
-		return sourceStat.Dev + 1, nil
+		return sourceStat.Dev, nil
 	}
 	duplicateErr := consolidationMovesPreflightWithDevice(context.Background(), []ConsolidationEffect{move}, true, deviceForPath)
+	if duplicateErr != nil {
+		t.Fatalf("existing-canonical duplicate was refused for its unused canonical device: calls=%d err=%v", deviceCalls, duplicateErr)
+	}
+	if len(devicePaths) != 1 || filepath.Clean(devicePaths[0]) != filepath.Clean(move.BackupPath) {
+		t.Fatalf("existing-canonical duplicate checked destinations %v, want only %s", devicePaths, move.BackupPath)
+	}
+	deviceCalls = 0
+	devicePaths = nil
+	deviceForPath = func(path string) (int32, error) {
+		deviceCalls++
+		devicePaths = append(devicePaths, path)
+		return sourceStat.Dev + 1, nil
+	}
+	duplicateErr = consolidationMovesPreflightWithDevice(context.Background(), []ConsolidationEffect{move}, true, deviceForPath)
 	if duplicateErr == nil || !strings.Contains(duplicateErr.Error(), "duplicate recovery path must be on the source filesystem") {
 		t.Fatalf("duplicate-to-backup move skipped its same-filesystem check: calls=%d err=%v", deviceCalls, duplicateErr)
 	}
-	if deviceCalls != 2 {
-		t.Fatalf("duplicate-to-backup preflight performed %d device lookups, want canonical and backup checks", deviceCalls)
+	if len(devicePaths) != 1 || filepath.Clean(devicePaths[0]) != filepath.Clean(move.BackupPath) {
+		t.Fatalf("duplicate-to-backup preflight checked destinations %v, want only %s", devicePaths, move.BackupPath)
 	}
 
 	archive := move
 	archive.Action = "archive"
 	deviceCalls = 0
+	devicePaths = nil
 	archiveErr := consolidationMovesPreflightWithDevice(context.Background(), []ConsolidationEffect{archive}, true, deviceForPath)
 	if archiveErr == nil || !strings.Contains(archiveErr.Error(), "cross-device relocation is unsupported") {
 		t.Fatalf("archive did not retain cross-device refusal: calls=%d err=%v", deviceCalls, archiveErr)
 	}
-	if deviceCalls == 0 {
-		t.Fatal("archive skipped move-device lookup")
+	if len(devicePaths) != 1 || filepath.Clean(devicePaths[0]) != filepath.Clean(archive.BackupPath) {
+		t.Fatalf("archive checked destinations %v, want only %s", devicePaths, archive.BackupPath)
 	}
 }
 

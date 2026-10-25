@@ -507,6 +507,7 @@ func consolidationPathResolvesTo(path, target string) bool {
 }
 
 func consolidationMovesPreflightWithDevice(ctx context.Context, effects []ConsolidationEffect, checkMoveDevices bool, deviceForPath func(string) (int32, error)) error {
+	canonicalPresent := make(map[string]bool)
 	for _, effect := range effects {
 		if effect.Action == "keep" {
 			continue
@@ -522,11 +523,21 @@ func consolidationMovesPreflightWithDevice(ctx context.Context, effects []Consol
 		}
 		if checkMoveDevices && consolidationEffectMovesBundleData(effect) {
 			destination := effect.BackupPath
-			if effect.Action == "share" {
-				destination = effect.CanonicalPath
+			shareEffect := effect.Action == "share"
+			canonicalPath := filepath.Clean(effect.CanonicalPath)
+			if shareEffect {
+				if _, known := canonicalPresent[canonicalPath]; !known {
+					canonicalPresent[canonicalPath] = pathExists(canonicalPath)
+				}
+				if !canonicalPresent[canonicalPath] {
+					destination = effect.CanonicalPath
+				}
 			}
 			device, err := deviceForPath(destination)
 			if err != nil {
+				if shareEffect && filepath.Clean(destination) == filepath.Clean(effect.BackupPath) {
+					return fmt.Errorf("duplicate recovery path must be on the source filesystem: %s", effect.BackupPath)
+				}
 				return fmt.Errorf("destination filesystem is unavailable: %s: %w", destination, err)
 			}
 			var source unix.Stat_t
@@ -534,13 +545,13 @@ func consolidationMovesPreflightWithDevice(ctx context.Context, effects []Consol
 				return fmt.Errorf("source disappeared before apply: %s: %w", effect.SourcePath, err)
 			}
 			if source.Dev != device {
-				return fmt.Errorf("cross-device relocation is unsupported for %s (source device %d, destination device %d)", effect.SourcePath, source.Dev, device)
-			}
-			if effect.Action == "share" {
-				backupDevice, backupErr := deviceForPath(effect.BackupPath)
-				if backupErr != nil || backupDevice != source.Dev {
+				if shareEffect && filepath.Clean(destination) == filepath.Clean(effect.BackupPath) {
 					return fmt.Errorf("duplicate recovery path must be on the source filesystem: %s", effect.BackupPath)
 				}
+				return fmt.Errorf("cross-device relocation is unsupported for %s (source device %d, destination device %d)", effect.SourcePath, source.Dev, device)
+			}
+			if shareEffect && filepath.Clean(destination) == canonicalPath {
+				canonicalPresent[canonicalPath] = true
 			}
 		}
 	}
