@@ -1241,41 +1241,57 @@ func relocatableBundleLink(root, relative, rawTarget string) string {
 	if filepath.IsAbs(rawTarget) {
 		return "absolute resource links change meaning when the bundle is relocated"
 	}
+	type linkPart struct {
+		name         string
+		endExpansion string
+	}
 	parent := filepath.ToSlash(filepath.Dir(filepath.FromSlash(relative)))
-	pending := append(strings.Split(parent, "/"), strings.Split(filepath.ToSlash(rawTarget), "/")...)
+	pending := make([]linkPart, 0)
+	for _, part := range append(strings.Split(parent, "/"), strings.Split(filepath.ToSlash(rawTarget), "/")...) {
+		pending = append(pending, linkPart{name: part})
+	}
 	resolved := []string{}
 	links := 0
-	seen := map[string]bool{}
+	active := map[string]bool{}
 	for len(pending) > 0 {
 		part := pending[0]
 		pending = pending[1:]
-		if part == "" || part == "." {
+		if part.endExpansion != "" {
+			delete(active, part.endExpansion)
 			continue
 		}
-		if part == ".." {
+		if part.name == "" || part.name == "." {
+			continue
+		}
+		if part.name == ".." {
 			if len(resolved) == 0 {
 				return "link chain escapes the bundle"
 			}
 			resolved = resolved[:len(resolved)-1]
 			continue
 		}
-		resolved = append(resolved, part)
+		resolved = append(resolved, part.name)
 		path := filepath.Join(append([]string{root}, resolved...)...)
 		info, err := os.Lstat(path)
 		if err != nil {
 			return "link target is broken or unreadable: " + err.Error()
 		}
 		if info.Mode()&os.ModeSymlink == 0 {
-			if len(pending) > 0 && !info.IsDir() {
-				return "link chain traverses a non-directory resource"
+			for _, next := range pending {
+				if next.endExpansion == "" {
+					if !info.IsDir() {
+						return "link chain traverses a non-directory resource"
+					}
+					break
+				}
 			}
 			continue
 		}
 		links++
-		if links > 40 || seen[path] {
+		if links > 40 || active[path] {
 			return "link chain is cyclic or exceeds 40 links"
 		}
-		seen[path] = true
+		active[path] = true
 		target, err := os.Readlink(path)
 		if err != nil {
 			return "link target could not be read: " + err.Error()
@@ -1284,7 +1300,13 @@ func relocatableBundleLink(root, relative, rawTarget string) string {
 			return "link chain contains an absolute target"
 		}
 		resolved = resolved[:len(resolved)-1]
-		pending = append(strings.Split(filepath.ToSlash(target), "/"), pending...)
+		targetParts := strings.Split(filepath.ToSlash(target), "/")
+		expansion := make([]linkPart, 0, len(targetParts)+len(pending)+1)
+		for _, targetPart := range targetParts {
+			expansion = append(expansion, linkPart{name: targetPart})
+		}
+		expansion = append(expansion, linkPart{endExpansion: path})
+		pending = append(expansion, pending...)
 	}
 	return ""
 }

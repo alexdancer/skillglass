@@ -12,9 +12,9 @@ import (
 )
 
 func runConsolidate(args []string, stdout, stderr io.Writer) int {
-	showHelp := len(args) == 0
+	showHelp := len(args) == 0 || args[0] == "help"
 	for _, arg := range args {
-		if arg == "help" || arg == "-h" || arg == "--help" {
+		if arg == "-h" || arg == "--help" {
 			showHelp = true
 		}
 	}
