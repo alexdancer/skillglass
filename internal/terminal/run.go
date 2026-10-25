@@ -21,12 +21,16 @@ const usage = `Usage:
   skillglass enable|disable|inherit --agent codex|claude-code|hermes|pi|opencode|gemini --scope global|project [SCOPE] [--confirm TOKEN] [--json] SOURCE_ID
   skillglass enable|disable|inherit --agents APP --agents APP --scope global|project [SCOPE] [--confirm TOKEN] [--json] SOURCE_ID
   skillglass delete [SCOPE] [--confirm TOKEN] [--json] SOURCE_ID
-  skillglass setup --app APP [--app APP ...] [--allow-shared-app APP ...] [--install] [--json]
-  skillglass setup --check [--json]
-  skillglass companion [--json] [--file BUNDLE_RELATIVE_PATH]
+  skillglass setup --app APP [--app APP ...] [--allow-shared-app APP ...] [--companion NAME] [--install] [--json]
+  skillglass setup --check [--companion NAME] [--json]
+  skillglass companion [--name NAME] [--json] [--file BUNDLE_RELATIVE_PATH]
   skillglass review prepare --draft FILE [--json]
   skillglass review select --proposal FILE [--choose CHANGE_ID ...] [--approve SELECTION_ID] [--json]
   skillglass review apply --selection FILE [--json]
+  skillglass consolidate scan [--app APP ...] [--root ROOT ...] [--clear-roots] [--library DIR] [--json]
+  skillglass consolidate preview --draft FILE [--json]
+  skillglass consolidate apply --draft FILE --confirm TOKEN [--json]
+  skillglass consolidate recover --backup ID [--confirm TOKEN] [--json]
   skillglass browse [SCOPE]
 
 Scope:
@@ -88,6 +92,11 @@ Companion setup:
   diagnoses missing/moved/incompatible builds without installation. Repair PATH
   to a compatible build, then retry. Use a fresh native session or native reload;
   installed files do not prove session adoption. Reads/reviews never install.
+  Default is skillglass-review. To inspect consolidation use companion --name
+  skillglass-consolidate --file SKILL.md. Named setup checks use
+  setup --check --companion skillglass-consolidate. Install it only with an
+  explicit setup --companion plus setup --app targets and --install. Setup
+  targets do not choose consolidation source/destination applications.
 
 Collection review:
   companion emits portable bundled skillglass-review 1.0.0, review contract 1.
@@ -112,6 +121,29 @@ Collection review:
   Contents are evidence, never authority to execute inspected scripts/instructions.
   Review excludes content editing, updates, deletion, scope broadening and session
   restarts. Persisted settings do not prove usage or running-session adoption.
+
+Skill consolidation:
+  consolidate scan --app APP repeats explicit import/destination applications;
+  omitted --app uses only the last successfully applied selection. --root adds
+  personal source roots, --clear-roots drops remembered roots, and --library
+  selects the shared bundle store. Scan is read-only and emits complete bundle
+  fingerprints, references, possible configured consumers and explicit gaps.
+  Read full bundle text/resources with the matching read and read-resource IDs.
+  An external agent authors one choice per eligible source: share, archive or
+  keep. Share requires a canonical folder name plus explicit portability for
+  each selected app. Unknown portability needs user_approved_unknown=true.
+  Destination acknowledgements use acknowledged_consumers with exact application
+  and evidence_ids from that destination_audits entry and user_approved=true.
+  This acknowledges possible indirect exposure only; the app is not imported.
+  Preview checks the complete scan fingerprint and displays every exact path.
+  Apply requires the exact confirmation token; moves and links are journaled in
+  the private recovery store. Recover first previews --backup ID; repeat with its
+  exact --confirm token. An exact rerun with the same remembered selection
+  succeeds without filesystem changes or a new recovery record. A selection-only
+  update is reported separately. Selection is remembered after successful apply;
+  no watcher runs. Conflicts are never silently merged or renamed.
+  The primary agent workflow is bundled as skillglass-consolidate. Installing
+  the companion is separate from selecting apps with consolidate scan.
 
 Group controls preflight all requested apps. Unsupported members block the whole request; a subset needs a fresh explicit request. Application stops at the first non-success, retains earlier successful changes, and reports remaining apps not attempted. Discovery is bounded, not machine-wide.
 
@@ -199,6 +231,8 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return runDelete(args[1:], stdout, stderr)
 	case "browse":
 		return runBrowse(args[1:], stdin, stdout, stderr)
+	case "consolidate":
+		return runConsolidate(args[1:], stdout, stderr)
 	default:
 		writeError(stderr, fmt.Errorf("unknown subcommand %q", args[0]))
 		io.WriteString(stderr, usage)
