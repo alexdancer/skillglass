@@ -180,10 +180,17 @@ func TestALE86DivergentResourceArchiveIsRecoverableAndPreservesWinner(t *testing
 		t.Fatalf("explicit winner and archive plan refused: %#v", preview)
 	}
 	var archivePath string
+	var ownerReplacementPlanned bool
 	for _, effect := range preview.Effects {
 		if effect.Action == "archive" && effect.SourceID == pi.ID {
 			archivePath = effect.BackupPath
 		}
+		if effect.Action == "share" && effect.SourceID == codex.ID && containsPath(effect.Destinations, piSource) {
+			ownerReplacementPlanned = true
+		}
+	}
+	if !ownerReplacementPlanned {
+		t.Fatalf("same-name winner did not plan the exact Pi owner-leaf replacement: %#v", preview.Effects)
 	}
 	if archivePath == "" {
 		t.Fatalf("preview did not disclose the divergent backup path: %#v", preview.Effects)
@@ -194,6 +201,22 @@ func TestALE86DivergentResourceArchiveIsRecoverableAndPreservesWinner(t *testing
 	decodeJSON(t, apply.stdout, &applied)
 	if applied.State != "applied" || !applied.Verified || applied.RecoveryID == "" {
 		t.Fatalf("winner/archive apply did not verify or produce recovery: %#v", applied)
+	}
+	for _, effect := range applied.Effects {
+		if effect.Action == "keep" {
+			if effect.State != "unchanged" {
+				t.Fatalf("kept source was not reported unchanged: %#v", effect)
+			}
+			continue
+		}
+		if effect.State != "completed" {
+			t.Fatalf("successful winner/archive effect did not report completed: %#v", effect)
+		}
+		for _, operation := range effect.Operations {
+			if operation.State != "completed" && operation.State != "not-needed" {
+				t.Fatalf("successful winner/archive operation is not complete: %#v", operation)
+			}
+		}
 	}
 	if info, err := os.Lstat(piSource); err != nil || info.Mode()&os.ModeSymlink == 0 {
 		t.Fatalf("Pi should now expose the reviewed winner through a symlink: mode=%v err=%v", info, err)
@@ -227,6 +250,16 @@ func TestALE86DivergentResourceArchiveIsRecoverableAndPreservesWinner(t *testing
 	decodeJSON(t, recovery.stdout, &recovered)
 	if recovered.State != "recovered" || !recovered.Verified {
 		t.Fatalf("archive recovery did not restore both versions: %#v", recovered)
+	}
+	for _, effect := range recovered.Effects {
+		if effect.State != "completed" {
+			t.Fatalf("successful recovery effect did not report completed: %#v", effect)
+		}
+		for _, operation := range effect.Operations {
+			if operation.State != "completed" && operation.State != "not-needed" {
+				t.Fatalf("successful recovery operation is not complete: %#v", operation)
+			}
+		}
 	}
 	if !bytes.Equal(piBefore, treeManifest(t, piSource)) || !bytes.Equal(codexBefore, treeManifest(t, codexSource)) {
 		t.Fatal("archive recovery did not restore exact divergent source trees")

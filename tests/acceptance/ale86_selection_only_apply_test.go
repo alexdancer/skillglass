@@ -61,14 +61,20 @@ func TestALE86SelectionOnlyApplyReportsPreferenceWriteAndExactRerunIsNoop(t *tes
 	selectionApply := changeCommand(t, fx, "", "consolidate", "apply", "--draft", piOnly.path, "--confirm", selectionPlan.Confirmation, "--json")
 	assertExit(t, selectionApply, 0)
 	var selectionOutcome struct {
-		State            string `json:"state"`
-		SelectionUpdated bool   `json:"selection_updated"`
-		Verified         bool   `json:"verified"`
-		Reason           string `json:"reason"`
+		State            string                           `json:"state"`
+		SelectionUpdated bool                             `json:"selection_updated"`
+		Verified         bool                             `json:"verified"`
+		Reason           string                           `json:"reason"`
+		Effects          []collection.ConsolidationEffect `json:"effects"`
 	}
 	decodeJSON(t, selectionApply.stdout, &selectionOutcome)
 	if selectionOutcome.State != "selection-updated" || !selectionOutcome.SelectionUpdated || !selectionOutcome.Verified {
 		t.Fatalf("selection-only apply must report the persisted preference change truthfully: %#v", selectionOutcome)
+	}
+	for _, effect := range selectionOutcome.Effects {
+		if effect.Action == "share" && effect.State != "unchanged" {
+			t.Fatalf("selection-only apply reported a filesystem change: %#v", effect)
+		}
 	}
 	selectionAfter, err := os.ReadFile(selectionPath)
 	if err != nil {
@@ -96,13 +102,19 @@ func TestALE86SelectionOnlyApplyReportsPreferenceWriteAndExactRerunIsNoop(t *tes
 	noOpApply := changeCommand(t, fx, "", "consolidate", "apply", "--draft", piOnly.path, "--confirm", noOpPlan.Confirmation, "--json")
 	assertExit(t, noOpApply, 0)
 	var noOpOutcome struct {
-		State            string `json:"state"`
-		SelectionUpdated bool   `json:"selection_updated"`
-		Verified         bool   `json:"verified"`
+		State            string                           `json:"state"`
+		SelectionUpdated bool                             `json:"selection_updated"`
+		Verified         bool                             `json:"verified"`
+		Effects          []collection.ConsolidationEffect `json:"effects"`
 	}
 	decodeJSON(t, noOpApply.stdout, &noOpOutcome)
 	if noOpOutcome.State != "unchanged" || noOpOutcome.SelectionUpdated || !noOpOutcome.Verified {
 		t.Fatalf("exact rerun must report an unchanged, write-free selection: %#v", noOpOutcome)
+	}
+	for _, effect := range noOpOutcome.Effects {
+		if effect.Action == "share" && effect.State != "unchanged" {
+			t.Fatalf("unchanged rerun reported a filesystem change: %#v", effect)
+		}
 	}
 	selectionFinal, err := os.ReadFile(selectionPath)
 	if err != nil {

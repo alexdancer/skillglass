@@ -64,6 +64,7 @@ type consolidationJournalEntry struct {
 	CanonicalWasPresent  bool              `json:"canonical_was_present"`
 	CreatedLinks         []string          `json:"created_links"`
 	PendingLinks         []string          `json:"pending_links,omitempty"`
+	FailedLinks          []string          `json:"failed_links,omitempty"`
 	RemovedLinks         []string          `json:"removed_links,omitempty"`
 	PendingRecoveryLinks []string          `json:"pending_recovery_links,omitempty"`
 	RestoredToSource     bool              `json:"restored_to_source"`
@@ -131,6 +132,7 @@ func ApplyConsolidation(ctx context.Context, draft ConsolidationDraft, confirmat
 		out.RecoveryID = ""
 		out.Failure = &ConsolidationFailure{Code: "journal-preflight", Message: err.Error(), Action: "Resolve the private recovery-store issue and prepare a fresh preview."}
 		out.Reason = err.Error()
+		out.Effects = consolidationApplyEffectOutcomes(ctx, preview.Effects, consolidationJournal{})
 		return out
 	}
 	if err := writeConsolidationJournal(journal); err != nil {
@@ -138,6 +140,7 @@ func ApplyConsolidation(ctx context.Context, draft ConsolidationDraft, confirmat
 		out.RecoveryID = ""
 		out.Failure = &ConsolidationFailure{Code: "journal-write", Message: err.Error(), Action: "No source should have moved. Inspect the private recovery store before retrying."}
 		out.Reason = err.Error()
+		out.Effects = consolidationApplyEffectOutcomes(ctx, preview.Effects, journal)
 		return out
 	}
 	setPartial := func(reason string) ConsolidationApplyOutcome {
@@ -145,6 +148,7 @@ func ApplyConsolidation(ctx context.Context, draft ConsolidationDraft, confirmat
 		_ = writeConsolidationJournal(journal)
 		out.State, out.Outcome, out.ExitCode, out.Reason = "partial", "failed", 1, reason
 		out.Failure = &ConsolidationFailure{Code: "partial-apply", Message: reason, Action: "Run consolidate recover --backup " + journal.ID + " to preview a safe restoration."}
+		out.Effects = consolidationApplyEffectOutcomes(ctx, preview.Effects, journal)
 		return out
 	}
 	if err := applyConsolidationEntries(ctx, &journal); err != nil {
@@ -173,6 +177,7 @@ func ApplyConsolidation(ctx context.Context, draft ConsolidationDraft, confirmat
 		return setPartial("changes verified but final recovery record could not be persisted: " + err.Error())
 	}
 	out.State, out.Outcome, out.ExitCode, out.Reason, out.Verified = "applied", "success", 0, "all planned bundle moves and native links were re-inspected", true
+	out.Effects = consolidationApplyEffectOutcomes(ctx, preview.Effects, journal)
 	return out
 }
 
@@ -270,7 +275,7 @@ func newConsolidationJournal(ctx context.Context, draft ConsolidationDraft, prev
 		if effect.Action == "keep" {
 			continue
 		}
-		entry := consolidationJournalEntry{SourceID: effect.SourceID, BackupSourceID: effect.SourceID, Action: effect.Action, SourcePath: effect.SourcePath, Fingerprint: effect.BundleFingerprint, BackupPath: effect.BackupPath, CanonicalPath: effect.CanonicalPath, CreatedLinks: []string{}, PendingLinks: []string{}, RemovedLinks: []string{}, PendingRecoveryLinks: []string{}, ExpectedLinks: append([]string(nil), effect.Destinations...), ExpectedAvailability: map[string]string{}}
+		entry := consolidationJournalEntry{SourceID: effect.SourceID, BackupSourceID: effect.SourceID, Action: effect.Action, SourcePath: effect.SourcePath, Fingerprint: effect.BundleFingerprint, BackupPath: effect.BackupPath, CanonicalPath: effect.CanonicalPath, CreatedLinks: []string{}, PendingLinks: []string{}, FailedLinks: []string{}, RemovedLinks: []string{}, PendingRecoveryLinks: []string{}, ExpectedLinks: append([]string(nil), effect.Destinations...), ExpectedAvailability: map[string]string{}}
 		if entry.Action == "share" {
 			entry.CanonicalSourceID = canonicalOwners[filepath.Clean(entry.CanonicalPath)]
 			if entry.CanonicalSourceID == "" {
@@ -493,29 +498,38 @@ func applyConsolidationEntries(ctx context.Context, journal *consolidationJourna
 
 func ensureLink(journal *consolidationJournal, entry *consolidationJournalEntry, path string) error {
 	if target, ok, err := exactLink(path, entry.CanonicalPath); err != nil {
+		entry.FailedLinks = uniqueJournalPaths(append(entry.FailedLinks, path))
+		_ = writeConsolidationJournal(*journal)
 		return err
 	} else if ok {
 		_ = target
 		return nil
 	}
 	if pathExists(path) {
+		entry.FailedLinks = uniqueJournalPaths(append(entry.FailedLinks, path))
+		_ = writeConsolidationJournal(*journal)
 		return fmt.Errorf("link path became occupied during apply: %s", path)
-	}
-	if err := ensureConsolidationDirectory(filepath.Dir(path), false); err != nil {
-		return fmt.Errorf("destination directory is not safely reachable: %s: %w", filepath.Dir(path), err)
 	}
 	entry.PendingLinks = append(entry.PendingLinks, path)
 	if err := writeConsolidationJournal(*journal); err != nil {
 		entry.PendingLinks = removeJournalPath(entry.PendingLinks, path)
 		return fmt.Errorf("cannot journal link intent for %s: %w", path, err)
 	}
+	if err := ensureConsolidationDirectory(filepath.Dir(path), false); err != nil {
+		entry.PendingLinks = removeJournalPath(entry.PendingLinks, path)
+		entry.FailedLinks = uniqueJournalPaths(append(entry.FailedLinks, path))
+		_ = writeConsolidationJournal(*journal)
+		return fmt.Errorf("destination directory is not safely reachable: %s: %w", filepath.Dir(path), err)
+	}
 	if err := symlinkExclusive(entry.CanonicalPath, path); err != nil {
 		entry.PendingLinks = removeJournalPath(entry.PendingLinks, path)
+		entry.FailedLinks = uniqueJournalPaths(append(entry.FailedLinks, path))
 		_ = writeConsolidationJournal(*journal)
 		return fmt.Errorf("create link %s: %w", path, err)
 	}
 	entry.CreatedLinks = append(entry.CreatedLinks, path)
 	entry.PendingLinks = removeJournalPath(entry.PendingLinks, path)
+	entry.FailedLinks = removeJournalPath(entry.FailedLinks, path)
 	if err := writeConsolidationJournal(*journal); err != nil {
 		return fmt.Errorf("link created but recovery journal update failed: %w", err)
 	}
@@ -544,6 +558,98 @@ func verifyMoveSource(ctx context.Context, path, expected string, expectedID Sou
 		return fmt.Errorf("physical source identity changed at %s: expected %s, found %s", path, expectedID, source.ID)
 	}
 	return nil
+}
+
+func consolidationApplyEffectOutcomes(ctx context.Context, effects []ConsolidationEffect, journal consolidationJournal) []ConsolidationEffect {
+	out := append([]ConsolidationEffect(nil), effects...)
+	entries := make(map[SourceID]consolidationJournalEntry, len(journal.Entries))
+	for _, entry := range journal.Entries {
+		entries[entry.SourceID] = entry
+	}
+	for index := range out {
+		effect := &out[index]
+		effect.Operations = nil
+		if effect.Action == "keep" {
+			effect.State = "unchanged"
+			continue
+		}
+		entry, exists := entries[effect.SourceID]
+		if !exists {
+			effect.State = "pending"
+			effect.Operations = append(effect.Operations, ConsolidationOperationOutcome{Action: "apply", Path: effect.SourcePath, State: "pending", Reason: "journaled execution has not started"})
+			continue
+		}
+		if effect.Action == "archive" {
+			effect.Operations = append(effect.Operations, consolidationMoveOutcome(ctx, "move-to-recovery", effect.SourcePath, effect.BackupPath, effect.BundleFingerprint, entry.SourceID, entry.BackupSourceID, entry.MovedToBackup, entry.PendingMove == "archive"))
+		} else if effect.Action == "share" {
+			if filepath.Clean(effect.SourcePath) != filepath.Clean(effect.CanonicalPath) {
+				if entry.CanonicalWasPresent {
+					effect.Operations = append(effect.Operations, consolidationMoveOutcome(ctx, "move-duplicate-to-recovery", effect.SourcePath, effect.BackupPath, effect.BundleFingerprint, entry.SourceID, entry.BackupSourceID, entry.MovedToBackup, entry.PendingMove == "duplicate"))
+				} else {
+					effect.Operations = append(effect.Operations, consolidationMoveOutcome(ctx, "move-to-canonical", effect.SourcePath, effect.CanonicalPath, effect.BundleFingerprint, entry.SourceID, entry.CanonicalSourceID, entry.MovedToCanonical, entry.PendingMove == "canonical"))
+				}
+				effect.Operations = append(effect.Operations, consolidationLinkOutcome(effect.SourcePath, effect.CanonicalPath, entry))
+			}
+			for _, destination := range effect.Destinations {
+				effect.Operations = append(effect.Operations, consolidationLinkOutcome(destination, effect.CanonicalPath, entry))
+			}
+		}
+		effect.State = consolidationEffectOutcomeState(effect.Operations)
+	}
+	return out
+}
+
+func consolidationMoveOutcome(ctx context.Context, action, from, to, fingerprint string, sourceID, targetID SourceID, recorded, pending bool) ConsolidationOperationOutcome {
+	operation := ConsolidationOperationOutcome{Action: action, From: from, Path: to, State: "pending", Reason: "move was not reached before apply stopped"}
+	if verifyMoveSource(ctx, to, fingerprint, targetID) == nil {
+		operation.State, operation.Reason = "completed", ""
+		return operation
+	}
+	if recorded || pending {
+		operation.State, operation.Reason = "failed", "expected moved bundle is not present with its journaled identity"
+	}
+	if sourceID == targetID && filepath.Clean(from) == filepath.Clean(to) {
+		operation.State, operation.Reason = "not-needed", "source already occupies the canonical path"
+	}
+	return operation
+}
+
+func consolidationLinkOutcome(path, canonical string, entry consolidationJournalEntry) ConsolidationOperationOutcome {
+	operation := ConsolidationOperationOutcome{Action: "create-link", Path: path, State: "pending", Reason: "link was not reached before apply stopped"}
+	if _, exact, err := exactLink(path, canonical); err == nil && exact {
+		operation.State, operation.Reason = "completed", ""
+	} else if containsString(entry.FailedLinks, path) {
+		operation.State, operation.Reason = "failed", "link creation did not produce the requested canonical reference"
+	}
+	return operation
+}
+
+func consolidationEffectOutcomeState(operations []ConsolidationOperationOutcome) string {
+	if len(operations) == 0 {
+		return "unchanged"
+	}
+	completed, unfinished, failed := 0, 0, false
+	for _, operation := range operations {
+		switch operation.State {
+		case "completed", "not-needed":
+			completed++
+		case "failed":
+			unfinished++
+			failed = true
+		default:
+			unfinished++
+		}
+	}
+	if unfinished == 0 {
+		return "completed"
+	}
+	if completed > 0 {
+		return "partial"
+	}
+	if failed {
+		return "failed"
+	}
+	return "pending"
 }
 
 func verifyConsolidationJournal(ctx context.Context, journal consolidationJournal) error {
@@ -994,7 +1100,7 @@ func uniqueJournalPaths(values []string) []string {
 // PreviewConsolidationRecovery checks the exact recorded state and current
 // references before exposing a reversible recovery plan.
 func PreviewConsolidationRecovery(ctx context.Context, id string) ConsolidationPreview {
-	preview := ConsolidationPreview{SchemaVersion: ConsolidationSchemaVersion, Operation: "consolidate-recover-preview", Outcome: "failed", ExitCode: 1, State: "refused", Reason: "recovery state is not safe to restore", Choices: []ConsolidationChoice{}, Effects: []ConsolidationEffect{}, Warnings: []string{}, RecoveryID: id}
+	preview := ConsolidationPreview{SchemaVersion: ConsolidationSchemaVersion, Operation: "consolidate-recover-preview", Outcome: "failed", ExitCode: 1, State: "refused", Reason: "recovery state is not safe to restore", Choices: []ConsolidationChoice{}, Effects: []ConsolidationEffect{}, Conflicts: []ConsolidationPreviewConflict{}, Exclusions: []ConsolidationExclusion{}, SourceAvailability: []ConsolidationPreviewSource{}, Warnings: []string{}, RecoveryID: id}
 	journal, err := readConsolidationJournal(id)
 	if err != nil {
 		return consolidationPreviewFailure(preview, "recovery-record", err.Error(), "Use the exact recovery ID printed by apply and inspect the private recovery store.")
@@ -1289,7 +1395,7 @@ func ApplyConsolidationRecovery(ctx context.Context, id, confirmation string) Co
 		out.Reason = err.Error()
 		return out
 	}
-	out.Effects = append([]ConsolidationEffect(nil), preview.Effects...)
+	out.Effects = consolidationRecoveryEffectOutcomes(ctx, preview.Effects, journal)
 	if journal.State == "recovered" {
 		out.State, out.Outcome, out.ExitCode, out.Reason, out.Verified = "recovered", "success", 0, "recovery was already completed; no files changed", true
 		return out
@@ -1312,6 +1418,7 @@ func ApplyConsolidationRecovery(ctx context.Context, id, confirmation string) Co
 		_ = writeConsolidationJournal(journal)
 		out.State, out.Outcome, out.ExitCode, out.Reason = "partial", "failed", 1, err.Error()
 		out.Failure = &ConsolidationFailure{Code: "partial-recovery", Message: err.Error(), Action: "Review the recovery journal and rerun recover preview; completed exact steps are retained."}
+		out.Effects = consolidationRecoveryEffectOutcomes(ctx, preview.Effects, journal)
 		return out
 	}
 	// Remove every owned link before restoring any source directory. A selected
@@ -1463,7 +1570,89 @@ func ApplyConsolidationRecovery(ctx context.Context, id, confirmation string) Co
 		return partial(err)
 	}
 	out.State, out.Outcome, out.ExitCode, out.Reason, out.Verified = "recovered", "success", 0, "all journaled moves and links were restored and verified", true
+	out.Effects = consolidationRecoveryEffectOutcomes(ctx, preview.Effects, journal)
 	return out
+}
+
+func consolidationRecoveryEffectOutcomes(ctx context.Context, effects []ConsolidationEffect, journal consolidationJournal) []ConsolidationEffect {
+	out := append([]ConsolidationEffect(nil), effects...)
+	entries := make(map[SourceID]consolidationJournalEntry, len(journal.Entries))
+	for _, entry := range journal.Entries {
+		entries[entry.SourceID] = entry
+	}
+	for index := range out {
+		effect := &out[index]
+		effect.Operations = nil
+		switch effect.Action {
+		case "restore-selection":
+			operation := ConsolidationOperationOutcome{Action: "restore-selection", Path: effect.SourcePath, State: "pending", Reason: "selection restoration was not reached"}
+			if journal.SelectionRestored || consolidationPriorSelectionIsPresent(journal) {
+				operation.State, operation.Reason = "completed", ""
+			} else if journal.PendingSelectionRestore {
+				operation.State, operation.Reason = "failed", "previous selection is not present after the recorded restore attempt"
+			}
+			effect.Operations = append(effect.Operations, operation)
+		case "restore-archive":
+			entry := entries[effect.SourceID]
+			effect.Operations = append(effect.Operations, consolidationRecoveryMoveOutcome(ctx, effect.BackupPath, effect.SourcePath, effect.BundleFingerprint, entry, "archive"))
+		case "restore-share":
+			entry := entries[effect.SourceID]
+			for _, path := range effect.Destinations {
+				effect.Operations = append(effect.Operations, consolidationRemoveLinkOutcome(ctx, path, effect.CanonicalPath, entry, journal.Entries))
+			}
+			if entry.MovedToBackup || entry.PendingMove == "duplicate" {
+				effect.Operations = append(effect.Operations, consolidationRecoveryMoveOutcome(ctx, effect.BackupPath, effect.SourcePath, effect.BundleFingerprint, entry, "duplicate"))
+			} else if entry.MovedToCanonical || entry.PendingMove == "canonical" {
+				effect.Operations = append(effect.Operations, consolidationRecoveryMoveOutcome(ctx, effect.CanonicalPath, effect.SourcePath, effect.BundleFingerprint, entry, "canonical"))
+			} else {
+				effect.Operations = append(effect.Operations, ConsolidationOperationOutcome{Action: "restore-source", Path: effect.SourcePath, State: "not-needed", Reason: "the original source was not moved"})
+			}
+		}
+		effect.State = consolidationEffectOutcomeState(effect.Operations)
+	}
+	return out
+}
+
+func consolidationPriorSelectionIsPresent(journal consolidationJournal) bool {
+	if journal.PriorSelectionExists {
+		return sameBytesOrAbsent(journal.SelectionPath, journal.PriorSelection, true) == nil
+	}
+	return sameBytesOrAbsent(journal.SelectionPath, nil, false) == nil
+}
+
+func consolidationRecoveryMoveOutcome(ctx context.Context, from, to, fingerprint string, entry consolidationJournalEntry, action string) ConsolidationOperationOutcome {
+	operation := ConsolidationOperationOutcome{Action: "restore-source", From: from, Path: to, State: "pending", Reason: "source restoration was not reached"}
+	if verifyMoveSource(ctx, to, fingerprint, entry.SourceID) == nil {
+		operation.State, operation.Reason = "completed", ""
+	} else if entry.PendingRecoveryMove == action {
+		operation.State, operation.Reason = "failed", "original source is not present with its journaled identity after the restore attempt"
+	}
+	return operation
+}
+
+func consolidationRemoveLinkOutcome(ctx context.Context, path, canonical string, entry consolidationJournalEntry, entries []consolidationJournalEntry) ConsolidationOperationOutcome {
+	operation := ConsolidationOperationOutcome{Action: "remove-link", Path: path, State: "pending", Reason: "link removal was not reached"}
+	for _, restored := range entries {
+		if filepath.Clean(path) == filepath.Clean(restored.SourcePath) && verifyMoveSource(ctx, path, restored.Fingerprint, restored.SourceID) == nil {
+			operation.State, operation.Reason = "completed", ""
+			return operation
+		}
+	}
+	if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
+		operation.State, operation.Reason = "completed", ""
+		return operation
+	} else if err != nil {
+		operation.State, operation.Reason = "failed", "link path cannot be inspected after recovery"
+		return operation
+	}
+	if _, exact, err := exactLink(path, canonical); err == nil && exact {
+		if containsString(entry.PendingRecoveryLinks, path) {
+			operation.State, operation.Reason = "failed", "canonical link remains after the recorded removal attempt"
+		}
+		return operation
+	}
+	operation.State, operation.Reason = "failed", "link path contains an object other than the original source or exact canonical link"
+	return operation
 }
 
 func consolidationRecoverySeal(journal consolidationJournal, inventory ConsolidationInventory, effects []ConsolidationEffect) string {

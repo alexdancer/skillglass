@@ -203,35 +203,72 @@ type ConsolidationDraft struct {
 	Choices       []ConsolidationChoice `json:"choices"`
 }
 
+type ConsolidationOperationOutcome struct {
+	Action string `json:"action"`
+	From   string `json:"from,omitempty"`
+	Path   string `json:"path"`
+	State  string `json:"state"`
+	Reason string `json:"reason,omitempty"`
+}
+
 type ConsolidationEffect struct {
-	Action              string                         `json:"action"`
-	SourceID            SourceID                       `json:"source_id"`
-	SourcePath          string                         `json:"source_path"`
-	BundleFingerprint   string                         `json:"bundle_fingerprint,omitempty"`
-	RelocationProfiles  []ConsolidationRelocationProof `json:"native_relocation_profiles,omitempty"`
-	CanonicalPath       string                         `json:"canonical_path,omitempty"`
-	BackupPath          string                         `json:"backup_path,omitempty"`
-	Destinations        []string                       `json:"destinations,omitempty"`
-	PreservedReferences []string                       `json:"preserved_references,omitempty"`
-	State               string                         `json:"state"`
-	Reason              string                         `json:"reason,omitempty"`
+	Action              string                          `json:"action"`
+	SourceID            SourceID                        `json:"source_id"`
+	SourcePath          string                          `json:"source_path"`
+	BundleFingerprint   string                          `json:"bundle_fingerprint,omitempty"`
+	RelocationProfiles  []ConsolidationRelocationProof  `json:"native_relocation_profiles,omitempty"`
+	CanonicalPath       string                          `json:"canonical_path,omitempty"`
+	BackupPath          string                          `json:"backup_path,omitempty"`
+	Destinations        []string                        `json:"destinations,omitempty"`
+	PreservedReferences []string                        `json:"preserved_references,omitempty"`
+	Operations          []ConsolidationOperationOutcome `json:"operations,omitempty"`
+	State               string                          `json:"state"`
+	Reason              string                          `json:"reason,omitempty"`
+}
+
+type ConsolidationPreviewConflict struct {
+	ID        string     `json:"id"`
+	Name      string     `json:"name"`
+	Kind      string     `json:"kind"`
+	SourceIDs []SourceID `json:"source_ids"`
+	Reason    string     `json:"reason"`
+	State     string     `json:"state"`
+}
+
+type ConsolidationAvailability struct {
+	Application string `json:"application"`
+	State       string `json:"state"`
+	NativeName  string `json:"native_name,omitempty"`
+}
+
+type ConsolidationPreviewSource struct {
+	SourceID       SourceID                    `json:"source_id"`
+	SourcePath     string                      `json:"source_path"`
+	Eligible       bool                        `json:"eligible"`
+	Resolution     string                      `json:"resolution"`
+	Action         string                      `json:"action,omitempty"`
+	Availability   []ConsolidationAvailability `json:"availability"`
+	BlockedReasons []string                    `json:"blocked_reasons,omitempty"`
 }
 
 type ConsolidationPreview struct {
-	SchemaVersion int                   `json:"schema_version"`
-	Operation     string                `json:"operation"`
-	Outcome       string                `json:"outcome"`
-	ExitCode      int                   `json:"exit_code"`
-	State         string                `json:"state"`
-	Reason        string                `json:"reason"`
-	ScanID        string                `json:"scan_id,omitempty"`
-	Scope         ConsolidationRequest  `json:"scope"`
-	Choices       []ConsolidationChoice `json:"choices"`
-	Effects       []ConsolidationEffect `json:"effects"`
-	Warnings      []string              `json:"warnings"`
-	Confirmation  string                `json:"confirmation,omitempty"`
-	RecoveryID    string                `json:"recovery_id,omitempty"`
-	Failure       *ConsolidationFailure `json:"failure,omitempty"`
+	SchemaVersion      int                            `json:"schema_version"`
+	Operation          string                         `json:"operation"`
+	Outcome            string                         `json:"outcome"`
+	ExitCode           int                            `json:"exit_code"`
+	State              string                         `json:"state"`
+	Reason             string                         `json:"reason"`
+	ScanID             string                         `json:"scan_id,omitempty"`
+	Scope              ConsolidationRequest           `json:"scope"`
+	Choices            []ConsolidationChoice          `json:"choices"`
+	Effects            []ConsolidationEffect          `json:"effects"`
+	Conflicts          []ConsolidationPreviewConflict `json:"conflicts"`
+	Exclusions         []ConsolidationExclusion       `json:"exclusions"`
+	SourceAvailability []ConsolidationPreviewSource   `json:"source_availability"`
+	Warnings           []string                       `json:"warnings"`
+	Confirmation       string                         `json:"confirmation,omitempty"`
+	RecoveryID         string                         `json:"recovery_id,omitempty"`
+	Failure            *ConsolidationFailure          `json:"failure,omitempty"`
 }
 
 type consolidationSnapshot struct {
@@ -970,31 +1007,52 @@ func consolidationNativeSourceOwners(source ConsolidationSource, applications []
 	return uniqueStrings(owners)
 }
 
-func consolidationArchiveReplacementApps(source ConsolidationSource, owners []string, choices map[SourceID]ConsolidationChoice, apps map[string]ConsolidationApplication) []string {
+func consolidationArchiveReplacementApps(source ConsolidationSource, owners []string, effects []ConsolidationEffect, sources map[SourceID]ConsolidationSource, apps map[string]ConsolidationApplication) []string {
 	replaced := []string{}
 	for _, owner := range owners {
 		app := apps[owner]
-		if app.DestinationRoot == "" {
+		archivedName := source.Availability[owner].NativeName
+		if app.DestinationRoot == "" || app.NativeRelocationProfile == nil || archivedName == "" || filepath.Clean(filepath.Join(app.DestinationRoot, archivedName)) != filepath.Clean(source.SourcePath) {
 			continue
 		}
-		for sourceID, choice := range choices {
-			if sourceID == source.ID || choice.Action != "share" || choice.CanonicalName == "" {
+		for _, effect := range effects {
+			if effect.Action != "share" || effect.SourceID == source.ID || !hasConsolidationDestination(effect.Destinations, source.SourcePath) {
 				continue
 			}
-			assessed := false
-			for _, destination := range choice.Destinations {
-				if destination.Application == owner && destination.Portability != "incompatible" {
-					assessed = true
-					break
-				}
+			winner, exists := sources[effect.SourceID]
+			if !exists || consolidationNativeNameForApplication(winner, owner) != archivedName || !hasRelocationProfile(effect.RelocationProfiles, *app.NativeRelocationProfile) {
+				continue
 			}
-			if assessed && filepath.Clean(filepath.Join(app.DestinationRoot, choice.CanonicalName)) == filepath.Clean(source.SourcePath) {
-				replaced = append(replaced, owner)
-				break
-			}
+			replaced = append(replaced, owner)
+			break
 		}
 	}
 	return uniqueSortedStrings(replaced)
+}
+
+func consolidationNativeNameForApplication(source ConsolidationSource, application string) string {
+	if availability, ok := source.Availability[application]; ok && availability.NativeName != "" {
+		return availability.NativeName
+	}
+	return source.NativeName
+}
+
+func hasConsolidationDestination(destinations []string, path string) bool {
+	for _, destination := range destinations {
+		if filepath.Clean(destination) == filepath.Clean(path) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasRelocationProfile(profiles []ConsolidationRelocationProof, expected ConsolidationRelocationProof) bool {
+	for _, profile := range profiles {
+		if profile.ID == expected.ID && profile.Application == expected.Application && profile.BinarySHA256 == expected.BinarySHA256 {
+			return true
+		}
+	}
+	return false
 }
 
 func consolidationProfilesForApplications(applications []string, byName map[string]ConsolidationApplication) ([]ConsolidationRelocationProof, error) {
@@ -1389,11 +1447,13 @@ func consolidationScanID(inventory ConsolidationInventory, snapshots []consolida
 		Scope             ConsolidationRequest
 		Apps              []appFact
 		Sources           []ConsolidationSource
+		Conflicts         []ConsolidationConflict
+		Exclusions        []ConsolidationExclusion
 		DestinationAudits []ConsolidationDestinationAudit
 		LibrarySafe       bool
 		LibraryReasons    []string
 		LibraryWarnings   []string
-	}{ConsolidationSchemaVersion, inventory.Scope, facts, inventory.Sources, inventory.DestinationAudits, inventory.LibrarySafe, inventory.LibraryReasons, inventory.LibraryWarnings})
+	}{ConsolidationSchemaVersion, inventory.Scope, facts, inventory.Sources, inventory.Conflicts, inventory.Exclusions, inventory.DestinationAudits, inventory.LibrarySafe, inventory.LibraryReasons, inventory.LibraryWarnings})
 	if err != nil {
 		return ""
 	}
@@ -1405,7 +1465,7 @@ func consolidationScanID(inventory ConsolidationInventory, snapshots []consolida
 // The draft is usable only when its scan ID still matches the complete current
 // scope. It writes no files and returns the exact confirmation token for apply.
 func PreviewConsolidation(ctx context.Context, draft ConsolidationDraft) ConsolidationPreview {
-	preview := ConsolidationPreview{SchemaVersion: ConsolidationSchemaVersion, Operation: "consolidate-preview", Outcome: "failed", ExitCode: 2, State: "refused", Reason: "proposal is not ready", Choices: []ConsolidationChoice{}, Effects: []ConsolidationEffect{}, Warnings: []string{}}
+	preview := ConsolidationPreview{SchemaVersion: ConsolidationSchemaVersion, Operation: "consolidate-preview", Outcome: "failed", ExitCode: 2, State: "refused", Reason: "proposal is not ready", Choices: []ConsolidationChoice{}, Effects: []ConsolidationEffect{}, Conflicts: []ConsolidationPreviewConflict{}, Exclusions: []ConsolidationExclusion{}, SourceAvailability: []ConsolidationPreviewSource{}, Warnings: []string{}}
 	if draft.SchemaVersion != ConsolidationSchemaVersion {
 		return consolidationPreviewFailure(preview, "unsupported-schema", "draft schema_version must be 1", "Create a fresh draft from the current consolidate scan output.")
 	}
@@ -1459,6 +1519,7 @@ func PreviewConsolidation(ctx context.Context, draft ConsolidationDraft) Consoli
 		}
 		choices[choice.SourceID] = choice
 	}
+	populateConsolidationPreviewContext(&preview, inventory, choices)
 	for _, source := range inventory.Sources {
 		if !source.Eligible {
 			if _, supplied := choices[source.ID]; supplied {
@@ -1526,15 +1587,6 @@ func PreviewConsolidation(ctx context.Context, draft ConsolidationDraft) Consoli
 					return consolidationPreviewFailure(preview, "unsupported-native-relocation", err.Error(), "Keep this source until native availability and its relocation profile are supported.")
 				}
 			}
-			replacementApps := consolidationArchiveReplacementApps(source, owners, choices, appByName)
-			if len(replacementApps) != len(owners) {
-				return consolidationPreviewFailure(preview, "unsupported-native-relocation", "no recorded native profile proves that this archive may leave the source absent from its native root; archive requires a shared winner that recreates the exact owner path", "Keep the source, or choose a winner whose approved link replaces this exact leaf and review a fresh complete plan.")
-			}
-			replacementProfiles, replacementProfileErr := consolidationProfilesForApplications(replacementApps, appByName)
-			if replacementProfileErr != nil {
-				return consolidationPreviewFailure(preview, "unsupported-native-relocation", replacementProfileErr.Error(), "Keep the source until every exact replacement destination has a recorded native relocation profile.")
-			}
-			profiles = mergeConsolidationRelocationProfiles(profiles, replacementProfiles)
 			if len(choice.Destinations) != 0 || choice.CanonicalName != "" {
 				return consolidationPreviewFailure(preview, "invalid-choice", "archive choices cannot specify a canonical name or destinations", "Use archive only for a divergent version the user chose to retain for recovery.")
 			}
@@ -1653,6 +1705,26 @@ func PreviewConsolidation(ctx context.Context, draft ConsolidationDraft) Consoli
 			return consolidationPreviewFailure(preview, "invalid-choice", "action must be share, archive, or keep", "Use one explicit action for every eligible source.")
 		}
 	}
+	sourcesByID := make(map[SourceID]ConsolidationSource, len(inventory.Sources))
+	for _, source := range inventory.Sources {
+		sourcesByID[source.ID] = source
+	}
+	for index := range effects {
+		if effects[index].Action != "archive" {
+			continue
+		}
+		source := sourcesByID[effects[index].SourceID]
+		owners := consolidationNativeSourceOwners(source, inventory.Applications, selected)
+		replacementApps := consolidationArchiveReplacementApps(source, owners, effects, sourcesByID, appByName)
+		if len(replacementApps) != len(owners) {
+			return consolidationPreviewFailure(preview, "unsupported-native-relocation", "no recorded native profile proves that this archive may leave the source absent from its native root; archive requires a planned shared winner with the same native identity to recreate the exact owner path", "Keep the source, or choose a winner whose approved link replaces this exact native leaf and review a fresh complete plan.")
+		}
+		replacementProfiles, replacementProfileErr := consolidationProfilesForApplications(replacementApps, appByName)
+		if replacementProfileErr != nil {
+			return consolidationPreviewFailure(preview, "unsupported-native-relocation", replacementProfileErr.Error(), "Keep the source until every exact replacement destination has a recorded native relocation profile.")
+		}
+		effects[index].RelocationProfiles = mergeConsolidationRelocationProfiles(effects[index].RelocationProfiles, replacementProfiles)
+	}
 	if err := validateConflictChoices(inventory.Sources, choices); err != nil {
 		return consolidationPreviewFailure(preview, "unresolved-conflict", err.Error(), "Choose a winner, archive discarded versions, or retain variants only when native names are distinct.")
 	}
@@ -1661,10 +1733,11 @@ func PreviewConsolidation(ctx context.Context, draft ConsolidationDraft) Consoli
 			return consolidationPreviewFailure(preview, "scope-mismatch", "application selection changed during scan", "Run a fresh scan with the exact selected applications.")
 		}
 	}
+	resolveConsolidationPreviewContext(&preview)
 	preview.Effects = effects
 	preview.Warnings = consolidationWarnings(inventory, choices)
 	preview.State, preview.Reason, preview.Outcome, preview.ExitCode = "ready", "complete proposal is fresh and all exact filesystem effects are inspectable", "success", 0
-	seal, err := consolidationConfirmation(draft, inventory, effects)
+	seal, err := consolidationConfirmation(draft, inventory, effects, preview)
 	if err != nil {
 		return consolidationPreviewFailure(preview, "confirmation-error", err.Error(), "Create a new complete draft and preview.")
 	}
@@ -1677,6 +1750,68 @@ func consolidationPreviewFailure(preview ConsolidationPreview, code, message, ac
 	preview.State, preview.Reason, preview.Outcome, preview.ExitCode = "refused", message, "failed", 1
 	preview.Failure = &ConsolidationFailure{Code: code, Message: message, Action: action}
 	return preview
+}
+
+func populateConsolidationPreviewContext(preview *ConsolidationPreview, inventory ConsolidationInventory, choices map[SourceID]ConsolidationChoice) {
+	preview.Conflicts = make([]ConsolidationPreviewConflict, 0, len(inventory.Conflicts))
+	preview.Exclusions = append([]ConsolidationExclusion(nil), inventory.Exclusions...)
+	preview.SourceAvailability = make([]ConsolidationPreviewSource, 0, len(inventory.Sources))
+	sources := make(map[SourceID]ConsolidationSource, len(inventory.Sources))
+	for _, source := range inventory.Sources {
+		sources[source.ID] = source
+		resolution := "unresolved"
+		choice, chosen := choices[source.ID]
+		if !source.Eligible {
+			resolution = "excluded"
+		} else if chosen {
+			resolution = "selected"
+		}
+		availability := make([]ConsolidationAvailability, 0, len(inventory.Scope.Applications))
+		for _, application := range inventory.Scope.Applications {
+			observed, exists := source.Availability[application]
+			state, nativeName := "unobserved", ""
+			if exists {
+				state, nativeName = string(observed.State), observed.NativeName
+			}
+			availability = append(availability, ConsolidationAvailability{Application: application, State: state, NativeName: nativeName})
+		}
+		preview.SourceAvailability = append(preview.SourceAvailability, ConsolidationPreviewSource{SourceID: source.ID, SourcePath: source.SourcePath, Eligible: source.Eligible, Resolution: resolution, Action: choice.Action, Availability: availability, BlockedReasons: append([]string(nil), source.BlockedReasons...)})
+	}
+	for _, conflict := range inventory.Conflicts {
+		state := "selected"
+		var conflictSources []ConsolidationSource
+		conflictChoices := map[SourceID]ConsolidationChoice{}
+		for _, sourceID := range conflict.SourceIDs {
+			source, exists := sources[sourceID]
+			choice, chosen := choices[sourceID]
+			if !exists || !source.Eligible || !chosen {
+				state = "unresolved"
+			}
+			if exists {
+				conflictSources = append(conflictSources, source)
+			}
+			if chosen {
+				conflictChoices[sourceID] = choice
+			}
+		}
+		if state == "selected" && validateConflictChoices(conflictSources, conflictChoices) != nil {
+			state = "unresolved"
+		}
+		preview.Conflicts = append(preview.Conflicts, ConsolidationPreviewConflict{ID: conflict.ID, Name: conflict.Name, Kind: conflict.Kind, SourceIDs: append([]SourceID(nil), conflict.SourceIDs...), Reason: conflict.Reason, State: state})
+	}
+}
+
+func resolveConsolidationPreviewContext(preview *ConsolidationPreview) {
+	for index := range preview.SourceAvailability {
+		if preview.SourceAvailability[index].Resolution == "selected" {
+			preview.SourceAvailability[index].Resolution = "resolved"
+		}
+	}
+	for index := range preview.Conflicts {
+		if preview.Conflicts[index].State == "selected" {
+			preview.Conflicts[index].State = "resolved"
+		}
+	}
 }
 
 func cloneConsolidationChoices(values []ConsolidationChoice) []ConsolidationChoice {
@@ -2236,13 +2371,16 @@ func consolidationPlanID(draft ConsolidationDraft) string {
 	return "c-" + hex.EncodeToString(sum[:12])
 }
 
-func consolidationConfirmation(draft ConsolidationDraft, inventory ConsolidationInventory, effects []ConsolidationEffect) (string, error) {
+func consolidationConfirmation(draft ConsolidationDraft, inventory ConsolidationInventory, effects []ConsolidationEffect, preview ConsolidationPreview) (string, error) {
 	encoded, err := json.Marshal(struct {
-		Version int
-		Draft   ConsolidationDraft
-		ScanID  string
-		Effects []ConsolidationEffect
-	}{ConsolidationSchemaVersion, draft, inventory.ScanID, effects})
+		Version            int
+		Draft              ConsolidationDraft
+		ScanID             string
+		Effects            []ConsolidationEffect
+		Conflicts          []ConsolidationPreviewConflict
+		Exclusions         []ConsolidationExclusion
+		SourceAvailability []ConsolidationPreviewSource
+	}{ConsolidationSchemaVersion, draft, inventory.ScanID, effects, preview.Conflicts, preview.Exclusions, preview.SourceAvailability})
 	if err != nil {
 		return "", err
 	}

@@ -286,6 +286,21 @@ func renderConsolidationPreview(out io.Writer, preview collection.ConsolidationP
 		fmt.Fprintf(out, "Canonical library: %s\n", safeInline(preview.Scope.Library))
 		fmt.Fprintf(out, "Selection: %s | remembered-selection evidence: %s\n", safeInline(displayOptional(preview.Scope.SelectionFrom)), safeInline(displayOptional(preview.Scope.RememberedSelectionID)))
 	}
+	for _, conflict := range preview.Conflicts {
+		fmt.Fprintf(out, "Conflict %s | %s | %s | %s | sources %s\n", safeInline(conflict.ID), safeInline(conflict.Kind), safeInline(conflict.State), safeInline(conflict.Reason), strings.Join(sourceIDsForTerminal(conflict.SourceIDs), ", "))
+	}
+	for _, exclusion := range preview.Exclusions {
+		fmt.Fprintf(out, "Excluded %s | %s\n", safeInline(exclusion.Path), safeInline(exclusion.Reason))
+	}
+	for _, source := range preview.SourceAvailability {
+		fmt.Fprintf(out, "Source availability %s | %s | eligible: %t | resolution: %s | action: %s\n", safeInline(string(source.SourceID)), safeInline(source.SourcePath), source.Eligible, safeInline(source.Resolution), safeInline(displayOptional(source.Action)))
+		for _, availability := range source.Availability {
+			fmt.Fprintf(out, "  %s | %s | native name: %s\n", safeInline(availability.Application), safeInline(availability.State), safeInline(displayOptional(availability.NativeName)))
+		}
+		for _, reason := range source.BlockedReasons {
+			fmt.Fprintf(out, "  Blocked: %s\n", safeInline(reason))
+		}
+	}
 	for _, choice := range preview.Choices {
 		fmt.Fprintf(out, "Choice %s | %s | %s\n", safeInline(string(choice.SourceID)), safeInline(choice.Action), safeInline(choice.SourcePath))
 		fmt.Fprintf(out, "  Complete bundle fingerprint: %s\n", safeInline(displayOptional(choice.BundleFingerprint)))
@@ -334,6 +349,13 @@ func renderConsolidationPreview(out io.Writer, preview collection.ConsolidationP
 		for _, reference := range effect.PreservedReferences {
 			fmt.Fprintf(out, "  Existing reference preserved: %s\n", safeInline(reference))
 		}
+		for _, operation := range effect.Operations {
+			if operation.From != "" {
+				fmt.Fprintf(out, "  Operation %s | %s -> %s | %s | %s\n", safeInline(operation.Action), safeInline(operation.From), safeInline(operation.Path), safeInline(operation.State), safeInline(operation.Reason))
+			} else {
+				fmt.Fprintf(out, "  Operation %s | %s | %s | %s\n", safeInline(operation.Action), safeInline(operation.Path), safeInline(operation.State), safeInline(operation.Reason))
+			}
+		}
 	}
 	for _, warning := range preview.Warnings {
 		fmt.Fprintf(out, "Warning: %s\n", safeInline(warning))
@@ -353,6 +375,13 @@ func renderConsolidationOutcome(out io.Writer, outcome collection.ConsolidationA
 	}
 	for _, effect := range outcome.Effects {
 		fmt.Fprintf(out, "%s %s | %s\n", effect.Action, effect.SourceID, safeInline(effect.State))
+		for _, operation := range effect.Operations {
+			if operation.From != "" {
+				fmt.Fprintf(out, "  Operation %s | %s -> %s | %s | %s\n", safeInline(operation.Action), safeInline(operation.From), safeInline(operation.Path), safeInline(operation.State), safeInline(operation.Reason))
+			} else {
+				fmt.Fprintf(out, "  Operation %s | %s | %s | %s\n", safeInline(operation.Action), safeInline(operation.Path), safeInline(operation.State), safeInline(operation.Reason))
+			}
+		}
 	}
 	if outcome.Failure != nil {
 		fmt.Fprintf(out, "Failure: %s | %s | %s\n", outcome.Failure.Code, safeInline(outcome.Failure.Message), safeInline(outcome.Failure.Action))
