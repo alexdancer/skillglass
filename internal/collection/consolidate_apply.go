@@ -17,6 +17,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const maxConsolidationJournalBytes = 4 << 20
+
 type ConsolidationApplyOutcome struct {
 	SchemaVersion    int                   `json:"schema_version"`
 	Operation        string                `json:"operation"`
@@ -413,21 +415,6 @@ func newConsolidationJournal(ctx context.Context, draft ConsolidationDraft, prev
 		}
 		canonicalOwners[path] = owner
 	}
-	if err := ensureConsolidationDirectory(filepath.Dir(selectionPath), true); err != nil {
-		return consolidationJournal{}, fmt.Errorf("remembered selection directory is not private and safely reachable: %w", err)
-	}
-	if err := ensureConsolidationDirectory(filepath.Dir(root), true); err != nil {
-		return consolidationJournal{}, fmt.Errorf("recovery parent is not private and safely reachable: %w", err)
-	}
-	if err := ensureConsolidationDirectory(root, true); err != nil {
-		return consolidationJournal{}, fmt.Errorf("recovery store is not private and safely reachable: %w", err)
-	}
-	if err := ensureConsolidationDirectory(draft.Scope.Library, true); err != nil {
-		return consolidationJournal{}, fmt.Errorf("canonical library is not private and safely reachable: %w", err)
-	}
-	if err := createConsolidationPlanDirectory(planDir); err != nil {
-		return consolidationJournal{}, err
-	}
 	for _, effect := range preview.Effects {
 		if effect.Action == "keep" {
 			continue
@@ -465,6 +452,30 @@ func newConsolidationJournal(ctx context.Context, draft ConsolidationDraft, prev
 		}
 		entry.BeforeRefs = uniqueJournalPaths(entry.BeforeRefs)
 		journal.Entries = append(journal.Entries, entry)
+	}
+	preflightJournal := journal
+	if consolidationEffectsAreNoop(preview.Effects) {
+		preflightJournal.Draft = ConsolidationDraft{}
+		preflightJournal.Confirmation = ""
+		preflightJournal.Entries = []consolidationJournalEntry{}
+	}
+	if _, err := encodeConsolidationJournal(preflightJournal); err != nil {
+		return consolidationJournal{}, err
+	}
+	if err := ensureConsolidationDirectory(filepath.Dir(selectionPath), true); err != nil {
+		return consolidationJournal{}, fmt.Errorf("remembered selection directory is not private and safely reachable: %w", err)
+	}
+	if err := ensureConsolidationDirectory(filepath.Dir(root), true); err != nil {
+		return consolidationJournal{}, fmt.Errorf("recovery parent is not private and safely reachable: %w", err)
+	}
+	if err := ensureConsolidationDirectory(root, true); err != nil {
+		return consolidationJournal{}, fmt.Errorf("recovery store is not private and safely reachable: %w", err)
+	}
+	if err := ensureConsolidationDirectory(draft.Scope.Library, true); err != nil {
+		return consolidationJournal{}, fmt.Errorf("canonical library is not private and safely reachable: %w", err)
+	}
+	if err := createConsolidationPlanDirectory(planDir); err != nil {
+		return consolidationJournal{}, err
 	}
 	return journal, nil
 }
@@ -865,16 +876,27 @@ func consolidationJournalPath(id string) string {
 	return filepath.Join(consolidationBackupRoot(), id, "record.json")
 }
 
+func encodeConsolidationJournal(journal consolidationJournal) ([]byte, error) {
+	encoded, err := json.MarshalIndent(journal, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	encoded = append(encoded, '\n')
+	if len(encoded) > maxConsolidationJournalBytes {
+		return nil, fmt.Errorf("recovery journal exceeds %d MiB encoded limit", maxConsolidationJournalBytes/(1<<20))
+	}
+	return encoded, nil
+}
+
 func writeConsolidationJournal(journal consolidationJournal) error {
 	path := consolidationJournalPath(journal.ID)
 	if !filepath.IsAbs(path) {
 		return errors.New("recovery journal path is not absolute")
 	}
-	encoded, err := json.MarshalIndent(journal, "", "  ")
+	encoded, err := encodeConsolidationJournal(journal)
 	if err != nil {
 		return err
 	}
-	encoded = append(encoded, '\n')
 	return writePrivateAtomic(path, encoded)
 }
 
@@ -899,7 +921,7 @@ func readConsolidationJournal(id string) (consolidationJournal, error) {
 	if err := unix.Fstatat(int(parent.Fd()), filepath.Base(path), &before, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 		return consolidationJournal{}, err
 	}
-	if before.Mode&unix.S_IFMT != unix.S_IFREG || before.Uid != uint32(os.Geteuid()) || before.Mode&0o077 != 0 || before.Size > 4<<20 {
+	if before.Mode&unix.S_IFMT != unix.S_IFREG || before.Uid != uint32(os.Geteuid()) || before.Mode&0o077 != 0 || before.Size > maxConsolidationJournalBytes {
 		return consolidationJournal{}, errors.New("recovery journal is not a bounded regular file")
 	}
 	fd, err := unix.Openat(int(parent.Fd()), filepath.Base(path), unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
@@ -912,14 +934,14 @@ func readConsolidationJournal(id string) (consolidationJournal, error) {
 	if err := unix.Fstat(fd, &opened); err != nil {
 		return consolidationJournal{}, err
 	}
-	if opened.Dev != before.Dev || opened.Ino != before.Ino || opened.Uid != uint32(os.Geteuid()) || opened.Mode&0o077 != 0 || opened.Size > 4<<20 {
+	if opened.Dev != before.Dev || opened.Ino != before.Ino || opened.Uid != uint32(os.Geteuid()) || opened.Mode&0o077 != 0 || opened.Size > maxConsolidationJournalBytes {
 		return consolidationJournal{}, errors.New("recovery journal changed during inspection")
 	}
-	raw, err := io.ReadAll(io.LimitReader(file, 4<<20+1))
+	raw, err := io.ReadAll(io.LimitReader(file, maxConsolidationJournalBytes+1))
 	if err != nil {
 		return consolidationJournal{}, err
 	}
-	if len(raw) > 4<<20 {
+	if len(raw) > maxConsolidationJournalBytes {
 		return consolidationJournal{}, errors.New("recovery journal exceeds 4 MiB")
 	}
 	var journal consolidationJournal

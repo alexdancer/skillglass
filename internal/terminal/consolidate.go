@@ -12,18 +12,8 @@ import (
 )
 
 func runConsolidate(args []string, stdout, stderr io.Writer) int {
-	showHelp := len(args) == 0 || args[0] == "help"
-	for _, arg := range args {
-		if arg == "-h" || arg == "--help" {
-			showHelp = true
-		}
-	}
-	if showHelp {
-		if reviewJSONRequested(args) {
-			return writeReviewJSON(map[string]any{"schema_version": 1, "operation": "consolidate-help", "help": usage}, stdout, stderr)
-		}
-		_, _ = io.WriteString(stdout, usage)
-		return 0
+	if len(args) == 0 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
+		return writeConsolidationHelp(args, stdout, stderr)
 	}
 	switch args[0] {
 	case "scan":
@@ -39,6 +29,14 @@ func runConsolidate(args []string, stdout, stderr io.Writer) int {
 	}
 }
 
+func writeConsolidationHelp(args []string, stdout, stderr io.Writer) int {
+	if reviewJSONRequested(args) {
+		return writeReviewJSON(map[string]any{"schema_version": 1, "operation": "consolidate-help", "help": usage}, stdout, stderr)
+	}
+	_, _ = io.WriteString(stdout, usage)
+	return 0
+}
+
 func runConsolidateScan(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("consolidate scan", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -50,6 +48,9 @@ func runConsolidateScan(args []string, stdout, stderr io.Writer) int {
 	flags.Var(&roots, "root", "personal source root; repeatable")
 	flags.Var(&library, "library", "canonical shared bundle library")
 	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return writeConsolidationHelp(args, stdout, stderr)
+		}
 		return consolidateCLIError("consolidate-scan", err, 2, reviewJSONRequested(args), stdout, stderr)
 	}
 	if flags.NArg() != 0 {
@@ -110,6 +111,9 @@ func runConsolidatePreview(args []string, stdout, stderr io.Writer) int {
 	draftPath := flags.String("draft", "", "agent-authored consolidation draft JSON")
 	machine := flags.Bool("json", false, "emit one versioned JSON object")
 	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return writeConsolidationHelp(args, stdout, stderr)
+		}
 		return consolidateCLIError("consolidate-preview", err, 2, reviewJSONRequested(args), stdout, stderr)
 	}
 	if flags.NArg() != 0 || *draftPath == "" {
@@ -137,6 +141,9 @@ func runConsolidateApply(args []string, stdout, stderr io.Writer) int {
 	confirmation := flags.String("confirm", "", "exact confirmation token from fresh preview")
 	machine := flags.Bool("json", false, "emit one versioned JSON object")
 	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return writeConsolidationHelp(args, stdout, stderr)
+		}
 		return consolidateCLIError("consolidate-apply", err, 2, reviewJSONRequested(args), stdout, stderr)
 	}
 	if flags.NArg() != 0 || *draftPath == "" || *confirmation == "" {
@@ -164,6 +171,9 @@ func runConsolidateRecover(args []string, stdout, stderr io.Writer) int {
 	confirmation := flags.String("confirm", "", "exact recovery confirmation token from preview")
 	machine := flags.Bool("json", false, "emit one versioned JSON object")
 	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return writeConsolidationHelp(args, stdout, stderr)
+		}
 		return consolidateCLIError("consolidate-recover", err, 2, reviewJSONRequested(args), stdout, stderr)
 	}
 	if flags.NArg() != 0 || *backupID == "" {
