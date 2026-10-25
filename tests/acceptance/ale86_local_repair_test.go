@@ -287,7 +287,7 @@ func TestALE86HermesOrdinaryAncestorAliasPreservesExplicitProfile(t *testing.T) 
 	if aliasProof == nil || aliasProof.ID != "hermes-explicit-profile-index-alias-v1" || !aliasSource.Eligible {
 		t.Fatalf("direct HOME Hermes profile reached through the ordinary /var ancestor alias must retain its relocation proof: selected_coverage=%s profile=%q source_eligible=%t", aliasInventory.SelectedCoverage, hermesAliasProfileID(aliasProof), aliasSource.Eligible)
 	}
-	if aliasProof == nil || aliasProof.ID != "hermes-explicit-profile-index-alias-v1" || !aliasSource.Eligible || aliasPreviewResult.code != 0 || aliasPreview.State != "ready" || aliasPreview.Confirmation == "" {
+	if aliasPreviewResult.code != 0 || aliasPreview.State != "ready" || aliasPreview.Confirmation == "" {
 		t.Fatalf("direct HOME Hermes profile reached through the ordinary /var ancestor alias must retain relocation support: selected_coverage=%s profile=%q source_eligible=%t preview_exit=%d preview_state=%s preview_failure=%#v", aliasInventory.SelectedCoverage, hermesAliasProfileID(aliasProof), aliasSource.Eligible, aliasPreviewResult.code, aliasPreview.State, aliasPreview.Failure)
 	}
 }
