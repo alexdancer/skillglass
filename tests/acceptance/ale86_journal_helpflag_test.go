@@ -13,7 +13,7 @@ import (
 
 func TestALE86RecoveryJournalEncodedLimit(t *testing.T) {
 	t.Run("oversized-plan-refuses-before-effects", func(t *testing.T) {
-		fx, sourcePath, library, draftPath, preview := journalLimitFixture(t, strings.Repeat("R", 5<<20), "journal-size/large")
+		fx, sourcePath, _, draftPath, preview := journalLimitFixture(t, strings.Repeat("R", 5<<20), "journal-size/large")
 		if preview.State != "ready" {
 			t.Fatalf("large reason did not reach the apply boundary: state=%s failure=%+v", preview.State, preview.Failure)
 		}

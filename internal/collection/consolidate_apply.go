@@ -351,7 +351,8 @@ func consolidationEffectsAreNoop(effects []ConsolidationEffect) bool {
 
 func newConsolidationJournal(ctx context.Context, draft ConsolidationDraft, preview ConsolidationPreview) (consolidationJournal, error) {
 	planID := preview.RecoveryID
-	if err := consolidationMovesPreflight(ctx, preview.Effects); err != nil {
+	moveDevicesRequired := !consolidationEffectsAreNoop(preview.Effects)
+	if err := consolidationMovesPreflightWithDevice(ctx, preview.Effects, moveDevicesRequired, existingParentDevice); err != nil {
 		return consolidationJournal{}, err
 	}
 	selectionPath, oldBytes, oldExists, err := captureConsolidationSelection()
@@ -378,7 +379,7 @@ func newConsolidationJournal(ctx context.Context, draft ConsolidationDraft, prev
 	if inventory.Failure != nil || inventory.SelectedCoverage != Complete || !inventory.LibrarySafe || inventory.ScanID != preview.ScanID {
 		return consolidationJournal{}, errors.New("complete source and consumer evidence changed or the library became unsafe after preview; no filesystem changes were made")
 	}
-	if err := consolidationMovesPreflight(ctx, preview.Effects); err != nil {
+	if err := consolidationMovesPreflightWithDevice(ctx, preview.Effects, moveDevicesRequired, existingParentDevice); err != nil {
 		return consolidationJournal{}, err
 	}
 	if err := sameBytesOrAbsent(selectionPath, oldBytes, oldExists); err != nil {
@@ -459,7 +460,7 @@ func newConsolidationJournal(ctx context.Context, draft ConsolidationDraft, prev
 		preflightJournal.Confirmation = ""
 		preflightJournal.Entries = []consolidationJournalEntry{}
 	}
-	if _, err := encodeConsolidationJournal(preflightJournal); err != nil {
+	if err := preflightConsolidationJournalLifecycle(preflightJournal); err != nil {
 		return consolidationJournal{}, err
 	}
 	if err := ensureConsolidationDirectory(filepath.Dir(selectionPath), true); err != nil {
@@ -505,7 +506,7 @@ func consolidationPathResolvesTo(path, target string) bool {
 	return err == nil && filepath.Clean(resolved) == filepath.Clean(target)
 }
 
-func consolidationMovesPreflight(ctx context.Context, effects []ConsolidationEffect) error {
+func consolidationMovesPreflightWithDevice(ctx context.Context, effects []ConsolidationEffect, checkMoveDevices bool, deviceForPath func(string) (int32, error)) error {
 	for _, effect := range effects {
 		if effect.Action == "keep" {
 			continue
@@ -519,34 +520,98 @@ func consolidationMovesPreflight(ctx context.Context, effects []ConsolidationEff
 		if err != nil || ownership.State != "local-user-controlled" {
 			return fmt.Errorf("source move is not ownership-verified: %s: %s", effect.SourcePath, errors.Join(err, errors.New(ownership.Reason)))
 		}
-		destination := effect.BackupPath
-		if effect.Action == "share" {
-			destination = effect.CanonicalPath
-		}
-		device, err := existingParentDevice(destination)
-		if err != nil {
-			return fmt.Errorf("destination filesystem is unavailable: %s: %w", destination, err)
-		}
-		info, err := os.Lstat(effect.SourcePath)
-		if err != nil {
-			return fmt.Errorf("source disappeared before apply: %s: %w", effect.SourcePath, err)
-		}
-		var source unix.Stat_t
-		if err := unix.Lstat(effect.SourcePath, &source); err != nil {
-			return err
-		}
-		if source.Dev != device {
-			return fmt.Errorf("cross-device relocation is unsupported for %s (source device %d, destination device %d)", effect.SourcePath, source.Dev, device)
-		}
-		if effect.Action == "share" {
-			backupDevice, backupErr := existingParentDevice(effect.BackupPath)
-			if backupErr != nil || backupDevice != source.Dev {
-				return fmt.Errorf("duplicate recovery path must be on the source filesystem: %s", effect.BackupPath)
+		if checkMoveDevices {
+			destination := effect.BackupPath
+			if effect.Action == "share" {
+				destination = effect.CanonicalPath
+			}
+			device, err := deviceForPath(destination)
+			if err != nil {
+				return fmt.Errorf("destination filesystem is unavailable: %s: %w", destination, err)
+			}
+			var source unix.Stat_t
+			if err := unix.Lstat(effect.SourcePath, &source); err != nil {
+				return fmt.Errorf("source disappeared before apply: %s: %w", effect.SourcePath, err)
+			}
+			if source.Dev != device {
+				return fmt.Errorf("cross-device relocation is unsupported for %s (source device %d, destination device %d)", effect.SourcePath, source.Dev, device)
+			}
+			if effect.Action == "share" {
+				backupDevice, backupErr := deviceForPath(effect.BackupPath)
+				if backupErr != nil || backupDevice != source.Dev {
+					return fmt.Errorf("duplicate recovery path must be on the source filesystem: %s", effect.BackupPath)
+				}
 			}
 		}
-		_ = info
 	}
 	return nil
+}
+
+// preflightConsolidationJournalLifecycle proves that the exact initial record
+// and a conservative upper bound for later apply/recovery states fit the same
+// encoded limit enforced by the journal reader and writer. All candidate paths
+// are known after the scan, so one bounded projection avoids repeatedly
+// serializing each growing transaction prefix.
+func preflightConsolidationJournalLifecycle(journal consolidationJournal) error {
+	if _, err := encodeConsolidationJournal(journal); err != nil {
+		return err
+	}
+	projection := consolidationJournalLifecycleProjection(journal)
+	if _, err := encodeConsolidationJournal(projection); err != nil {
+		return fmt.Errorf("planned consolidation journal lifecycle exceeds the recovery limit: %w", err)
+	}
+	return nil
+}
+
+func consolidationJournalLifecycleProjection(journal consolidationJournal) consolidationJournal {
+	projection := journal
+	projection.Entries = append([]consolidationJournalEntry(nil), journal.Entries...)
+	projection.State = "recovering"
+	projection.PendingSelectionApply = true
+	projection.SelectionApplied = true
+	projection.SelectionRestored = true
+	projection.PendingSelectionRestore = true
+	for i := range projection.Entries {
+		entry := &projection.Entries[i]
+		entry.MovedToCanonical = true
+		entry.MovedToBackup = true
+		entry.CanonicalWasPresent = true
+		entry.RestoredToSource = true
+		entry.PendingMove = "duplicate"
+		entry.PendingRecoveryMove = "canonical"
+		if entry.Action != "share" {
+			continue
+		}
+		paths := make([]string, 0, len(entry.ExpectedLinks)+1)
+		if filepath.Clean(entry.SourcePath) != filepath.Clean(entry.CanonicalPath) {
+			paths = append(paths, entry.SourcePath)
+		}
+		paths = append(paths, entry.ExpectedLinks...)
+		paths = uniqueJournalPaths(paths)
+		entry.CreatedLinks = append([]string(nil), paths...)
+		// Apply and recovery serialize one current intent or failure at a time;
+		// the full Created/Removed sets bound the completed path prefixes.
+		entry.PendingLinks = longestEncodedJournalPath(paths)
+		entry.FailedLinks = longestEncodedJournalPath(paths)
+		entry.RemovedLinks = append([]string(nil), paths...)
+		entry.PendingRecoveryLinks = longestEncodedJournalPath(paths)
+	}
+	return projection
+}
+
+func longestEncodedJournalPath(paths []string) []string {
+	longest := ""
+	longestEncodedSize := -1
+	for _, path := range paths {
+		encoded, err := json.Marshal(path)
+		if err == nil && len(encoded) > longestEncodedSize {
+			longest, longestEncodedSize = path, len(encoded)
+		}
+	}
+	if longestEncodedSize < 0 {
+		return []string{}
+	}
+	return []string{longest}
 }
 
 func applyConsolidationEntries(ctx context.Context, journal *consolidationJournal) error {
@@ -1182,7 +1247,11 @@ func encodeConsolidationSelection(request ConsolidationRequest) ([]byte, error) 
 	if err != nil {
 		return nil, err
 	}
-	return append(encoded, '\n'), nil
+	encoded = append(encoded, '\n')
+	if len(encoded) > maxConsolidationSelectionBytes {
+		return nil, fmt.Errorf("remembered consolidation selection exceeds %d KiB encoded limit", maxConsolidationSelectionBytes/1024)
+	}
+	return encoded, nil
 }
 
 func consolidateRecoverySeal(journal consolidationJournal, inventory ConsolidationInventory, effects []ConsolidationEffect) string {

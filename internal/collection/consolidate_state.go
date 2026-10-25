@@ -12,6 +12,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const maxConsolidationSelectionBytes = 64 << 10
+
 type consolidationSelection struct {
 	SchemaVersion int      `json:"schema_version"`
 	Applications  []string `json:"applications"`
@@ -86,16 +88,14 @@ func RememberConsolidationSelection(request ConsolidationRequest) error {
 	if err != nil {
 		return err
 	}
+	encoded, err := encodeConsolidationSelection(request)
+	if err != nil {
+		return err
+	}
 	directory := filepath.Dir(path)
 	if err := ensureConsolidationDirectory(directory, true); err != nil {
 		return fmt.Errorf("create consolidation selection directory: %w", err)
 	}
-	value := consolidationSelection{SchemaVersion: ConsolidationSchemaVersion, Applications: append([]string(nil), request.Applications...), Roots: append([]string(nil), request.Roots...), Library: request.Library}
-	encoded, err := json.MarshalIndent(value, "", "  ")
-	if err != nil {
-		return err
-	}
-	encoded = append(encoded, '\n')
 	return writePrivateAtomic(path, encoded)
 }
 
@@ -192,7 +192,7 @@ func readPrivateSelection(path string) ([]byte, bool, error) {
 		}
 		return nil, false, err
 	}
-	if before.Mode&unix.S_IFMT != unix.S_IFREG || before.Uid != uint32(os.Geteuid()) || before.Mode&0o077 != 0 || before.Size > 64<<10 {
+	if before.Mode&unix.S_IFMT != unix.S_IFREG || before.Uid != uint32(os.Geteuid()) || before.Mode&0o077 != 0 || before.Size > maxConsolidationSelectionBytes {
 		return nil, false, errors.New("remembered selection is not a private bounded regular file")
 	}
 	fd, err := unix.Openat(int(parent.Fd()), filepath.Base(path), unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
@@ -205,14 +205,14 @@ func readPrivateSelection(path string) ([]byte, bool, error) {
 	if err := unix.Fstat(fd, &opened); err != nil {
 		return nil, false, err
 	}
-	if opened.Dev != before.Dev || opened.Ino != before.Ino || opened.Uid != uint32(os.Geteuid()) || opened.Mode&0o077 != 0 || opened.Size > 64<<10 {
+	if opened.Dev != before.Dev || opened.Ino != before.Ino || opened.Uid != uint32(os.Geteuid()) || opened.Mode&0o077 != 0 || opened.Size > maxConsolidationSelectionBytes {
 		return nil, false, errors.New("remembered selection changed during inspection")
 	}
-	raw, err := io.ReadAll(io.LimitReader(file, 64<<10+1))
+	raw, err := io.ReadAll(io.LimitReader(file, maxConsolidationSelectionBytes+1))
 	if err != nil {
 		return nil, false, err
 	}
-	if len(raw) > 64<<10 {
+	if len(raw) > maxConsolidationSelectionBytes {
 		return nil, false, errors.New("remembered consolidation selection exceeds 64 KiB")
 	}
 	return raw, true, nil

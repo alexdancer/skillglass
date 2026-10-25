@@ -40,36 +40,19 @@ about the installed application version or current session.
 
 For the Codex disabled-choice case, the exact selector was an absolute
 `skills.config.path` ending in the existing source's `SKILL.md`, with
-`enabled = false`. The before/after catalog and config responses, config hash,
-tree manifests, aliases, invocation receipts, binary pin, and sealed-boundary
-results were retained at
-`/private/tmp/skillglass-ale86/native-codex-relocation-final/evidence/` for
-this run. The probe first proved fixture reads/writes and native launch, then
-proved denials for outside reads/writes, symlink escape, network, unapproved
-child execution, and live home/config/skills access. The app-server calls were
-limited to `initialize`, `initialized`, `skills/list` with `forceReload`, and
-`config/read` with layers. The exact 0.162.1 binary was checked before launch;
-the repository's older 0.155.1 containment pin was not treated as evidence.
-
-The Claude, OpenCode and Pi receipts and native catalogs are retained at
-`/private/tmp/skillglass-ale86/native-claude-relocation/`,
-`/private/tmp/skillglass-ale86/native-relocation-matrix/opencode-final/` and
-`/private/tmp/skillglass-ale86/native-relocation-matrix/pi-final/`. OpenCode's
+`enabled = false`. The probe compared before/after catalogs, configuration
+bytes, hashes, tree manifests and aliases. Its sealed boundary denied outside
+reads and writes, symlink escape, network, unapproved child execution, and live
+home/config/skills access. App-server calls were limited to `initialize`,
+`initialized`, `skills/list` with `forceReload`, and `config/read` with layers.
+The exact 0.162.1 binary was checked before launch; the repository's older
+0.155.1 containment pin was not treated as evidence. Claude, OpenCode, Pi and
+Hermes probes used their pinned profiles and recorded methods above. OpenCode's
 repository containment regression passed. Pi's boundary checks denied live
 home, external canary reads, outside writes, network, and child execution.
-Both results are bounded observations, not portable promises. They do not
-establish whether a product is installed in a particular user's environment
-or whether a current session has loaded the skill.
-
-Hermes receipts for the default-root and explicit-profile index probes are at
-`/private/tmp/skillglass-ale86/native-hermes-default-relocation/receipt.json`
-and `/private/tmp/skillglass-ale86/native-hermes-relocation/receipt.json`.
-The current run's immutable retained native-evidence set is also recorded under
-`.agent-loop/ale-86/native-evidence/`, with manifest
-`.agent-loop/ale-86/native-evidence-manifest.json`. This is ignored run evidence,
-not a shipped application artifact. The retained evidence manifest SHA-256 is
-`84b88205457011feb6de9ecb68f241f36273bc185b5cbc72246e6b3ee91c6f42`; it covers
-the native proof trees, not product source or generated documentation.
+Per-run receipts belong in a temporary evidence directory rather than this
+versioned record. These results remain bounded observations, not portable
+promises, and do not establish installation or current-session adoption.
 
 ## Public executable acceptance
 
@@ -82,9 +65,11 @@ the live home directory.
 Run the ALE-86 public journeys with:
 
 ```sh
+evidence_dir="${SKILLGLASS_ALE86_EVIDENCE_DIR:-${TMPDIR:-/tmp}/skillglass-ale86-acceptance}"
+mkdir -p "$evidence_dir"
 SKILLGLASS_TEST_RUN='^Test(ALE86|EDIT1|OWN1|REC)' \
-GOCACHE=/private/tmp/skillglass-ale86/go-cache GOPROXY=off GOSUMDB=off \
-sh tests/acceptance/run.sh /private/tmp/skillglass-ale86/documented-ale86-run
+GOCACHE="${GOCACHE:-${TMPDIR:-/tmp}/skillglass-go-cache}" GOPROXY=off GOSUMDB=off \
+sh tests/acceptance/run.sh "$evidence_dir"
 ```
 
 Coverage includes selected Codex/Pi/OpenCode sources with excluded Hermes
@@ -94,9 +79,12 @@ and stale/extra route IDs refusing; remembered applications, roots and library;
 reporting; successful preference-only changes persist a metadata-only recovery
 record that restores the prior selection without changing bundles or links;
 genuinely unchanged reruns create no recovery record and write no selection
-state; fresh recovery; stale source/selection refusal; exact disabled
-Codex selector preservation with config bytes unchanged; custom roots and
-library overlap refusal; subset portability and unknown approval; identical
+state; remembered selections are limited to 64 KiB encoded and oversized
+requests refuse before state or bundle effects; journal preflight checks a
+conservative encoded-size projection of planned apply and recovery states under
+the 4 MiB reader/writer limit; fresh recovery; stale source/selection refusal;
+exact disabled Codex selector preservation with config bytes unchanged; custom
+roots and library overlap refusal; subset portability and unknown approval; identical
 complete bundles with large opaque assets; divergent resource winner/archive
 recovery; managed Codex plugin exclusion; excluded Hermes physical ownership;
 nested-source protection; keep-only behavior without a native relocation

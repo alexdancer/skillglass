@@ -3,11 +3,128 @@ package collection
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
+
+func TestRememberConsolidationSelectionRejectsOversizedEncodingBeforeCreatingState(t *testing.T) {
+	base := t.TempDir()
+	config := filepath.Join(base, "config")
+	if err := os.MkdirAll(config, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", filepath.Join(base, "home"))
+	t.Setenv("XDG_CONFIG_HOME", config)
+	roots := make([]string, 12_000)
+	for i := range roots {
+		roots[i] = "x"
+	}
+	request := ConsolidationRequest{Applications: []string{"pi"}, Roots: roots, Library: filepath.Join(base, "library")}
+	encoded, err := json.MarshalIndent(consolidationSelection{SchemaVersion: ConsolidationSchemaVersion, Applications: request.Applications, Roots: request.Roots, Library: request.Library}, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded = append(encoded, '\n')
+	if len(strings.Join(roots, "")) >= maxConsolidationSelectionBytes || len(encoded) <= maxConsolidationSelectionBytes {
+		t.Fatalf("fixture must exceed the encoded limit by JSON structure alone: raw_root_bytes=%d encoded=%d", len(strings.Join(roots, "")), len(encoded))
+	}
+	if err := RememberConsolidationSelection(request); err == nil || !strings.Contains(err.Error(), "64 KiB encoded limit") {
+		t.Fatalf("oversized selection writer did not refuse before writing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(config, "skillglass")); !os.IsNotExist(err) {
+		t.Fatalf("oversized selection created its state directory: %v", err)
+	}
+}
+
+func TestConsolidationMoveDevicePreflightIsSkippedOnlyForNoop(t *testing.T) {
+	_, _, library := consolidationLibraryAuditFixture(t)
+	sourcePath := canonicalFixturePath(t, filepath.Join(t.TempDir(), "move-device-source"))
+	if err := os.MkdirAll(sourcePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourcePath, "SKILL.md"), []byte("---\nname: move-device\ndescription: test\n---\nmove device test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	source, fingerprint, complete, reason := consolidationFingerprintPath(context.Background(), sourcePath)
+	if !complete || source.ID == "" {
+		t.Fatalf("move source lacks complete identity: complete=%t source=%q reason=%s", complete, source.ID, reason)
+	}
+	effect := ConsolidationEffect{Action: "share", SourceID: source.ID, SourcePath: sourcePath, CanonicalPath: filepath.Join(library, "move-device"), BackupPath: filepath.Join(library, ".backups", "move-device"), BundleFingerprint: fingerprint}
+	deviceCalls := 0
+	deviceForPath := func(string) (int32, error) {
+		deviceCalls++
+		return 0, nil
+	}
+	if err := consolidationMovesPreflightWithDevice(context.Background(), []ConsolidationEffect{effect}, false, deviceForPath); err != nil {
+		t.Fatalf("fresh no-op preflight should retain source/ownership checks without requiring move devices: %v", err)
+	}
+	if deviceCalls != 0 {
+		t.Fatalf("no-op called move-device lookup %d times", deviceCalls)
+	}
+	var sourceStat unix.Stat_t
+	if err := unix.Lstat(sourcePath, &sourceStat); err != nil {
+		t.Fatal(err)
+	}
+	deviceForPath = func(string) (int32, error) {
+		deviceCalls++
+		return sourceStat.Dev + 1, nil
+	}
+	err := consolidationMovesPreflightWithDevice(context.Background(), []ConsolidationEffect{effect}, true, deviceForPath)
+	if err == nil || !strings.Contains(err.Error(), "cross-device relocation is unsupported") {
+		t.Fatalf("real move preflight did not preserve its cross-device refusal: calls=%d err=%v", deviceCalls, err)
+	}
+}
+
+func TestConsolidationJournalLifecycleProjectionCoversMultiLinkStates(t *testing.T) {
+	paths := []string{"/native/codex/skill", "/native/opencode/skill", "/native/pi/skill"}
+	journal := consolidationJournal{
+		SchemaVersion: ConsolidationSchemaVersion,
+		ID:            "c-0123456789abcdef01234567",
+		State:         "prepared",
+		Entries: []consolidationJournalEntry{{
+			SourceID:             SourceID("src_aaaaaaaaaaaaaaaaaaaaaaaaaa"),
+			Action:               "share",
+			SourcePath:           paths[2],
+			CanonicalPath:        "/library/skill",
+			ExpectedLinks:        paths[:2],
+			CreatedLinks:         []string{},
+			PendingLinks:         []string{},
+			FailedLinks:          []string{},
+			RemovedLinks:         []string{},
+			PendingRecoveryLinks: []string{},
+		}},
+	}
+	projected := consolidationJournalLifecycleProjection(journal)
+	entry := projected.Entries[0]
+	for label, actual := range map[string][]string{"created": entry.CreatedLinks, "removed": entry.RemovedLinks} {
+		if len(actual) != len(paths) {
+			t.Errorf("%s projection has %d candidate paths, want %d", label, len(actual), len(paths))
+			continue
+		}
+		for index := range paths {
+			if actual[index] != paths[index] {
+				t.Errorf("%s path[%d]=%q, want %q", label, index, actual[index], paths[index])
+			}
+		}
+	}
+	for label, actual := range map[string][]string{"pending apply": entry.PendingLinks, "failed": entry.FailedLinks, "pending recovery": entry.PendingRecoveryLinks} {
+		if len(actual) != 1 || actual[0] != paths[1] {
+			t.Errorf("%s projection did not retain the longest JSON-encoded candidate: %#v", label, actual)
+		}
+	}
+	if projected.State != "recovering" || !projected.PendingSelectionApply || !projected.SelectionApplied || !projected.SelectionRestored || !projected.PendingSelectionRestore || entry.PendingMove != "duplicate" || entry.PendingRecoveryMove != "canonical" || !entry.MovedToCanonical || !entry.MovedToBackup || !entry.CanonicalWasPresent || !entry.RestoredToSource {
+		t.Fatalf("projection omitted a reachable state marker: journal=%#v entry=%#v", projected, entry)
+	}
+	original := journal.Entries[0]
+	if journal.State != "prepared" || len(original.CreatedLinks) != 0 || len(original.PendingLinks) != 0 || len(original.FailedLinks) != 0 || len(original.RemovedLinks) != 0 || len(original.PendingRecoveryLinks) != 0 || original.PendingMove != "" || original.PendingRecoveryMove != "" {
+		t.Fatalf("building the size projection mutated the prepared journal: %#v", original)
+	}
+}
 
 func TestConsolidationDestinationNamesDeduplicateOnlyCompleteIdenticalBundles(t *testing.T) {
 	var names consolidationDestinationNames
