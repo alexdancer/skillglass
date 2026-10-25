@@ -301,9 +301,15 @@ func prepareALE86Recovery(t *testing.T, fx fixture, archive bool) ale86RecoveryF
 	firstManifest := []byte("---\nname: retry-source\ndescription: recovery retry fixture\n---\nRestore this exact source.\n")
 	var secondPath string
 	var secondManifest []byte
+	firstApp, secondApp := "codex", "pi"
 	if archive {
-		firstPath = filepath.Join(fx.home, ".codex", "skills", "recovery-archive")
-		secondPath = filepath.Join(fx.home, ".pi", "agent", "skills", "recovery-archive")
+		// CodeAF can consume Codex's personal skills while unselected, so keep
+		// this archive/recovery fixture on independently selected Pi and Hermes
+		// roots. The fixture uses Pi's proven agent skills root and Hermes's
+		// proven default root with no active_profile marker.
+		firstApp, secondApp = "pi", "hermes"
+		firstPath = filepath.Join(fx.home, ".pi", "agent", "skills", "recovery-archive")
+		secondPath = filepath.Join(fx.home, ".hermes", "skills", "recovery-archive")
 		firstManifest = []byte("---\nname: recovery-archive\ndescription: divergent recovery fixture\n---\nWinner source bytes.\n")
 		secondManifest = []byte("---\nname: recovery-archive\ndescription: divergent recovery fixture\n---\nArchived source bytes.\n")
 		writeFile(t, filepath.Join(firstPath, "SKILL.md"), firstManifest, 0o644)
@@ -311,7 +317,7 @@ func prepareALE86Recovery(t *testing.T, fx fixture, archive bool) ale86RecoveryF
 	} else {
 		writeFile(t, filepath.Join(firstPath, "SKILL.md"), firstManifest, 0o644)
 	}
-	scan := fx.run(t, "consolidate", "scan", "--app", "codex", "--app", "pi", "--library", library, "--json")
+	scan := fx.run(t, "consolidate", "scan", "--app", firstApp, "--app", secondApp, "--library", library, "--json")
 	assertExit(t, scan, 0)
 	var inventory collection.ConsolidationInventory
 	decodeJSON(t, scan.stdout, &inventory)
@@ -457,6 +463,7 @@ func TestALE86RecoveryRetryAllowsRecordedArchiveRestore(t *testing.T) {
 	}
 	fx := newFixture(t)
 	fixture := prepareALE86Recovery(t, fx, true)
+	t.Logf("archive recovery order: winner=%s archive=%s", fixture.firstSourcePath, fixture.secondSourcePath)
 	forceALE86PartialRecovery(t, fx, fixture)
 	if got := readBytes(t, filepath.Join(fixture.secondSourcePath, "SKILL.md")); !bytes.Equal(got, fixture.secondManifest) {
 		t.Fatalf("recorded archive restore did not preserve its original source path: %q", got)

@@ -66,20 +66,30 @@ func setupPiProspectiveIgnoreKnown(ctx context.Context, s *Snapshot, root RootRe
 	if !ok || fact.discovery == nil {
 		return false
 	}
-	relation := setupPathsOverlap(destination, root.Requested)
+	rootPath, err := canonicalizePathParent(root.Requested)
+	if err != nil {
+		return false
+	}
+	rootPath = filepath.Clean(rootPath)
+	destinationPath, err := canonicalizePathParent(destination)
+	if err != nil {
+		return false
+	}
+	destinationPath = filepath.Clean(destinationPath)
+	relation := setupPathsOverlap(destinationPath, rootPath)
 	if relation == deleteUnrelated {
 		return true
 	}
-	if relation != deleteRelated || !pathWithin(root.Requested, destination) {
+	if relation != deleteRelated || !pathWithin(rootPath, destinationPath) {
 		return false
 	}
-	relative, err := filepath.Rel(root.Requested, destination)
+	relative, err := filepath.Rel(rootPath, destinationPath)
 	if err != nil {
 		return false
 	}
 	discovery := newPiDiscovery()
 	matcher := &piIgnoreMatcher{}
-	dir := root.Requested
+	dir := rootPath
 	parts := []string{}
 	if relative != "." {
 		parts = strings.Split(relative, string(filepath.Separator))
@@ -96,12 +106,12 @@ func setupPiProspectiveIgnoreKnown(ctx context.Context, s *Snapshot, root RootRe
 		if _, err := setupProspectivePath(dir); err != nil {
 			return false
 		}
-		matcher.addDirectory(discovery, root.Requested, dir)
+		matcher.addDirectory(discovery, rootPath, dir)
 		if i == len(parts) {
 			break
 		}
 		dir = filepath.Join(dir, parts[i])
 	}
-	occurrence := filepath.Join(destination, "SKILL.md")
+	occurrence := filepath.Join(destinationPath, "SKILL.md")
 	return !matcher.uncertain(piIgnoreRelative(discovery, occurrence))
 }

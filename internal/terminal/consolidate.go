@@ -350,11 +350,7 @@ func renderConsolidationPreview(out io.Writer, preview collection.ConsolidationP
 			fmt.Fprintf(out, "  Existing reference preserved: %s\n", safeInline(reference))
 		}
 		for _, operation := range effect.Operations {
-			if operation.From != "" {
-				fmt.Fprintf(out, "  Operation %s | %s -> %s | %s | %s\n", safeInline(operation.Action), safeInline(operation.From), safeInline(operation.Path), safeInline(operation.State), safeInline(operation.Reason))
-			} else {
-				fmt.Fprintf(out, "  Operation %s | %s | %s | %s\n", safeInline(operation.Action), safeInline(operation.Path), safeInline(operation.State), safeInline(operation.Reason))
-			}
+			renderConsolidationOperation(out, operation)
 		}
 	}
 	for _, warning := range preview.Warnings {
@@ -376,16 +372,20 @@ func renderConsolidationOutcome(out io.Writer, outcome collection.ConsolidationA
 	for _, effect := range outcome.Effects {
 		fmt.Fprintf(out, "%s %s | %s\n", effect.Action, effect.SourceID, safeInline(effect.State))
 		for _, operation := range effect.Operations {
-			if operation.From != "" {
-				fmt.Fprintf(out, "  Operation %s | %s -> %s | %s | %s\n", safeInline(operation.Action), safeInline(operation.From), safeInline(operation.Path), safeInline(operation.State), safeInline(operation.Reason))
-			} else {
-				fmt.Fprintf(out, "  Operation %s | %s | %s | %s\n", safeInline(operation.Action), safeInline(operation.Path), safeInline(operation.State), safeInline(operation.Reason))
-			}
+			renderConsolidationOperation(out, operation)
 		}
 	}
 	if outcome.Failure != nil {
 		fmt.Fprintf(out, "Failure: %s | %s | %s\n", outcome.Failure.Code, safeInline(outcome.Failure.Message), safeInline(outcome.Failure.Action))
 	}
+}
+
+func renderConsolidationOperation(out io.Writer, operation collection.ConsolidationOperationOutcome) {
+	if operation.From != "" {
+		fmt.Fprintf(out, "  Operation %s | %s -> %s | %s | %s\n", safeInline(operation.Action), safeInline(operation.From), safeInline(operation.Path), safeInline(operation.State), safeInline(operation.Reason))
+		return
+	}
+	fmt.Fprintf(out, "  Operation %s | %s | %s | %s\n", safeInline(operation.Action), safeInline(operation.Path), safeInline(operation.State), safeInline(operation.Reason))
 }
 
 func sourceIDsForTerminal(values []collection.SourceID) []string {

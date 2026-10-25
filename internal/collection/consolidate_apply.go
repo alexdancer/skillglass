@@ -1291,10 +1291,10 @@ func validateNoUnexpectedConsolidationReferences(inventory ConsolidationInventor
 		}
 		allowed := map[string]bool{}
 		for _, path := range append(append(append([]string(nil), entry.BeforeRefs...), entry.CreatedLinks...), entry.ExpectedLinks...) {
-			allowed[filepath.Clean(path)] = true
+			allowed[consolidationReferencePathKey(path)] = true
 		}
 		for _, path := range entry.PendingLinks {
-			allowed[filepath.Clean(path)] = true
+			allowed[consolidationReferencePathKey(path)] = true
 		}
 		for _, source := range inventory.Sources {
 			if source.ID != entry.CanonicalSourceID || !consolidationPathResolvesTo(source.SourcePath, entry.CanonicalPath) {
@@ -1304,14 +1304,22 @@ func validateNoUnexpectedConsolidationReferences(inventory ConsolidationInventor
 				if reference.Reference.Source != entry.CanonicalSourceID || !consolidationPathResolvesTo(reference.Reference.ResolvedPath, entry.CanonicalPath) {
 					continue
 				}
-				path := filepath.Clean(reference.Reference.DiscoveredPath)
+				path := consolidationReferencePathKey(reference.Reference.DiscoveredPath)
 				if !allowed[path] {
-					return fmt.Errorf("new or unrecorded %s reference %s now reaches canonical bundle %s", reference.Application, path, entry.CanonicalPath)
+					return fmt.Errorf("new or unrecorded %s reference %s now reaches canonical bundle %s", reference.Application, reference.Reference.DiscoveredPath, entry.CanonicalPath)
 				}
 			}
 		}
 	}
 	return nil
+}
+
+func consolidationReferencePathKey(path string) string {
+	canonical, err := canonicalizePathParent(path)
+	if err != nil {
+		return filepath.Clean(path)
+	}
+	return filepath.Clean(canonical)
 }
 
 func consolidationRecoveryCoverageAllowed(inventory ConsolidationInventory, journal consolidationJournal) bool {
@@ -1454,138 +1462,11 @@ func ApplyConsolidationRecovery(ctx context.Context, id, confirmation string) Co
 	// duplicate can occupy another entry's original destination path, so
 	// restoring it while a sibling entry still owns that link would fail or
 	// overwrite an independent source.
-	for i := len(journal.Entries) - 1; i >= 0; i-- {
-		entry := &journal.Entries[i]
-		for _, link := range entry.RemovedLinks {
-			if err := validateRemovedRecoveryLink(ctx, link, journal.Entries); err != nil {
-				return partial(err)
-			}
-		}
-		if entry.RestoredToSource {
-			if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID); err != nil {
-				return partial(fmt.Errorf("recorded restored source changed: %w", err))
-			}
-			continue
-		}
-		for _, link := range ownedJournalLinks(*entry) {
-			if containsString(entry.RemovedLinks, link) {
-				if err := validateRemovedRecoveryLink(ctx, link, journal.Entries); err != nil {
-					return partial(err)
-				}
-				continue
-			}
-			if !pathExists(link) {
-				continue
-			}
-			if pathExists(entry.CanonicalPath) {
-				if err := verifyMoveSource(ctx, entry.CanonicalPath, entry.Fingerprint, entry.CanonicalSourceID); err != nil {
-					return partial(err)
-				}
-			} else if entry.RestoredToSource || filepath.Clean(entry.SourcePath) == filepath.Clean(entry.CanonicalPath) {
-				if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID); err != nil {
-					return partial(err)
-				}
-			} else {
-				return partial(fmt.Errorf("canonical source identity is missing before removing link %s", link))
-			}
-			if filepath.Clean(link) == filepath.Clean(entry.SourcePath) && verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID) == nil {
-				continue
-			}
-			entry.PendingRecoveryLinks = append(entry.PendingRecoveryLinks, link)
-			if err := writeConsolidationJournal(journal); err != nil {
-				return partial(err)
-			}
-			if err := removeExactLink(link, entry.CanonicalPath); err != nil {
-				return partial(err)
-			}
-			entry.PendingRecoveryLinks = removeJournalPath(entry.PendingRecoveryLinks, link)
-			entry.RemovedLinks = append(entry.RemovedLinks, link)
-			if err := writeConsolidationJournal(journal); err != nil {
-				return partial(err)
-			}
-		}
+	if err := removeConsolidationRecoveryLinks(ctx, &journal); err != nil {
+		return partial(err)
 	}
-
-	for i := len(journal.Entries) - 1; i >= 0; i-- {
-		entry := &journal.Entries[i]
-		if entry.RestoredToSource {
-			continue
-		}
-		if entry.PendingRecoveryMove != "" && verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID) == nil {
-			entry.RestoredToSource = true
-			entry.PendingRecoveryMove = ""
-			if err := writeConsolidationJournal(journal); err != nil {
-				return partial(err)
-			}
-			continue
-		}
-		if entry.Action == "archive" {
-			if pathExists(entry.BackupPath) {
-				if pathExists(entry.SourcePath) {
-					return partial(fmt.Errorf("original source path became occupied: %s", entry.SourcePath))
-				}
-				if err := verifyMoveSource(ctx, entry.BackupPath, entry.Fingerprint, entry.BackupSourceID); err != nil {
-					return partial(err)
-				}
-				entry.PendingRecoveryMove = "archive"
-				if err := writeConsolidationJournal(journal); err != nil {
-					return partial(err)
-				}
-				if err := movePathExclusive(entry.BackupPath, entry.SourcePath, entry.BackupSourceID); err != nil {
-					return partial(err)
-				}
-				if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID); err != nil {
-					return partial(err)
-				}
-			}
-			entry.RestoredToSource = true
-			entry.PendingRecoveryMove = ""
-			if err := writeConsolidationJournal(journal); err != nil {
-				return partial(err)
-			}
-			continue
-		}
-		if (entry.MovedToBackup || entry.PendingMove == "duplicate") && pathExists(entry.BackupPath) {
-			if pathExists(entry.SourcePath) {
-				return partial(fmt.Errorf("original source path became occupied: %s", entry.SourcePath))
-			}
-			if err := verifyMoveSource(ctx, entry.BackupPath, entry.Fingerprint, entry.BackupSourceID); err != nil {
-				return partial(err)
-			}
-			entry.PendingRecoveryMove = "duplicate"
-			if err := writeConsolidationJournal(journal); err != nil {
-				return partial(err)
-			}
-			if err := movePathExclusive(entry.BackupPath, entry.SourcePath, entry.BackupSourceID); err != nil {
-				return partial(err)
-			}
-			if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID); err != nil {
-				return partial(err)
-			}
-		}
-		if (entry.MovedToCanonical || entry.PendingMove == "canonical") && pathExists(entry.CanonicalPath) {
-			if pathExists(entry.SourcePath) {
-				return partial(fmt.Errorf("original source path became occupied: %s", entry.SourcePath))
-			}
-			if err := verifyMoveSource(ctx, entry.CanonicalPath, entry.Fingerprint, entry.CanonicalSourceID); err != nil {
-				return partial(err)
-			}
-			entry.PendingRecoveryMove = "canonical"
-			if err := writeConsolidationJournal(journal); err != nil {
-				return partial(err)
-			}
-			if err := movePathExclusive(entry.CanonicalPath, entry.SourcePath, entry.CanonicalSourceID); err != nil {
-				return partial(err)
-			}
-			if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID); err != nil {
-				return partial(err)
-			}
-		}
-		entry.RestoredToSource = true
-		entry.PendingRecoveryMove = ""
-		if err := writeConsolidationJournal(journal); err != nil {
-			return partial(err)
-		}
+	if err := restoreConsolidationRecoverySources(ctx, &journal); err != nil {
+		return partial(err)
 	}
 	if journal.SelectionApplied || journal.PendingSelectionApply {
 		journal.PendingSelectionRestore = true
@@ -1615,6 +1496,151 @@ func ApplyConsolidationRecovery(ctx context.Context, id, confirmation string) Co
 	out.State, out.Outcome, out.ExitCode, out.Reason, out.Verified = "recovered", "success", 0, "all journaled moves and links were restored and verified", true
 	out.Effects = consolidationRecoveryEffectOutcomes(ctx, preview.Effects, journal)
 	return out
+}
+
+func removeConsolidationRecoveryLinks(ctx context.Context, journal *consolidationJournal) error {
+	for i := len(journal.Entries) - 1; i >= 0; i-- {
+		entry := &journal.Entries[i]
+		for _, link := range entry.RemovedLinks {
+			if err := validateRemovedRecoveryLink(ctx, link, journal.Entries); err != nil {
+				return err
+			}
+		}
+		if entry.RestoredToSource {
+			if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID); err != nil {
+				return fmt.Errorf("recorded restored source changed: %w", err)
+			}
+			continue
+		}
+		for _, link := range ownedJournalLinks(*entry) {
+			if containsString(entry.RemovedLinks, link) {
+				if err := validateRemovedRecoveryLink(ctx, link, journal.Entries); err != nil {
+					return err
+				}
+				continue
+			}
+			if !pathExists(link) {
+				continue
+			}
+			if pathExists(entry.CanonicalPath) {
+				if err := verifyMoveSource(ctx, entry.CanonicalPath, entry.Fingerprint, entry.CanonicalSourceID); err != nil {
+					return err
+				}
+			} else if entry.RestoredToSource || filepath.Clean(entry.SourcePath) == filepath.Clean(entry.CanonicalPath) {
+				if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID); err != nil {
+					return err
+				}
+			} else {
+				return fmt.Errorf("canonical source identity is missing before removing link %s", link)
+			}
+			if filepath.Clean(link) == filepath.Clean(entry.SourcePath) && verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID) == nil {
+				continue
+			}
+			entry.PendingRecoveryLinks = append(entry.PendingRecoveryLinks, link)
+			if err := writeConsolidationJournal(*journal); err != nil {
+				return err
+			}
+			if err := removeExactLink(link, entry.CanonicalPath); err != nil {
+				return err
+			}
+			entry.PendingRecoveryLinks = removeJournalPath(entry.PendingRecoveryLinks, link)
+			entry.RemovedLinks = append(entry.RemovedLinks, link)
+			if err := writeConsolidationJournal(*journal); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func restoreConsolidationRecoverySources(ctx context.Context, journal *consolidationJournal) error {
+	for i := len(journal.Entries) - 1; i >= 0; i-- {
+		entry := &journal.Entries[i]
+		for _, link := range entry.RemovedLinks {
+			if err := validateRemovedRecoveryLink(ctx, link, journal.Entries); err != nil {
+				return err
+			}
+		}
+		if entry.RestoredToSource {
+			continue
+		}
+		if entry.PendingRecoveryMove != "" && verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID) == nil {
+			entry.RestoredToSource = true
+			entry.PendingRecoveryMove = ""
+			if err := writeConsolidationJournal(*journal); err != nil {
+				return err
+			}
+			continue
+		}
+		if entry.Action == "archive" {
+			if pathExists(entry.BackupPath) {
+				if pathExists(entry.SourcePath) {
+					return fmt.Errorf("original source path became occupied: %s", entry.SourcePath)
+				}
+				if err := verifyMoveSource(ctx, entry.BackupPath, entry.Fingerprint, entry.BackupSourceID); err != nil {
+					return err
+				}
+				entry.PendingRecoveryMove = "archive"
+				if err := writeConsolidationJournal(*journal); err != nil {
+					return err
+				}
+				if err := movePathExclusive(entry.BackupPath, entry.SourcePath, entry.BackupSourceID); err != nil {
+					return err
+				}
+				if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID); err != nil {
+					return err
+				}
+			}
+			entry.RestoredToSource = true
+			entry.PendingRecoveryMove = ""
+			if err := writeConsolidationJournal(*journal); err != nil {
+				return err
+			}
+			continue
+		}
+		if (entry.MovedToBackup || entry.PendingMove == "duplicate") && pathExists(entry.BackupPath) {
+			if pathExists(entry.SourcePath) {
+				return fmt.Errorf("original source path became occupied: %s", entry.SourcePath)
+			}
+			if err := verifyMoveSource(ctx, entry.BackupPath, entry.Fingerprint, entry.BackupSourceID); err != nil {
+				return err
+			}
+			entry.PendingRecoveryMove = "duplicate"
+			if err := writeConsolidationJournal(*journal); err != nil {
+				return err
+			}
+			if err := movePathExclusive(entry.BackupPath, entry.SourcePath, entry.BackupSourceID); err != nil {
+				return err
+			}
+			if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID); err != nil {
+				return err
+			}
+		}
+		if (entry.MovedToCanonical || entry.PendingMove == "canonical") && pathExists(entry.CanonicalPath) {
+			if pathExists(entry.SourcePath) {
+				return fmt.Errorf("original source path became occupied: %s", entry.SourcePath)
+			}
+			if err := verifyMoveSource(ctx, entry.CanonicalPath, entry.Fingerprint, entry.CanonicalSourceID); err != nil {
+				return err
+			}
+			entry.PendingRecoveryMove = "canonical"
+			if err := writeConsolidationJournal(*journal); err != nil {
+				return err
+			}
+			if err := movePathExclusive(entry.CanonicalPath, entry.SourcePath, entry.CanonicalSourceID); err != nil {
+				return err
+			}
+			if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID); err != nil {
+				return err
+			}
+		}
+		entry.RestoredToSource = true
+		entry.PendingRecoveryMove = ""
+		if err := writeConsolidationJournal(*journal); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func consolidationRecoveryEffectOutcomes(ctx context.Context, effects []ConsolidationEffect, journal consolidationJournal) []ConsolidationEffect {

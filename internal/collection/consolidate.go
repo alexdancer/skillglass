@@ -1136,23 +1136,33 @@ func consolidationReferenceIsSelectedSource(app string, reference Reference, ori
 }
 
 func consolidationDestinationRoot(app string, request Request) string {
+	var destinationRoot string
 	switch app {
 	case "codex":
-		return filepath.Join(request.codexHome, "skills")
+		destinationRoot = filepath.Join(request.codexHome, "skills")
 	case "claude-code":
-		return filepath.Join(request.claudeHome, "skills")
+		destinationRoot = filepath.Join(request.claudeHome, "skills")
 	case "pi":
 		if path, err := piAgentDir(request.home); err == nil {
-			return filepath.Join(path, "skills")
+			destinationRoot = filepath.Join(path, "skills")
 		}
 	case "opencode":
-		return filepath.Join(opencodeConfigHome(request.home), "opencode", "skills")
+		destinationRoot = filepath.Join(opencodeConfigHome(request.home), "opencode", "skills")
 	case "hermes":
-		return filepath.Join(request.hermesHome, "skills")
+		destinationRoot = filepath.Join(request.hermesHome, "skills")
 	case "gemini":
-		return filepath.Join(request.home, ".gemini", "skills")
+		destinationRoot = filepath.Join(request.home, ".gemini", "skills")
 	}
-	return ""
+	if destinationRoot == "" {
+		return ""
+	}
+	// Resolve parent aliases before planning or writing while leaving the
+	// application skills-root leaf available to the no-follow audit.
+	canonicalRoot, err := canonicalizePathParent(destinationRoot)
+	if err == nil {
+		return canonicalRoot
+	}
+	return filepath.Clean(destinationRoot)
 }
 
 func consolidationFingerprint(ctx context.Context, source Source) (string, Completeness, bool, []string, []string) {
@@ -2052,14 +2062,16 @@ func consolidationHermesRelocationMode() string {
 			return ""
 		}
 		resolved, err := setupProspectivePath(profileHome)
-		if err != nil || filepath.Clean(resolved) != cleanProfile || filepath.Clean(resolved) != filepath.Join(filepath.Clean(canonicalHome), ".hermes", "profiles", profileName) {
+		expectedProfile := filepath.Join(filepath.Clean(canonicalHome), ".hermes", "profiles", profileName)
+		if err != nil || filepath.Clean(resolved) != expectedProfile {
 			return ""
 		}
-		profileInfo, err := os.Stat(cleanProfile)
+		resolvedProfile := filepath.Clean(resolved)
+		profileInfo, err := os.Stat(resolvedProfile)
 		if err != nil || !profileInfo.IsDir() {
 			return ""
 		}
-		skillsRoot := filepath.Join(cleanProfile, "skills")
+		skillsRoot := filepath.Join(resolvedProfile, "skills")
 		resolvedSkills, err := setupProspectivePath(skillsRoot)
 		if err != nil || filepath.Clean(resolvedSkills) != skillsRoot {
 			return ""
