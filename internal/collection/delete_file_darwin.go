@@ -721,17 +721,6 @@ func deleteUnlinked(f *os.File, kind, expectedPath string, before, after unix.St
 	return errors.Is(err, syscall.ENOENT) || err == nil && path == expectedPath
 }
 
-func deleteUniquePaths(paths []string) []string {
-	sort.Strings(paths)
-	result := paths[:0]
-	for _, path := range paths {
-		if len(result) == 0 || result[len(result)-1] != path {
-			result = append(result, path)
-		}
-	}
-	return result
-}
-
 func deleteSameInode(a, b deleteStamp) bool {
 	return a.Device == b.Device && a.Inode == b.Inode && a.BirthSec == b.BirthSec && a.BirthNano == b.BirthNano
 }

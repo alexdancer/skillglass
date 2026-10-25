@@ -11,7 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -874,7 +874,7 @@ func consolidationLinkOutcome(path, canonical string, entry consolidationJournal
 	operation := ConsolidationOperationOutcome{Action: "create-link", Path: path, State: "pending", Reason: "link was not reached before apply stopped"}
 	if _, exact, err := exactLink(path, canonical); err == nil && exact {
 		operation.State, operation.Reason = "completed", ""
-	} else if containsString(entry.FailedLinks, path) {
+	} else if slices.Contains(entry.FailedLinks, path) {
 		operation.State, operation.Reason = "failed", "link creation did not produce the requested canonical reference"
 	}
 	return operation
@@ -1277,16 +1277,6 @@ func encodeConsolidationSelection(request ConsolidationRequest) ([]byte, error) 
 	return encoded, nil
 }
 
-func consolidateRecoverySeal(journal consolidationJournal, inventory ConsolidationInventory, effects []ConsolidationEffect) string {
-	encoded, _ := json.Marshal(struct {
-		Journal consolidationJournal
-		ScanID  string
-		Effects []ConsolidationEffect
-	}{journal, inventory.ScanID, effects})
-	digest := sha256.Sum256(encoded)
-	return "r1:" + hex.EncodeToString(digest[:])
-}
-
 func sameBytesOrAbsent(path string, expected []byte, expectedExists bool) error {
 	got, found, err := readPrivateSelection(path)
 	if err != nil {
@@ -1345,15 +1335,7 @@ func restoreSelectionWithWriter(journal consolidationJournal, writeSelection fun
 }
 
 func uniqueJournalPaths(values []string) []string {
-	result := append([]string(nil), values...)
-	sort.Strings(result)
-	out := result[:0]
-	for _, value := range result {
-		if len(out) == 0 || out[len(out)-1] != value {
-			out = append(out, value)
-		}
-	}
-	return out
+	return deleteUniquePaths(append([]string(nil), values...))
 }
 
 // PreviewConsolidationRecovery checks the exact recorded state and current
@@ -1546,7 +1528,7 @@ func validateRecoveryEntry(ctx context.Context, entry consolidationJournalEntry,
 		}
 	}
 	for _, path := range ownedJournalLinks(entry) {
-		if containsString(entry.RemovedLinks, path) || pendingRestoredSources[filepath.Clean(path)] || entry.RestoredToSource && filepath.Clean(path) == filepath.Clean(entry.SourcePath) {
+		if slices.Contains(entry.RemovedLinks, path) || pendingRestoredSources[filepath.Clean(path)] || entry.RestoredToSource && filepath.Clean(path) == filepath.Clean(entry.SourcePath) {
 			continue
 		}
 		if !pathExists(path) {
@@ -1580,7 +1562,7 @@ func validateRecoveryEntry(ctx context.Context, entry consolidationJournalEntry,
 
 func journalOwnsExactShareLink(path string, entries []consolidationJournalEntry) bool {
 	for _, entry := range entries {
-		if entry.Action != "share" || !containsString(ownedJournalLinks(entry), path) {
+		if entry.Action != "share" || !slices.Contains(ownedJournalLinks(entry), path) {
 			continue
 		}
 		if _, exact, err := exactLink(path, entry.CanonicalPath); err == nil && exact {
@@ -1836,7 +1818,7 @@ func removeConsolidationRecoveryLinks(ctx context.Context, journal *consolidatio
 			continue
 		}
 		for _, link := range ownedJournalLinks(*entry) {
-			if containsString(entry.RemovedLinks, link) {
+			if slices.Contains(entry.RemovedLinks, link) {
 				if err := validateRemovedRecoveryLink(ctx, link, journal.Entries); err != nil {
 					return err
 				}
@@ -1876,6 +1858,23 @@ func removeConsolidationRecoveryLinks(ctx context.Context, journal *consolidatio
 	return nil
 }
 
+func restoreConsolidationSourceMove(ctx context.Context, journal *consolidationJournal, entry *consolidationJournalEntry, originPath string, originID SourceID, kind string) error {
+	if pathExists(entry.SourcePath) {
+		return fmt.Errorf("original source path became occupied: %s", entry.SourcePath)
+	}
+	if err := verifyMoveSource(ctx, originPath, entry.Fingerprint, originID); err != nil {
+		return err
+	}
+	entry.PendingRecoveryMove = kind
+	if err := writeConsolidationJournal(*journal); err != nil {
+		return err
+	}
+	if err := movePathExclusive(originPath, entry.SourcePath, originID); err != nil {
+		return err
+	}
+	return verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID)
+}
+
 func restoreConsolidationRecoverySources(ctx context.Context, journal *consolidationJournal) error {
 	for i := range journal.Entries {
 		entry := &journal.Entries[i]
@@ -1908,20 +1907,7 @@ func restoreConsolidationRecoverySources(ctx context.Context, journal *consolida
 		}
 		if entry.Action == "archive" {
 			if pathExists(entry.BackupPath) {
-				if pathExists(entry.SourcePath) {
-					return fmt.Errorf("original source path became occupied: %s", entry.SourcePath)
-				}
-				if err := verifyMoveSource(ctx, entry.BackupPath, entry.Fingerprint, entry.BackupSourceID); err != nil {
-					return err
-				}
-				entry.PendingRecoveryMove = "archive"
-				if err := writeConsolidationJournal(*journal); err != nil {
-					return err
-				}
-				if err := movePathExclusive(entry.BackupPath, entry.SourcePath, entry.BackupSourceID); err != nil {
-					return err
-				}
-				if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID); err != nil {
+				if err := restoreConsolidationSourceMove(ctx, journal, entry, entry.BackupPath, entry.BackupSourceID, "archive"); err != nil {
 					return err
 				}
 			}
@@ -1933,38 +1919,12 @@ func restoreConsolidationRecoverySources(ctx context.Context, journal *consolida
 			continue
 		}
 		if (entry.MovedToBackup || entry.PendingMove == "duplicate") && pathExists(entry.BackupPath) {
-			if pathExists(entry.SourcePath) {
-				return fmt.Errorf("original source path became occupied: %s", entry.SourcePath)
-			}
-			if err := verifyMoveSource(ctx, entry.BackupPath, entry.Fingerprint, entry.BackupSourceID); err != nil {
-				return err
-			}
-			entry.PendingRecoveryMove = "duplicate"
-			if err := writeConsolidationJournal(*journal); err != nil {
-				return err
-			}
-			if err := movePathExclusive(entry.BackupPath, entry.SourcePath, entry.BackupSourceID); err != nil {
-				return err
-			}
-			if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID); err != nil {
+			if err := restoreConsolidationSourceMove(ctx, journal, entry, entry.BackupPath, entry.BackupSourceID, "duplicate"); err != nil {
 				return err
 			}
 		}
 		if (entry.MovedToCanonical || entry.PendingMove == "canonical") && pathExists(entry.CanonicalPath) {
-			if pathExists(entry.SourcePath) {
-				return fmt.Errorf("original source path became occupied: %s", entry.SourcePath)
-			}
-			if err := verifyMoveSource(ctx, entry.CanonicalPath, entry.Fingerprint, entry.CanonicalSourceID); err != nil {
-				return err
-			}
-			entry.PendingRecoveryMove = "canonical"
-			if err := writeConsolidationJournal(*journal); err != nil {
-				return err
-			}
-			if err := movePathExclusive(entry.CanonicalPath, entry.SourcePath, entry.CanonicalSourceID); err != nil {
-				return err
-			}
-			if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID); err != nil {
+			if err := restoreConsolidationSourceMove(ctx, journal, entry, entry.CanonicalPath, entry.CanonicalSourceID, "canonical"); err != nil {
 				return err
 			}
 		}
@@ -2049,7 +2009,7 @@ func consolidationRemoveLinkOutcome(ctx context.Context, path, canonical string,
 		return operation
 	}
 	if _, exact, err := exactLink(path, canonical); err == nil && exact {
-		if containsString(entry.PendingRecoveryLinks, path) {
+		if slices.Contains(entry.PendingRecoveryLinks, path) {
 			operation.State, operation.Reason = "failed", "canonical link remains after the recorded removal attempt"
 		}
 		return operation
@@ -2067,6 +2027,3 @@ func consolidationRecoverySeal(journal consolidationJournal, inventory Consolida
 	digest := sha256.Sum256(encoded)
 	return "r1:" + hex.EncodeToString(digest[:])
 }
-
-var _ = bytes.Equal
-var _ = uniqueJournalPaths

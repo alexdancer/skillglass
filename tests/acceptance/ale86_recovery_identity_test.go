@@ -1,7 +1,6 @@
 package acceptance_test
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -12,16 +11,18 @@ import (
 	"github.com/alexdancer/skillglass/internal/collection"
 )
 
+type recoveryJournalEntryView struct {
+	SourceID         string   `json:"source_id"`
+	Action           string   `json:"action"`
+	SourcePath       string   `json:"source_path"`
+	Fingerprint      string   `json:"fingerprint"`
+	CanonicalPath    string   `json:"canonical_path"`
+	MovedToCanonical bool     `json:"moved_to_canonical"`
+	CreatedLinks     []string `json:"created_links"`
+}
+
 type recoveryJournalView struct {
-	Entries []struct {
-		SourceID         string   `json:"source_id"`
-		Action           string   `json:"action"`
-		SourcePath       string   `json:"source_path"`
-		Fingerprint      string   `json:"fingerprint"`
-		CanonicalPath    string   `json:"canonical_path"`
-		MovedToCanonical bool     `json:"moved_to_canonical"`
-		CreatedLinks     []string `json:"created_links"`
-	} `json:"entries"`
+	Entries []recoveryJournalEntryView `json:"entries"`
 }
 
 func recoveryFixture(t *testing.T) (fixture, string, string) {
@@ -97,13 +98,10 @@ func prepareRecoveryFixture(t *testing.T, fx fixture, sourcePath, library, evide
 	t.Helper()
 	inventory := recoveryScan(t, fx, library, evidencePrefix+"/initial-scan.json")
 	draft := recoveryDraft(t, inventory, sourcePath)
-	draftBytes, err := json.MarshalIndent(draft, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
+	draftBytes := mustMarshalJSON(t, draft)
 	draftPath := filepath.Join(fx.base, "allowed", "recovery-draft.json")
-	writeFile(t, draftPath, append(draftBytes, '\n'), 0o600)
-	writeEvidence(t, evidencePrefix+"/initial-draft.json", append(draftBytes, '\n'))
+	writeFile(t, draftPath, draftBytes, 0o600)
+	writeEvidence(t, evidencePrefix+"/initial-draft.json", draftBytes)
 	previewResult := fx.run(t, "consolidate", "preview", "--draft", draftPath, "--json")
 	assertExit(t, previewResult, 0)
 	writeEvidence(t, evidencePrefix+"/initial-preview.json", previewResult.stdout)
@@ -128,15 +126,7 @@ func prepareRecoveryFixture(t *testing.T, fx fixture, sourcePath, library, evide
 	return applied, preview, draft, draftPath, journal
 }
 
-func recoveryJournalEntry(t *testing.T, journal recoveryJournalView, action, sourcePath string) struct {
-	SourceID         string   `json:"source_id"`
-	Action           string   `json:"action"`
-	SourcePath       string   `json:"source_path"`
-	Fingerprint      string   `json:"fingerprint"`
-	CanonicalPath    string   `json:"canonical_path"`
-	MovedToCanonical bool     `json:"moved_to_canonical"`
-	CreatedLinks     []string `json:"created_links"`
-} {
+func recoveryJournalEntry(t *testing.T, journal recoveryJournalView, action, sourcePath string) recoveryJournalEntryView {
 	t.Helper()
 	for _, entry := range journal.Entries {
 		if entry.Action == action && filepath.Clean(entry.SourcePath) == filepath.Clean(sourcePath) {
@@ -144,15 +134,7 @@ func recoveryJournalEntry(t *testing.T, journal recoveryJournalView, action, sou
 		}
 	}
 	t.Fatalf("journal lacks %s entry for %s: %+v", action, sourcePath, journal.Entries)
-	return struct {
-		SourceID         string   `json:"source_id"`
-		Action           string   `json:"action"`
-		SourcePath       string   `json:"source_path"`
-		Fingerprint      string   `json:"fingerprint"`
-		CanonicalPath    string   `json:"canonical_path"`
-		MovedToCanonical bool     `json:"moved_to_canonical"`
-		CreatedLinks     []string `json:"created_links"`
-	}{}
+	return recoveryJournalEntryView{}
 }
 
 func copyRecoveryBundle(t *testing.T, source, destination string) {
@@ -206,26 +188,6 @@ func copyRecoveryBundle(t *testing.T, source, destination string) {
 	}
 }
 
-func recoverySourceAt(t *testing.T, inventory collection.ConsolidationInventory, path string) collection.ConsolidationSource {
-	t.Helper()
-	for _, source := range inventory.Sources {
-		if filepath.Clean(source.SourcePath) == filepath.Clean(path) {
-			return source
-		}
-	}
-	t.Fatalf("consolidation scan does not contain source path %s", path)
-	return collection.ConsolidationSource{}
-}
-
-func evidenceJSON(t *testing.T, value any) []byte {
-	t.Helper()
-	raw, err := json.MarshalIndent(value, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return append(raw, '\n')
-}
-
 func TestRECIDRecoveryDoesNotMoveAnUnrecordedReplacementObject(t *testing.T) {
 	fx, sourceDir, library := recoveryFixture(t)
 	evidence := "recovery-id"
@@ -245,9 +207,9 @@ func TestRECIDRecoveryDoesNotMoveAnUnrecordedReplacementObject(t *testing.T) {
 	if got := readBytes(t, filepath.Join(entry.CanonicalPath, "references", "guide.txt")); string(got) != "RECOVERY_REFERENCE_SENTINEL\n" {
 		t.Fatal("replacement object did not preserve the fixture reference")
 	}
-	writeEvidence(t, evidence+"/replacement-layout.json", evidenceJSON(t, map[string]any{"recovery_id": apply.RecoveryID, "journal_source_id": entry.SourceID, "journal_source_path": entry.SourcePath, "canonical_path": entry.CanonicalPath, "original_object_aside": aside, "replacement_path": entry.CanonicalPath}))
+	writeEvidence(t, evidence+"/replacement-layout.json", mustMarshalJSON(t, map[string]any{"recovery_id": apply.RecoveryID, "journal_source_id": entry.SourceID, "journal_source_path": entry.SourcePath, "canonical_path": entry.CanonicalPath, "original_object_aside": aside, "replacement_path": entry.CanonicalPath}))
 	current := recoveryScan(t, fx, library, evidence+"/replacement-scan.json")
-	replacement := recoverySourceAt(t, current, entry.CanonicalPath)
+	replacement := sourceAtPath(t, current, entry.CanonicalPath)
 	if string(replacement.ID) == entry.SourceID || replacement.BundleFingerprint != entry.Fingerprint {
 		t.Fatalf("replacement identity/fingerprint control failed: journal=%s/%s current=%s/%s", entry.SourceID, entry.Fingerprint, replacement.ID, replacement.BundleFingerprint)
 	}
@@ -272,7 +234,7 @@ func TestRECIDRecoveryDoesNotMoveAnUnrecordedReplacementObject(t *testing.T) {
 			}
 		}
 		identityResult := map[string]any{"preview_state": preview.State, "preview_failure": preview.Failure, "apply_state": recovered.State, "apply_exit": applyResult.code, "journal_source_id": entry.SourceID, "replacement_source_id_before_recovery": replacement.ID, "source_id_after_recovery": movedSource.ID, "source_path_after_recovery": movedSource.SourcePath, "canonical_exists_after_recovery": pathExistsForAcceptance(entry.CanonicalPath), "asided_original_exists_after_recovery": pathExistsForAcceptance(aside), "replacement_arrived_at_recorded_source": movedSource.ID == replacement.ID}
-		writeEvidence(t, evidence+"/identity-result.json", evidenceJSON(t, identityResult))
+		writeEvidence(t, evidence+"/identity-result.json", mustMarshalJSON(t, identityResult))
 		if applyResult.code == 0 && recovered.State == "recovered" && movedSource.ID == replacement.ID {
 			t.Fatalf("REC-ID-1: recovery restored a byte/mode-identical replacement object with SourceID %s, although the journal approved original SourceID %s; the separately preserved original remains at %s", replacement.ID, entry.SourceID, aside)
 		}
@@ -284,7 +246,7 @@ func TestRECIDRecoveryDoesNotMoveAnUnrecordedReplacementObject(t *testing.T) {
 	if !pathExistsForAcceptance(entry.CanonicalPath) || !pathExistsForAcceptance(aside) {
 		t.Fatalf("refused preview changed the replacement or original paths: %+v", preview)
 	}
-	writeEvidence(t, evidence+"/identity-result.json", evidenceJSON(t, map[string]any{"disposition": "disconfirmed", "preview_state": preview.State, "failure": preview.Failure, "journal_source_id": entry.SourceID, "replacement_source_id": replacement.ID, "fingerprint": replacement.BundleFingerprint, "canonical_exists": true, "asided_original_exists": true}))
+	writeEvidence(t, evidence+"/identity-result.json", mustMarshalJSON(t, map[string]any{"disposition": "disconfirmed", "preview_state": preview.State, "failure": preview.Failure, "journal_source_id": entry.SourceID, "replacement_source_id": replacement.ID, "fingerprint": replacement.BundleFingerprint, "canonical_exists": true, "asided_original_exists": true}))
 }
 
 func TestRECREFRecoveryIgnoresAnIndependentEqualBundle(t *testing.T) {
@@ -305,11 +267,11 @@ func TestRECREFRecoveryIgnoresAnIndependentEqualBundle(t *testing.T) {
 		}
 	}
 	if independentSource == nil {
-		writeEvidence(t, evidence+"/claim-result.json", evidenceJSON(t, map[string]any{"disposition": "inconclusive", "reason": "native inventory did not expose the new independent copy as its own source", "recovery_entry": entry, "independent_path": independent, "sources": current.Sources}))
+		writeEvidence(t, evidence+"/claim-result.json", mustMarshalJSON(t, map[string]any{"disposition": "inconclusive", "reason": "native inventory did not expose the new independent copy as its own source", "recovery_entry": entry, "independent_path": independent, "sources": current.Sources}))
 		return
 	}
 	if string(independentSource.ID) == entry.SourceID || independentSource.BundleFingerprint != entry.Fingerprint {
-		writeEvidence(t, evidence+"/claim-result.json", evidenceJSON(t, map[string]any{"disposition": "inconclusive", "reason": "independent-source control did not have a distinct physical SourceID and equal complete fingerprint", "journal_source_id": entry.SourceID, "journal_fingerprint": entry.Fingerprint, "independent_source": independentSource}))
+		writeEvidence(t, evidence+"/claim-result.json", mustMarshalJSON(t, map[string]any{"disposition": "inconclusive", "reason": "independent-source control did not have a distinct physical SourceID and equal complete fingerprint", "journal_source_id": entry.SourceID, "journal_fingerprint": entry.Fingerprint, "independent_source": independentSource}))
 		return
 	}
 	previewResult := fx.run(t, "consolidate", "recover", "--backup", apply.RecoveryID, "--json")
@@ -320,11 +282,11 @@ func TestRECREFRecoveryIgnoresAnIndependentEqualBundle(t *testing.T) {
 	var preview collection.ConsolidationPreview
 	decodeJSON(t, previewResult.stdout, &preview)
 	if preview.State == "refused" && preview.Failure != nil && preview.Failure.Code == "unexpected-reference" && strings.Contains(preview.Failure.Message, independent) {
-		writeEvidence(t, evidence+"/claim-result.json", evidenceJSON(t, map[string]any{"disposition": "established", "reason": "recovery treated an independent equal-fingerprint source path as a new reference to the canonical bundle", "failure": preview.Failure, "journal_source_id": entry.SourceID, "independent_source_id": independentSource.ID, "fingerprint": entry.Fingerprint, "independent_path": independent}))
+		writeEvidence(t, evidence+"/claim-result.json", mustMarshalJSON(t, map[string]any{"disposition": "established", "reason": "recovery treated an independent equal-fingerprint source path as a new reference to the canonical bundle", "failure": preview.Failure, "journal_source_id": entry.SourceID, "independent_source_id": independentSource.ID, "fingerprint": entry.Fingerprint, "independent_path": independent}))
 		t.Fatalf("REC-REF-2: equal contents at independent source %s were treated as an unrecorded reference to canonical %s: %s", independent, entry.CanonicalPath, preview.Failure.Message)
 	}
 	if preview.State != "ready" {
-		writeEvidence(t, evidence+"/claim-result.json", evidenceJSON(t, map[string]any{"disposition": "inconclusive", "reason": "recovery refused for a reason other than the claimed equal-content reference", "failure": preview.Failure, "journal_source_id": entry.SourceID, "independent_source_id": independentSource.ID, "fingerprint": entry.Fingerprint, "independent_path": independent}))
+		writeEvidence(t, evidence+"/claim-result.json", mustMarshalJSON(t, map[string]any{"disposition": "inconclusive", "reason": "recovery refused for a reason other than the claimed equal-content reference", "failure": preview.Failure, "journal_source_id": entry.SourceID, "independent_source_id": independentSource.ID, "fingerprint": entry.Fingerprint, "independent_path": independent}))
 		return
 	}
 	applyResult := changeCommand(t, fx, "", "consolidate", "recover", "--backup", apply.RecoveryID, "--confirm", preview.Confirmation, "--json")
@@ -334,7 +296,7 @@ func TestRECREFRecoveryIgnoresAnIndependentEqualBundle(t *testing.T) {
 	independentAfter := treeManifest(t, independent)
 	unchanged := strings.EqualFold(fmt.Sprintf("%x", independentBefore), fmt.Sprintf("%x", independentAfter)) && string(independentBefore) == string(independentAfter)
 	result := map[string]any{"disposition": "disconfirmed", "preview_state": preview.State, "apply_state": recovered.State, "apply_exit": applyResult.code, "independent_source_id": independentSource.ID, "journal_source_id": entry.SourceID, "independent_path": independent, "independent_copy_unchanged": unchanged, "independent_before": string(independentBefore), "independent_after": string(independentAfter)}
-	writeEvidence(t, evidence+"/claim-result.json", evidenceJSON(t, result))
+	writeEvidence(t, evidence+"/claim-result.json", mustMarshalJSON(t, result))
 	if applyResult.code != 0 || recovered.State != "recovered" || !unchanged {
 		t.Fatalf("REC-REF-2: recovery did not restore only its recorded objects while preserving the independent copy: %+v", result)
 	}

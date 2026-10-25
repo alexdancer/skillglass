@@ -13,7 +13,7 @@ import (
 func TestALE86ConsolidationHelpTokensRespectOptionValues(t *testing.T) {
 	libraryFixture := newFixture(t)
 	writeFile(t, filepath.Join(libraryFixture.home, ".codex", "skills", "home-canary", "SKILL.md"), []byte("---\nname: acceptance-home-canary\ndescription: help-value scan fixture\n---\nFixture only.\n"), 0o644)
-	libraryNames := []string{"help", "--help", "-h", "ordinary-library"}
+	libraryNames := []string{"help", "--help", "-h", "other-library"}
 	for _, name := range libraryNames {
 		if err := os.MkdirAll(filepath.Join(libraryFixture.project, name), 0o700); err != nil {
 			t.Fatal(err)
@@ -29,7 +29,7 @@ func TestALE86ConsolidationHelpTokensRespectOptionValues(t *testing.T) {
 		{[]string{"--library=--help"}, "--help"},
 		{[]string{"--library", "-h"}, "-h"},
 		{[]string{"--library=-h"}, "-h"},
-		{[]string{"--library", "ordinary-library"}, "ordinary-library"},
+		{[]string{"--library", "other-library"}, "other-library"},
 	}
 	for _, testCase := range libraryCases {
 		args := append([]string{"consolidate", "scan", "--app", "codex"}, testCase.args...)
@@ -165,7 +165,7 @@ func TestALE86ConsolidationHelpTokensRespectOptionValues(t *testing.T) {
 		{"consolidate", "recover", "--backup"},
 	} {
 		result := draftFixture.run(t, args...)
-		if result.code != 2 || !strings.Contains(string(result.stderr), "argument") {
+		if result.code != 2 || !strings.Contains(string(result.stderr), "flag needs an argument") {
 			t.Fatalf("missing option value %v was not rejected normally: exit=%d stderr=%q", args, result.code, result.stderr)
 		}
 	}
@@ -175,4 +175,5 @@ func TestALE86ConsolidationHelpTokensRespectOptionValues(t *testing.T) {
 			t.Fatalf("unknown flag for %s was not rejected normally: exit=%d stderr=%q", operation, result.code, result.stderr)
 		}
 	}
+	assertTreeUnchanged(t, draftBefore, treeManifest(t, draftFixture.base))
 }

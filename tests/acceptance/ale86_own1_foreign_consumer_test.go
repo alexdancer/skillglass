@@ -1,7 +1,6 @@
 package acceptance_test
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,18 +71,8 @@ func TestOWN1SelectedPersonalSourcesAreNotOwnedByForeignCodeAFRoots(t *testing.T
 		t.Fatal("CodeAF must remain outside the direct source/destination selection")
 	}
 
-	selected := make(map[string]bool, len(inventory.Scope.Applications))
-	for _, app := range inventory.Scope.Applications {
-		selected[app] = true
-	}
 	var expectedFailures []string
 	var target *collection.ConsolidationSource
-	draft := collection.ConsolidationDraft{
-		SchemaVersion: 1,
-		Scope:         inventory.Scope,
-		ScanID:        inventory.ScanID,
-		Choices:       []collection.ConsolidationChoice{},
-	}
 	for app, wantPath := range paths {
 		var found *collection.ConsolidationSource
 		for index := range inventory.Sources {
@@ -119,55 +108,17 @@ func TestOWN1SelectedPersonalSourcesAreNotOwnedByForeignCodeAFRoots(t *testing.T
 	if target == nil {
 		t.Fatal("Codex target source absent; full JSON: ownership/own1-selected-app-scan.json")
 	}
-	for _, source := range inventory.Sources {
-		if source.ID == target.ID {
-			choice := collection.ConsolidationChoice{
-				SourceID:          source.ID,
-				SourcePath:        source.SourcePath,
-				BundleFingerprint: source.BundleFingerprint,
-				Action:            "share",
-				CanonicalName:     source.Name,
-				Destinations:      []collection.ConsolidationDestinationChoice{},
-			}
-			for _, application := range inventory.Scope.Applications {
-				assessment := collection.ConsolidationDestinationChoice{
-					Application: application,
-					Portability: "compatible",
-					Reason:      "fixture instructions require no application-specific capability",
-				}
-				for _, audit := range inventory.DestinationAudits {
-					if audit.Application != application {
-						continue
-					}
-					for _, consumer := range audit.PotentialConsumers {
-						if selected[consumer.Application] {
-							continue
-						}
-						assessment.AcknowledgedConsumers = append(assessment.AcknowledgedConsumers, collection.ConsolidationConsumerAcknowledgment{
-							Application:  consumer.Application,
-							EvidenceIDs:  []string{consumer.EvidenceID},
-							UserApproved: true,
-						})
-					}
-				}
-				choice.Destinations = append(choice.Destinations, assessment)
-			}
-			draft.Choices = append(draft.Choices, choice)
-			continue
-		}
-		if source.Eligible {
-			draft.Choices = append(draft.Choices, collection.ConsolidationChoice{
-				SourceID: source.ID, SourcePath: source.SourcePath,
-				BundleFingerprint: source.BundleFingerprint, Action: "keep",
-			})
-		}
+	if !target.Eligible {
+		t.Fatalf("Codex target source should be eligible, got %s: %s", target.RelocationScope, strings.Join(target.BlockedReasons, "; "))
+	}
+	draft := buildConsolidationDraft(inventory, map[collection.SourceID]string{target.ID: "share"})
+	choice := consolidationChoice(t, &draft, target.ID)
+	for index := range choice.Destinations {
+		choice.Destinations[index].Reason = "fixture instructions require no application-specific capability"
 	}
 	assertTreeUnchanged(t, before, treeManifest(t, fx.base))
 
-	draftBytes, err := json.MarshalIndent(draft, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
+	draftBytes := mustMarshalJSON(t, draft)
 	draftPath := filepath.Join(fx.base, "allowed", "ownership-artifacts", "own1-draft.json")
 	writeFile(t, draftPath, draftBytes, 0o600)
 	writeEvidence(t, "ownership/own1-acknowledged-draft.json", draftBytes)

@@ -233,46 +233,6 @@ func TestALE86SequentialSymlinkReusePublicBoundaries(t *testing.T) {
 	assertTreeUnchanged(t, beforePreview, treeManifest(t, fx.base))
 }
 
-func TestALE86ConsolidateLibraryCanBeNamedHelp(t *testing.T) {
-	fx := newFixture(t)
-	writeFile(t, filepath.Join(fx.home, ".codex", "skills", "home-canary", "SKILL.md"), []byte("---\nname: acceptance-home-canary\ndescription: valid explicit-scan fixture\n---\nFixture only.\n"), 0o644)
-	for _, name := range []string{"help", "other-library"} {
-		if err := os.MkdirAll(filepath.Join(fx.project, name), 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	before := treeManifest(t, fx.base)
-	for _, name := range []string{"help", "other-library"} {
-		result := fx.run(t, "consolidate", "scan", "--app", "codex", "--library", name, "--json")
-		writeEvidence(t, "help-library/"+name+".json", result.stdout)
-		assertExit(t, result, 0)
-		var inventory collection.ConsolidationInventory
-		decodeJSON(t, result.stdout, &inventory)
-		if inventory.Operation != "consolidate-scan" || filepath.Clean(inventory.Scope.Library) != filepath.Join(fx.project, name) {
-			t.Fatalf("relative library %q was not scanned as a path: operation=%s library=%q", name, inventory.Operation, inventory.Scope.Library)
-		}
-	}
-	for _, args := range [][]string{
-		{"consolidate", "--help"},
-		{"consolidate", "help"},
-		{"consolidate", "scan", "-h"},
-	} {
-		result := fx.run(t, args...)
-		if result.code != 0 || !strings.Contains(string(result.stdout), "Usage:") {
-			t.Fatalf("help invocation %v changed behavior: code=%d stdout=%q stderr=%q", args, result.code, result.stdout, result.stderr)
-		}
-	}
-	missing := fx.run(t, "consolidate", "scan", "--app")
-	if missing.code != 2 || !strings.Contains(string(missing.stderr), "flag needs an argument") {
-		t.Fatalf("missing argument was not reported: code=%d stderr=%q", missing.code, missing.stderr)
-	}
-	invalid := fx.run(t, "consolidate", "scan", "--unknown")
-	if invalid.code != 2 || !strings.Contains(string(invalid.stderr), "flag provided but not defined") {
-		t.Fatalf("invalid argument was not reported: code=%d stderr=%q", invalid.code, invalid.stderr)
-	}
-	assertTreeUnchanged(t, before, treeManifest(t, fx.base))
-}
-
 func createEscapingResourceLinks(t *testing.T, bundle string) {
 	t.Helper()
 	if err := os.Symlink("..", filepath.Join(bundle, "sub", "up")); err != nil {

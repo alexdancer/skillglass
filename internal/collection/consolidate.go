@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -487,14 +488,7 @@ func ScanConsolidation(ctx context.Context, request ConsolidationRequest) Consol
 			if source, ok := entry.snapshot.Source(id); ok {
 				item.Availability[entry.app] = cloneAvailability(source.Availability)
 				for _, ref := range entry.snapshot.References(id) {
-					rootOrigin := ""
-					for _, root := range entry.snapshot.scope.Roots {
-						if root.ID == ref.Root {
-							rootOrigin = root.Origin
-							break
-						}
-					}
-					reference := ConsolidationReference{Application: entry.app, Origin: rootOrigin, Reference: ref, Availability: cloneAvailability(source.Availability)}
+					reference := ConsolidationReference{Application: entry.app, Origin: rootOrigin(entry.snapshot, ref.Root), Reference: ref, Availability: cloneAvailability(source.Availability)}
 					item.KnownReferences = append(item.KnownReferences, reference)
 					if selected[entry.app] {
 						item.SelectedReferences = append(item.SelectedReferences, reference)
@@ -1037,7 +1031,7 @@ func consolidationArchiveReplacementApps(source ConsolidationSource, owners []st
 			break
 		}
 	}
-	return uniqueSortedStrings(replaced)
+	return uniqueStrings(replaced)
 }
 
 func consolidationNativeNameForApplication(source ConsolidationSource, application string) string {
@@ -1067,7 +1061,7 @@ func hasRelocationProfile(profiles []ConsolidationRelocationProof, expected Cons
 
 func consolidationProfilesForApplications(applications []string, byName map[string]ConsolidationApplication) ([]ConsolidationRelocationProof, error) {
 	profiles := []ConsolidationRelocationProof{}
-	for _, application := range uniqueSortedStrings(applications) {
+	for _, application := range uniqueStrings(applications) {
 		app, exists := byName[application]
 		if !exists || app.NativeRelocationProfile == nil {
 			return nil, fmt.Errorf("unsupported-native-relocation: %s has no independently observed native personal-directory relocation profile; keep this source or choose only validated owners and destinations", application)
@@ -1093,12 +1087,6 @@ func validateNativeSourceRelocation(source ConsolidationSource, application, act
 	default:
 		return fmt.Errorf("unsupported-native-relocation: %s source availability is %s; only an ordinary available source or the exact proven Codex selector case can be relocated", application, availability.State)
 	}
-}
-
-func uniqueSortedStrings(values []string) []string {
-	values = uniqueStrings(values)
-	sort.Strings(values)
-	return values
 }
 
 func mergeConsolidationRelocationProfiles(left, right []ConsolidationRelocationProof) []ConsolidationRelocationProof {
@@ -1601,7 +1589,7 @@ func PreviewConsolidation(ctx context.Context, draft ConsolidationDraft) Consoli
 				return consolidationPreviewFailure(preview, "canonical-source-archive", "an existing canonical library source cannot be archived while application links may resolve through it", "Keep the canonical source or resolve its exact references in a separately reviewed plan before archiving it.")
 			}
 			for _, reference := range source.KnownReferences {
-				if !containsString(request.Applications, reference.Application) {
+				if !slices.Contains(request.Applications, reference.Application) {
 					return consolidationPreviewFailure(preview, "external-reference", "archive would break an existing reference from unselected application "+reference.Application+" at "+reference.Reference.DiscoveredPath, "Keep the source or explicitly resolve that application's existing reference before preparing a new proposal.")
 				}
 			}
@@ -1669,17 +1657,18 @@ func PreviewConsolidation(ctx context.Context, draft ConsolidationDraft) Consoli
 			preservedReferences := []string{}
 			suitableDestinations := 0
 			for _, assessment := range assessments {
+				references := consolidationReferencesForApp(source, assessment.Application)
 				if assessment.Portability == "incompatible" {
-					if consolidationAlreadyConnected(source, assessment.Application) {
-						preservedReferences = append(preservedReferences, consolidationReferencesForApp(source, assessment.Application)...)
+					if len(references) > 0 {
+						preservedReferences = append(preservedReferences, references...)
 					}
 					continue
 				}
 				suitableDestinations++
 				app := appByName[assessment.Application]
 				if app.DestinationRoot == "" {
-					if consolidationAlreadyConnected(source, assessment.Application) {
-						preservedReferences = append(preservedReferences, consolidationReferencesForApp(source, assessment.Application)...)
+					if len(references) > 0 {
+						preservedReferences = append(preservedReferences, references...)
 						continue
 					}
 					return consolidationPreviewFailure(preview, "unsupported-destination", "no recorded per-skill destination root exists for "+assessment.Application, "Keep the source or use a supported application destination.")
@@ -1689,8 +1678,8 @@ func PreviewConsolidation(ctx context.Context, draft ConsolidationDraft) Consoli
 				if err := validateDestinationConsumerSet(ctx, destinationRoot, destination, assessment.Application, request.Applications, assessments, inventory.DestinationAudits); err != nil {
 					return consolidationPreviewFailure(preview, "unapproved-consumer", err.Error(), "Acknowledge every exact possible indirect consumer shown in the scan, or keep the source unchanged.")
 				}
-				if consolidationAlreadyConnected(source, assessment.Application) {
-					preservedReferences = append(preservedReferences, consolidationReferencesForApp(source, assessment.Application)...)
+				if len(references) > 0 {
+					preservedReferences = append(preservedReferences, references...)
 					continue
 				}
 				if refs := consolidationCanonicalReferencesForApp(source, assessment.Application, canonicalPath, inventory); len(refs) > 0 {
@@ -1736,17 +1725,13 @@ func PreviewConsolidation(ctx context.Context, draft ConsolidationDraft) Consoli
 			return consolidationPreviewFailure(preview, "invalid-choice", "action must be share, archive, or keep", "Use one explicit action for every eligible source.")
 		}
 	}
-	sourcesByID := make(map[SourceID]ConsolidationSource, len(inventory.Sources))
-	for _, source := range inventory.Sources {
-		sourcesByID[source.ID] = source
-	}
 	for index := range effects {
 		if effects[index].Action != "archive" {
 			continue
 		}
-		source := sourcesByID[effects[index].SourceID]
+		source := byID[effects[index].SourceID]
 		owners := consolidationNativeSourceOwners(source, inventory.Applications, selected)
-		replacementApps := consolidationArchiveReplacementApps(source, owners, effects, sourcesByID, appByName)
+		replacementApps := consolidationArchiveReplacementApps(source, owners, effects, byID, appByName)
 		if len(replacementApps) != len(owners) {
 			return consolidationPreviewFailure(preview, "unsupported-native-relocation", "no recorded native profile proves that this archive may leave the source absent from its native root; archive requires a planned shared winner with the same native identity to recreate the exact owner path", "Keep the source, or choose a winner whose approved link replaces this exact native leaf and review a fresh complete plan.")
 		}
@@ -1891,7 +1876,7 @@ func validateDestinationChoices(source ConsolidationSource, choice Consolidation
 	assessments := append([]ConsolidationDestinationChoice(nil), choice.Destinations...)
 	seen := map[string]bool{}
 	for _, app := range assessments {
-		if !containsString(request.Applications, app.Application) || seen[app.Application] {
+		if !slices.Contains(request.Applications, app.Application) || seen[app.Application] {
 			return nil, fmt.Errorf("destination app %q is not selected or is repeated", app.Application)
 		}
 		seen[app.Application] = true
@@ -2109,18 +2094,6 @@ func hasNativeReference(source ConsolidationSource, app string) bool {
 	return false
 }
 
-func consolidationAlreadyConnected(source ConsolidationSource, app string) bool {
-	for _, reference := range source.KnownReferences {
-		if reference.Application != app || reference.Origin == "" || reference.Reference.Context != ContextGlobal && reference.Reference.Context != ContextCustom {
-			continue
-		}
-		if reference.Reference.Status == "resolved" {
-			return true
-		}
-	}
-	return false
-}
-
 func consolidationReferencesForApp(source ConsolidationSource, app string) []string {
 	var refs []string
 	for _, reference := range source.KnownReferences {
@@ -2174,7 +2147,7 @@ func validateDestinationConsumerSet(_ context.Context, root, destination, destin
 	}
 	for app, ack := range acks {
 		route, exists := routeByApp[app]
-		if !exists || containsString(selected, app) {
+		if !exists || slices.Contains(selected, app) {
 			return fmt.Errorf("acknowledgement for %s is not a current unselected consumer route", app)
 		}
 		if !ack.UserApproved || len(ack.EvidenceIDs) != 1 || ack.EvidenceIDs[0] != route.EvidenceID {
@@ -2182,7 +2155,7 @@ func validateDestinationConsumerSet(_ context.Context, root, destination, destin
 		}
 	}
 	for _, route := range audit.PotentialConsumers {
-		if containsString(selected, route.Application) {
+		if slices.Contains(selected, route.Application) {
 			continue
 		}
 		ack, ok := acks[route.Application]
@@ -2303,8 +2276,8 @@ func consolidationCanonicalReferencesForApp(source ConsolidationSource, app, can
 		if !candidate.Eligible || candidate.RelocationScope != "consolidation-library" || candidate.BundleFingerprint != source.BundleFingerprint || filepath.Clean(candidate.SourcePath) != filepath.Clean(canonicalPath) {
 			continue
 		}
-		if consolidationAlreadyConnected(candidate, app) {
-			return consolidationReferencesForApp(candidate, app)
+		if refs := consolidationReferencesForApp(candidate, app); len(refs) > 0 {
+			return refs
 		}
 	}
 	return nil
@@ -2398,7 +2371,7 @@ func consolidationWarnings(inventory ConsolidationInventory, choices map[SourceI
 							out = append(out, destination.Application+" destination route warning: "+warning)
 						}
 						for _, route := range audit.PotentialConsumers {
-							if containsString(inventory.Scope.Applications, route.Application) {
+							if slices.Contains(inventory.Scope.Applications, route.Application) {
 								continue
 							}
 							out = append(out, fmt.Sprintf("new link at %s may indirectly expose unselected %s through %s; acknowledged exposure does not import it or create a direct link", audit.DestinationRoot, route.Application, route.EvidenceID))
@@ -2408,7 +2381,7 @@ func consolidationWarnings(inventory ConsolidationInventory, choices map[SourceI
 			}
 		}
 		for _, reference := range source.KnownReferences {
-			if containsString(inventory.Scope.Applications, reference.Application) {
+			if slices.Contains(inventory.Scope.Applications, reference.Application) {
 				continue
 			}
 			switch choice.Action {
@@ -2463,31 +2436,6 @@ func consolidationBackupRoot() string {
 func pathExists(path string) bool {
 	_, err := os.Lstat(path)
 	return err == nil
-}
-
-func containsString(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
-}
-
-func consolidationEqualStrings(left, right []string) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	left = append([]string(nil), left...)
-	right = append([]string(nil), right...)
-	sort.Strings(left)
-	sort.Strings(right)
-	for i := range left {
-		if left[i] != right[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func RememberedSelectionID(apps, roots []string, library string) string {

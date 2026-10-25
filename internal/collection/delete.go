@@ -367,6 +367,18 @@ func deletePathsOverlap(a, b string) deleteRelation {
 	}
 	return deleteUnrelated
 }
+
+func deleteUniquePaths(paths []string) []string {
+	sort.Strings(paths)
+	result := paths[:0]
+	for _, path := range paths {
+		if len(result) == 0 || result[len(result)-1] != path {
+			result = append(result, path)
+		}
+	}
+	return result
+}
+
 func deleteApplicationHomes(r Request) []string {
 	paths := []string{r.home, r.codexHome, r.claudeHome, r.hermesHome, r.codeafProfile}
 	if r.home != "" {

@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"golang.org/x/sys/unix"
 )
@@ -19,13 +18,6 @@ type consolidationSelection struct {
 	Applications  []string `json:"applications"`
 	Roots         []string `json:"roots,omitempty"`
 	Library       string   `json:"library"`
-}
-
-// LastConsolidationSelection reads only the remembered selection. It never
-// creates the state directory or writes a default selection.
-func LastConsolidationSelection() (apps, roots []string, library string, found bool, err error) {
-	apps, roots, library, found, _, err = LastConsolidationSelectionWithID()
-	return
 }
 
 // LastConsolidationSelectionWithID reads the selection and the canonical
@@ -114,13 +106,9 @@ func consolidationSelectionPath() (string, error) {
 	return canonicalizePathParent(filepath.Join(base, "skillglass", "consolidation.json"))
 }
 
-func createPrivateDirectory(path string) error {
-	return ensureConsolidationDirectory(path, true)
-}
-
 func writePrivateAtomic(path string, data []byte) error {
 	dir := filepath.Dir(path)
-	if err := createPrivateDirectory(dir); err != nil {
+	if err := ensureConsolidationDirectory(dir, true); err != nil {
 		return err
 	}
 	if info, err := os.Lstat(path); err == nil {
@@ -240,11 +228,4 @@ func consolidationStateOutsideRoots(request ConsolidationRequest, apps []Consoli
 		}
 	}
 	return uniqueStrings(reasons)
-}
-
-func normalizeSelectionFrom(value string) string {
-	if value == "remembered" || strings.EqualFold(value, "remembered") {
-		return "remembered"
-	}
-	return "arguments"
 }
