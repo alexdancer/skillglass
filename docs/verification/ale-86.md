@@ -8,9 +8,9 @@ that an already-running session adopted a changed filesystem.
 
 ## Native relocation observations
 
-Each test used a disposable fixture under `/private/tmp` and queried the
-application's actual catalog after replacing a personal skill directory with a
-symlink to a private canonical directory. The skill contained an inert
+Each test used a disposable temporary fixture and queried the application's
+actual catalog after replacing a personal skill directory with a symlink to a
+private canonical directory. The skill contained an inert
 `SKILL.md`, a text reference, and a non-executed 0755 script. An unrelated
 sibling was checked for preservation. No model request, skill workload, tool
 execution, or network access was part of these probes.

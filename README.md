@@ -37,11 +37,11 @@ filesystem changes without a built-in model service. See
 
 Installing this companion is a separate choice from selecting the applications
 whose collections will be consolidated. Check the named executable with
-`skillglass setup --check --companion skillglass-consolidate --json`, then use
-`setup --companion skillglass-consolidate --app APP` to preview an explicit
-supported installation target. Repeat the same setup targets with `--install`
-only after reviewing the exact destination. The default setup bundle remains
-`skillglass-review`.
+`skillglass setup --check --companion skillglass-consolidate --json`, then preview
+an explicit supported installation target with
+`skillglass setup --companion skillglass-consolidate --app APP`. Repeat the same
+setup targets with `--install` only after reviewing the exact destination. The
+default setup bundle remains `skillglass-review`.
 
 ## Install the companion for selected applications
 
