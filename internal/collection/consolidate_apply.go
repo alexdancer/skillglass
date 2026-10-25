@@ -211,8 +211,8 @@ func newConsolidationJournal(ctx context.Context, draft ConsolidationDraft, prev
 	}
 	journal := consolidationJournal{SchemaVersion: ConsolidationSchemaVersion, ID: planID, State: "prepared", Scope: draft.Scope, Draft: draft, Confirmation: preview.Confirmation, Entries: []consolidationJournalEntry{}, SelectionPath: selectionPath, PriorSelection: oldBytes, PriorSelectionExists: oldExists, AppliedSelection: newSelection}
 	inventory := ScanConsolidation(ctx, draft.Scope)
-	if inventory.Failure != nil || inventory.SelectedCoverage != Complete || inventory.ScanID != preview.ScanID {
-		return consolidationJournal{}, errors.New("complete source and consumer evidence changed after preview; no filesystem changes were made")
+	if inventory.Failure != nil || inventory.SelectedCoverage != Complete || !inventory.LibrarySafe || inventory.ScanID != preview.ScanID {
+		return consolidationJournal{}, errors.New("complete source and consumer evidence changed or the library became unsafe after preview; no filesystem changes were made")
 	}
 	if err := consolidationMovesPreflight(ctx, preview.Effects); err != nil {
 		return consolidationJournal{}, err
@@ -1012,6 +1012,9 @@ func PreviewConsolidationRecovery(ctx context.Context, id string) ConsolidationP
 	preview.ScanID = inventory.ScanID
 	if !consolidationRecoveryCoverageAllowed(inventory, journal) {
 		return consolidationPreviewFailure(preview, "incomplete-recovery-scan", "current consumer/reference inventory is incomplete", "Resolve the listed inventory evidence gaps and retry recovery preview.")
+	}
+	if !inventory.LibrarySafe {
+		return consolidationPreviewFailure(preview, "unsafe-library", strings.Join(inventory.LibraryReasons, "; "), "Choose a dedicated path outside every discovered consumer root and custom source root before recovery.")
 	}
 	var effects []ConsolidationEffect
 	for i := len(journal.Entries) - 1; i >= 0; i-- {

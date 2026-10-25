@@ -1390,7 +1390,10 @@ func consolidationScanID(inventory ConsolidationInventory, snapshots []consolida
 		Apps              []appFact
 		Sources           []ConsolidationSource
 		DestinationAudits []ConsolidationDestinationAudit
-	}{ConsolidationSchemaVersion, inventory.Scope, facts, inventory.Sources, inventory.DestinationAudits})
+		LibrarySafe       bool
+		LibraryReasons    []string
+		LibraryWarnings   []string
+	}{ConsolidationSchemaVersion, inventory.Scope, facts, inventory.Sources, inventory.DestinationAudits, inventory.LibrarySafe, inventory.LibraryReasons, inventory.LibraryWarnings})
 	if err != nil {
 		return ""
 	}

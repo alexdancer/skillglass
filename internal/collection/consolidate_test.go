@@ -382,3 +382,100 @@ func canonicalFixturePath(t *testing.T, path string) string {
 	}
 	return canonical
 }
+
+func consolidationLibraryAuditFixture(t *testing.T) (ConsolidationRequest, string, string) {
+	t.Helper()
+	base := t.TempDir()
+	home := filepath.Join(base, "home")
+	config := filepath.Join(base, "config")
+	data := filepath.Join(base, "data")
+	library := filepath.Join(data, "skillglass", "skills")
+	for _, path := range []string{home, config, data, filepath.Join(home, ".codex", "skills"), library} {
+		if err := os.MkdirAll(path, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for key, value := range map[string]string{
+		"HOME": home, "XDG_CONFIG_HOME": config, "XDG_DATA_HOME": data,
+		"XDG_CACHE_HOME": filepath.Join(base, "cache"), "XDG_STATE_HOME": filepath.Join(base, "state"),
+		"CODEX_HOME": "", "CLAUDE_CONFIG_DIR": "", "PI_CODING_AGENT_DIR": "",
+		"OPENCODE_CONFIG_DIR": "", "OPENCODE_CONFIG_CONTENT": "", "OPENCODE_DISABLE_EXTERNAL_SKILLS": "",
+		"OPENCODE_DISABLE_CLAUDE_CODE": "", "OPENCODE_DISABLE_CLAUDE_CODE_SKILLS": "",
+		"OPENCODE_DISABLE_PROJECT_CONFIG": "", "OPENCODE_PURE": "", "HERMES_HOME": "",
+		"HERMES_SAFE_MODE": "", "HERMES_ENABLE_PROJECT_PLUGINS": "", "GEMINI_CLI_HOME": "",
+		"GEMINI_CLI_SYSTEM_SETTINGS_PATH": "", "GEMINI_CLI_TRUSTED_FOLDERS_PATH": "",
+		"CODEAF_HOME": "", "CODEAF_PROFILE_DIR": "",
+	} {
+		t.Setenv(key, value)
+	}
+	request, err := NormalizeConsolidationRequest([]string{"codex"}, nil, library, "arguments")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return request, filepath.Join(home, ".codex", "skills", ".shared"), library
+}
+
+func TestConsolidationScanIDBindsLibraryAudit(t *testing.T) {
+	request, hiddenLink, library := consolidationLibraryAuditFixture(t)
+	before := ScanConsolidation(context.Background(), request)
+	if before.Failure != nil || !before.LibrarySafe {
+		t.Fatalf("initial isolated library scan is not safe: failure=%+v reasons=%v", before.Failure, before.LibraryReasons)
+	}
+	if err := os.Symlink(library, hiddenLink); err != nil {
+		t.Fatal(err)
+	}
+	after := ScanConsolidation(context.Background(), request)
+	if after.Failure != nil || after.LibrarySafe {
+		t.Fatalf("hidden discovery route was not rejected: failure=%+v safe=%t reasons=%v", after.Failure, after.LibrarySafe, after.LibraryReasons)
+	}
+	if after.ScanID == before.ScanID {
+		t.Fatal("library safety audit changed without invalidating scan identity")
+	}
+}
+
+func TestConsolidationPrewriteRescanRefusesNewHiddenLibraryRoute(t *testing.T) {
+	request, hiddenLink, library := consolidationLibraryAuditFixture(t)
+	before := ScanConsolidation(context.Background(), request)
+	if before.Failure != nil || !before.LibrarySafe {
+		t.Fatalf("initial isolated library scan is not safe: failure=%+v reasons=%v", before.Failure, before.LibraryReasons)
+	}
+	if err := os.Symlink(library, hiddenLink); err != nil {
+		t.Fatal(err)
+	}
+	draft := ConsolidationDraft{SchemaVersion: ConsolidationSchemaVersion, Scope: request}
+	preview := ConsolidationPreview{ScanID: before.ScanID, RecoveryID: "c-0123456789abcdef01234567", Effects: []ConsolidationEffect{}}
+	if _, err := newConsolidationJournal(context.Background(), draft, preview); err == nil {
+		t.Fatal("apply pre-write rescan accepted a library made unsafe after preview")
+	}
+}
+
+func TestConsolidationRecoveryRefusesUnsafeLibrary(t *testing.T) {
+	request, hiddenLink, library := consolidationLibraryAuditFixture(t)
+	if err := os.Symlink(library, hiddenLink); err != nil {
+		t.Fatal(err)
+	}
+	journal := consolidationJournal{SchemaVersion: ConsolidationSchemaVersion, ID: "c-0123456789abcdef01234567", State: "applied", Scope: request, Entries: []consolidationJournalEntry{}}
+	if err := writeConsolidationJournal(journal); err != nil {
+		t.Fatal(err)
+	}
+	journalPath := consolidationJournalPath(journal.ID)
+	before, err := os.ReadFile(journalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview := PreviewConsolidationRecovery(context.Background(), journal.ID)
+	if preview.State != "refused" || preview.Failure == nil || preview.Failure.Code != "unsafe-library" {
+		t.Fatalf("unsafe library recovery was not explicitly refused: %#v", preview)
+	}
+	out := ApplyConsolidationRecovery(context.Background(), journal.ID, preview.Confirmation)
+	if out.State != "refused" || out.Failure == nil || out.Failure.Code != "unsafe-library" {
+		t.Fatalf("unsafe library recovery application was not refused: %#v", out)
+	}
+	after, err := os.ReadFile(journalPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("refused recovery changed its journal")
+	}
+}
