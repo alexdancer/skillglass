@@ -55,7 +55,7 @@ Check the executable and exact bundled companion metadata. Use only commands adv
        skillglass consolidate recover --backup BACKUP_ID --confirm TOKEN --json
 
    If the CLI reports later edits or a changed link, preserve those changes and stop. Do not force restoration over newer user data.
-12. Rerun only when the user wants to incorporate new skills or inspect state again. An unchanged run should report a no-op. There is no background watcher.
+12. Rerun only when the user wants to incorporate new skills or inspect state again. An exact unchanged rerun reports `unchanged` and makes no filesystem changes or recovery record. There is no background watcher.
 
 ## Report
 

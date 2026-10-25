@@ -128,7 +128,7 @@ The following outcomes are required acceptance coverage:
 
 ## Out of Scope
 
-- Automatic cleanup, link repair, merging or consolidating independent copies, and automatic grouping of same-name copies into one identity.
+- Explicit consolidation was added separately as the user-approved [ALE-86 workflow](../verification/ale-86.md). Automatic cleanup, link repair, merging, and automatic grouping of same-name copies into one identity remain out of scope; ordinary inventory and comparison remain read-only, and availability review remains content-preserving.
 - Recoverable deletion, trash management, deletion undo, and a general preview-history or undo system for other changes.
 - Named task profiles, favorites, tags, reading notes, and usage-based recommendations.
 - Online features, accounts, telemetry, cloud sync, a skill marketplace, or sending skill content to a model.
