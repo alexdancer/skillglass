@@ -171,8 +171,8 @@ func TestPendingRecoveryLinkRecognizesOnlyRecordedRestoredSourceDirectories(t *t
 		t.Fatalf("restored fixture bundle is not verifiable: %s", reason)
 	}
 	for _, restoration := range []struct {
-		name              string
-		restoredToSource  bool
+		name                string
+		restoredToSource    bool
 		pendingRecoveryMove string
 	}{
 		{name: "recorded source", restoredToSource: true},
