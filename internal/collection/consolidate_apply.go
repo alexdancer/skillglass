@@ -520,7 +520,7 @@ func consolidationMovesPreflightWithDevice(ctx context.Context, effects []Consol
 		if err != nil || ownership.State != "local-user-controlled" {
 			return fmt.Errorf("source move is not ownership-verified: %s: %s", effect.SourcePath, errors.Join(err, errors.New(ownership.Reason)))
 		}
-		if checkMoveDevices {
+		if checkMoveDevices && consolidationEffectMovesBundleData(effect) {
 			destination := effect.BackupPath
 			if effect.Action == "share" {
 				destination = effect.CanonicalPath
@@ -545,6 +545,17 @@ func consolidationMovesPreflightWithDevice(ctx context.Context, effects []Consol
 		}
 	}
 	return nil
+}
+
+func consolidationEffectMovesBundleData(effect ConsolidationEffect) bool {
+	switch effect.Action {
+	case "archive":
+		return true
+	case "share":
+		return filepath.Clean(effect.SourcePath) != filepath.Clean(effect.CanonicalPath)
+	default:
+		return false
+	}
 }
 
 // preflightConsolidationJournalLifecycle proves that the exact initial record
