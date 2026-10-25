@@ -102,6 +102,107 @@ func TestRecoveryBoundaryAcceptsRecordedRestoredSourceAtRemovedLinkPath(t *testi
 	}
 }
 
+func TestPendingRecoveryLinkIsRefusedAtValidationAndMutationBoundaries(t *testing.T) {
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := filepath.Join(home, "xdg-data")
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", data)
+
+	ctx := context.Background()
+	canonical := filepath.Join(data, "skillglass", "skills", "pending-boundary")
+	sourcePath := filepath.Join(home, ".pi", "agent", "skills", "pending-boundary")
+	linkPath := filepath.Join(home, ".pi", "agent", "skills", "consumer", "pending-boundary")
+	writeRecoveryBoundaryBundle(t, canonical)
+	source, fingerprint, complete, reason := consolidationFingerprintPath(ctx, canonical)
+	if !complete {
+		t.Fatalf("canonical fixture bundle is not verifiable: %s", reason)
+	}
+	if err := os.MkdirAll(filepath.Dir(linkPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(canonical, linkPath); err != nil {
+		t.Fatal(err)
+	}
+	entry := consolidationJournalEntry{
+		SourceID: source.ID, BackupSourceID: source.ID, Action: "share",
+		SourcePath: sourcePath, Fingerprint: fingerprint, CanonicalPath: canonical,
+		CanonicalSourceID: source.ID, MovedToCanonical: true,
+		CreatedLinks: []string{linkPath}, PendingRecoveryLinks: []string{linkPath},
+	}
+	journal := consolidationJournal{State: "recovering", Entries: []consolidationJournalEntry{entry}}
+
+	if err := validateRecoveryEntry(ctx, entry, journal.Entries); err == nil || !strings.Contains(err.Error(), "pending recovery link path is occupied") {
+		t.Fatalf("recovery validation accepted an occupied pending link: %v", err)
+	}
+	if err := removeConsolidationRecoveryLinks(ctx, &journal); err == nil || !strings.Contains(err.Error(), "pending recovery link path is occupied") {
+		t.Fatalf("link-removal boundary accepted an occupied pending link: %v", err)
+	}
+	if err := restoreConsolidationRecoverySources(ctx, &journal); err == nil || !strings.Contains(err.Error(), "pending recovery link path is occupied") {
+		t.Fatalf("source-restoration boundary accepted an occupied pending link: %v", err)
+	}
+	if pathExists(sourcePath) {
+		t.Fatal("source was restored despite an unresolved pending link")
+	}
+	if target, err := os.Readlink(linkPath); err != nil || filepath.Clean(target) != filepath.Clean(canonical) {
+		t.Fatalf("later symlink was not preserved: target=%q err=%v", target, err)
+	}
+	if err := verifyMoveSource(ctx, canonical, fingerprint, source.ID); err != nil {
+		t.Fatalf("canonical source changed on refusal: %v", err)
+	}
+}
+
+func TestPendingRecoveryLinkRecognizesOnlyRecordedRestoredSourceDirectories(t *testing.T) {
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := filepath.Join(home, "xdg-data")
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", data)
+
+	ctx := context.Background()
+	sourcePath := filepath.Join(home, ".pi", "agent", "skills", "recorded-source")
+	writeRecoveryBoundaryBundle(t, sourcePath)
+	source, fingerprint, complete, reason := consolidationFingerprintPath(ctx, sourcePath)
+	if !complete {
+		t.Fatalf("restored fixture bundle is not verifiable: %s", reason)
+	}
+	for _, restoration := range []struct {
+		name              string
+		restoredToSource  bool
+		pendingRecoveryMove string
+	}{
+		{name: "recorded source", restoredToSource: true},
+		{name: "pending source restore", pendingRecoveryMove: "canonical"},
+	} {
+		t.Run(restoration.name, func(t *testing.T) {
+			entries := []consolidationJournalEntry{{
+				Action: "share", SourcePath: sourcePath, SourceID: source.ID, Fingerprint: fingerprint,
+				RestoredToSource: restoration.restoredToSource, PendingRecoveryMove: restoration.pendingRecoveryMove,
+			}}
+			restored, err := validatePendingRecoveryLink(ctx, sourcePath, entries)
+			if err != nil || !restored {
+				t.Fatalf("recorded source directory was not accepted: restored=%t err=%v", restored, err)
+			}
+		})
+	}
+
+	linkPath := filepath.Join(home, ".pi", "agent", "skills", "symlinked-source")
+	if err := os.Symlink(sourcePath, linkPath); err != nil {
+		t.Fatal(err)
+	}
+	entries := []consolidationJournalEntry{{
+		Action: "share", SourcePath: linkPath, SourceID: source.ID, Fingerprint: fingerprint,
+		RestoredToSource: true,
+	}}
+	if restored, err := validatePendingRecoveryLink(ctx, linkPath, entries); err == nil || restored {
+		t.Fatalf("same-target symlink was mistaken for the recorded source directory: restored=%t err=%v", restored, err)
+	}
+}
+
 func writeRecoveryBoundaryBundle(t *testing.T, path string) {
 	t.Helper()
 	if err := os.MkdirAll(path, 0o755); err != nil {

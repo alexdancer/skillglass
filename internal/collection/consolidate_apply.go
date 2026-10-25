@@ -1415,23 +1415,67 @@ func PreviewConsolidationRecovery(ctx context.Context, id string) ConsolidationP
 	return preview
 }
 
-func validateRemovedRecoveryLink(ctx context.Context, path string, journalEntries []consolidationJournalEntry) error {
-	_, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("inspect previously removed recovery link %s: %w", path, err)
-	}
+func recoverySourceAtPath(ctx context.Context, path string, journalEntries []consolidationJournalEntry) bool {
 	for _, restored := range journalEntries {
 		if filepath.Clean(path) != filepath.Clean(restored.SourcePath) || !restored.RestoredToSource && restored.PendingRecoveryMove == "" {
 			continue
 		}
 		if verifyMoveSource(ctx, path, restored.Fingerprint, restored.SourceID) == nil {
-			return nil
+			return true
 		}
 	}
+	return false
+}
+
+func inspectRecoveryLinkPath(ctx context.Context, path string, journalEntries []consolidationJournalEntry, description string) (bool, bool, error) {
+	_, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, fmt.Errorf("inspect %s recovery link %s: %w", description, path, err)
+	}
+	return true, recoverySourceAtPath(ctx, path, journalEntries), nil
+}
+
+func validateRemovedRecoveryLink(ctx context.Context, path string, journalEntries []consolidationJournalEntry) error {
+	present, restoredSource, err := inspectRecoveryLinkPath(ctx, path, journalEntries, "previously removed")
+	if err != nil {
+		return err
+	}
+	if !present || restoredSource {
+		return nil
+	}
 	return fmt.Errorf("previously removed recovery link reappeared: %s", path)
+}
+
+func validatePendingRecoveryLink(ctx context.Context, path string, journalEntries []consolidationJournalEntry) (bool, error) {
+	present, restoredSource, err := inspectRecoveryLinkPath(ctx, path, journalEntries, "pending")
+	if err != nil {
+		return false, err
+	}
+	if !present {
+		return false, nil
+	}
+	if restoredSource {
+		return true, nil
+	}
+	return false, fmt.Errorf("pending recovery link path is occupied: %s", path)
+}
+
+func reconcilePendingRecoveryLinks(ctx context.Context, journal *consolidationJournal, entry *consolidationJournalEntry) error {
+	pending := append([]string(nil), entry.PendingRecoveryLinks...)
+	for _, path := range pending {
+		if _, err := validatePendingRecoveryLink(ctx, path, journal.Entries); err != nil {
+			return err
+		}
+		entry.PendingRecoveryLinks = removeJournalPath(entry.PendingRecoveryLinks, path)
+		entry.RemovedLinks = uniqueJournalPaths(append(entry.RemovedLinks, path))
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+	return writeConsolidationJournal(*journal)
 }
 
 func validateRecoveryEntry(ctx context.Context, entry consolidationJournalEntry, journalEntries []consolidationJournalEntry) error {
@@ -1491,8 +1535,18 @@ func validateRecoveryEntry(ctx context.Context, entry consolidationJournalEntry,
 			return err
 		}
 	}
+	pendingRestoredSources := make(map[string]bool, len(entry.PendingRecoveryLinks))
+	for _, path := range entry.PendingRecoveryLinks {
+		restoredSource, err := validatePendingRecoveryLink(ctx, path, journalEntries)
+		if err != nil {
+			return err
+		}
+		if restoredSource {
+			pendingRestoredSources[filepath.Clean(path)] = true
+		}
+	}
 	for _, path := range ownedJournalLinks(entry) {
-		if containsString(entry.RemovedLinks, path) || entry.RestoredToSource && filepath.Clean(path) == filepath.Clean(entry.SourcePath) {
+		if containsString(entry.RemovedLinks, path) || pendingRestoredSources[filepath.Clean(path)] || entry.RestoredToSource && filepath.Clean(path) == filepath.Clean(entry.SourcePath) {
 			continue
 		}
 		if !pathExists(path) {
@@ -1758,8 +1812,18 @@ func ApplyConsolidationRecovery(ctx context.Context, id, confirmation string) Co
 }
 
 func removeConsolidationRecoveryLinks(ctx context.Context, journal *consolidationJournal) error {
+	for _, entry := range journal.Entries {
+		for _, link := range entry.PendingRecoveryLinks {
+			if _, err := validatePendingRecoveryLink(ctx, link, journal.Entries); err != nil {
+				return err
+			}
+		}
+	}
 	for i := len(journal.Entries) - 1; i >= 0; i-- {
 		entry := &journal.Entries[i]
+		if err := reconcilePendingRecoveryLinks(ctx, journal, entry); err != nil {
+			return err
+		}
 		for _, link := range entry.RemovedLinks {
 			if err := validateRemovedRecoveryLink(ctx, link, journal.Entries); err != nil {
 				return err
@@ -1813,6 +1877,17 @@ func removeConsolidationRecoveryLinks(ctx context.Context, journal *consolidatio
 }
 
 func restoreConsolidationRecoverySources(ctx context.Context, journal *consolidationJournal) error {
+	for i := range journal.Entries {
+		entry := &journal.Entries[i]
+		if err := reconcilePendingRecoveryLinks(ctx, journal, entry); err != nil {
+			return err
+		}
+		for _, link := range entry.RemovedLinks {
+			if err := validateRemovedRecoveryLink(ctx, link, journal.Entries); err != nil {
+				return err
+			}
+		}
+	}
 	for i := len(journal.Entries) - 1; i >= 0; i-- {
 		entry := &journal.Entries[i]
 		for _, link := range entry.RemovedLinks {
