@@ -186,25 +186,26 @@ func TestMain(testMain *testing.M) {
 }
 
 type fixture struct {
-	deniedReads    []string
-	claudeSafeMode bool
-	policy         string
-	base           string
-	home           string
-	xdgConfig      string
-	xdgData        string
-	xdgCache       string
-	xdgState       string
-	temporary      string
-	project        string
-	cleanRoot      string
-	hostileRoot    string
-	malformedRoot  string
-	emptyRoot      string
-	unreadableRoot string
-	missingRoot    string
-	marker         string
-	tmuxTemporary  string
+	deniedReads      []string
+	extraExecutables []string
+	claudeSafeMode   bool
+	policy           string
+	base             string
+	home             string
+	xdgConfig        string
+	xdgData          string
+	xdgCache         string
+	xdgState         string
+	temporary        string
+	project          string
+	cleanRoot        string
+	hostileRoot      string
+	malformedRoot    string
+	emptyRoot        string
+	unreadableRoot   string
+	missingRoot      string
+	marker           string
+	tmuxTemporary    string
 }
 
 type commandResult struct {

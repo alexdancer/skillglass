@@ -124,7 +124,7 @@ func CheckExecutableFor(ctx context.Context, name string) ExecutableCheck {
 	if name == companion.Name {
 		commandCapabilities = append(commandCapabilities, "review prepare", "review select", "review apply")
 	} else {
-		commandCapabilities = append(commandCapabilities, "consolidate scan", "consolidate preview", "consolidate apply", "consolidate recover", "setup --companion skillglass-consolidate")
+		commandCapabilities = append(commandCapabilities, "consolidate scan", "consolidate preview", "consolidate apply", "consolidate recover", "setup --check --companion skillglass-consolidate")
 	}
 	if err := command.Run(); err != nil || json.Unmarshal(stdout.Bytes(), &capabilities) != nil || capabilities.SchemaVersion != 1 || !containsCapabilities(capabilities.Help, commandCapabilities) {
 		out.State = "incompatible"

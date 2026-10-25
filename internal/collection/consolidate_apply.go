@@ -92,6 +92,13 @@ func ApplyConsolidation(ctx context.Context, draft ConsolidationDraft, confirmat
 	out.RecoveryID = preview.RecoveryID
 	out.Effects = append([]ConsolidationEffect(nil), preview.Effects...)
 	if consolidationEffectsAreNoop(out.Effects) {
+		for i := range out.Effects {
+			if out.Effects[i].Action == "share" {
+				out.Effects[i].State = "unchanged"
+				out.Effects[i].BackupPath = ""
+				out.Effects[i].Reason = "bundle is already canonical and all requested application links already exist"
+			}
+		}
 		currentSelection, selectionErr := CurrentConsolidationSelectionID()
 		if selectionErr != nil || currentSelection != draft.Scope.RememberedSelectionID {
 			out.RecoveryID = ""
@@ -109,13 +116,6 @@ func ApplyConsolidation(ctx context.Context, draft ConsolidationDraft, confirmat
 				return out
 			}
 			selectionUpdated = true
-		}
-		for i := range out.Effects {
-			if out.Effects[i].Action == "share" {
-				out.Effects[i].State = "unchanged"
-				out.Effects[i].BackupPath = ""
-				out.Effects[i].Reason = "bundle is already canonical and all requested application links already exist"
-			}
 		}
 		out.RecoveryID = ""
 		out.SelectionUpdated = selectionUpdated
@@ -1156,6 +1156,25 @@ func PreviewConsolidationRecovery(ctx context.Context, id string) ConsolidationP
 	return preview
 }
 
+func validateRemovedRecoveryLink(ctx context.Context, path string, journalEntries []consolidationJournalEntry) error {
+	_, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect previously removed recovery link %s: %w", path, err)
+	}
+	for _, restored := range journalEntries {
+		if filepath.Clean(path) != filepath.Clean(restored.SourcePath) || !restored.RestoredToSource && restored.PendingRecoveryMove == "" {
+			continue
+		}
+		if verifyMoveSource(ctx, path, restored.Fingerprint, restored.SourceID) == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("previously removed recovery link reappeared: %s", path)
+}
+
 func validateRecoveryEntry(ctx context.Context, entry consolidationJournalEntry, journalEntries []consolidationJournalEntry) error {
 	if entry.Fingerprint == "" || entry.SourcePath == "" {
 		return errors.New("recovery journal entry is missing source identity or fingerprint")
@@ -1191,6 +1210,11 @@ func validateRecoveryEntry(ctx context.Context, entry consolidationJournalEntry,
 	if entry.CanonicalSourceID == "" || entry.BackupSourceID == "" {
 		return errors.New("recovery journal lacks the canonical or duplicate physical identity; preserve it for manual recovery")
 	}
+	if entry.RestoredToSource {
+		if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID); err != nil {
+			return fmt.Errorf("recorded restored source changed: %w", err)
+		}
+	}
 	canonicalExists := pathExists(entry.CanonicalPath)
 	if canonicalExists {
 		if err := verifyMoveSource(ctx, entry.CanonicalPath, entry.Fingerprint, entry.CanonicalSourceID); err != nil {
@@ -1200,6 +1224,11 @@ func validateRecoveryEntry(ctx context.Context, entry consolidationJournalEntry,
 	backupExists := entry.BackupPath != "" && pathExists(entry.BackupPath)
 	if backupExists {
 		if err := verifyMoveSource(ctx, entry.BackupPath, entry.Fingerprint, entry.BackupSourceID); err != nil {
+			return err
+		}
+	}
+	for _, path := range entry.RemovedLinks {
+		if err := validateRemovedRecoveryLink(ctx, path, journalEntries); err != nil {
 			return err
 		}
 	}
@@ -1427,11 +1456,25 @@ func ApplyConsolidationRecovery(ctx context.Context, id, confirmation string) Co
 	// overwrite an independent source.
 	for i := len(journal.Entries) - 1; i >= 0; i-- {
 		entry := &journal.Entries[i]
+		for _, link := range entry.RemovedLinks {
+			if err := validateRemovedRecoveryLink(ctx, link, journal.Entries); err != nil {
+				return partial(err)
+			}
+		}
 		if entry.RestoredToSource {
+			if err := verifyMoveSource(ctx, entry.SourcePath, entry.Fingerprint, entry.SourceID); err != nil {
+				return partial(fmt.Errorf("recorded restored source changed: %w", err))
+			}
 			continue
 		}
 		for _, link := range ownedJournalLinks(*entry) {
-			if containsString(entry.RemovedLinks, link) || !pathExists(link) {
+			if containsString(entry.RemovedLinks, link) {
+				if err := validateRemovedRecoveryLink(ctx, link, journal.Entries); err != nil {
+					return partial(err)
+				}
+				continue
+			}
+			if !pathExists(link) {
 				continue
 			}
 			if pathExists(entry.CanonicalPath) {

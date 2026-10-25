@@ -47,6 +47,9 @@ func (fx fixture) fixturePolicy(t *testing.T, writer bool) string {
 		t.Fatal(err)
 	}
 	executableLiterals := " (literal " + sandboxString(product) + ") (literal " + sandboxString(probe) + ")"
+	for _, executable := range fx.extraExecutables {
+		executableLiterals += " (literal " + sandboxString(canonicalPath(t, executable)) + ")"
+	}
 	writeRule := "(deny file-write*)\n(allow file-write* (literal \"/dev/null\") (literal \"/dev/tty\"))"
 	if writer {
 		executableLiterals += " (literal \"/bin/ls\")"

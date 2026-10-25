@@ -618,6 +618,16 @@ func ScanConsolidation(ctx context.Context, request ConsolidationRequest) Consol
 	result.LibraryWarnings = uniqueStrings(result.LibraryWarnings)
 	result.LibrarySafe = len(result.LibraryReasons) == 0
 	result.Problems = uniqueProblems(result.Problems)
+	sort.Slice(result.Exclusions, func(i, j int) bool {
+		left, right := result.Exclusions[i], result.Exclusions[j]
+		if left.Path != right.Path {
+			return left.Path < right.Path
+		}
+		if left.SourceID != right.SourceID {
+			return left.SourceID < right.SourceID
+		}
+		return left.Reason < right.Reason
+	})
 	result.ScanID = consolidationScanID(result, all)
 	if result.Coverage == Incomplete {
 		result.Outcome, result.ExitCode = "partial", 1
@@ -2020,19 +2030,45 @@ func consolidationNativeRelocationProfile(application string) *ConsolidationRelo
 
 func consolidationHermesRelocationMode() string {
 	profileHome := os.Getenv("HERMES_HOME")
-	if profileHome != "" {
-		if !filepath.IsAbs(profileHome) || filepath.Base(filepath.Dir(filepath.Clean(profileHome))) != "profiles" || filepath.Base(filepath.Dir(filepath.Dir(filepath.Clean(profileHome)))) != ".hermes" {
-			return ""
-		}
-		resolved, err := setupProspectivePath(profileHome)
-		if err != nil || filepath.Clean(resolved) != filepath.Clean(profileHome) {
-			return ""
-		}
-		return "explicit-profile"
-	}
 	home := os.Getenv("HOME")
 	if !filepath.IsAbs(home) {
 		return ""
+	}
+	if profileHome != "" {
+		if !filepath.IsAbs(profileHome) {
+			return ""
+		}
+		cleanProfile := filepath.Clean(profileHome)
+		profileName := filepath.Base(cleanProfile)
+		if profileName == "." || profileName == ".." || filepath.Base(filepath.Dir(cleanProfile)) != "profiles" || filepath.Base(filepath.Dir(filepath.Dir(cleanProfile))) != ".hermes" {
+			return ""
+		}
+		homeInfo, err := os.Stat(home)
+		if err != nil || !homeInfo.IsDir() {
+			return ""
+		}
+		canonicalHome, err := setupProspectivePath(home)
+		if err != nil {
+			return ""
+		}
+		resolved, err := setupProspectivePath(profileHome)
+		if err != nil || filepath.Clean(resolved) != cleanProfile || filepath.Clean(resolved) != filepath.Join(filepath.Clean(canonicalHome), ".hermes", "profiles", profileName) {
+			return ""
+		}
+		profileInfo, err := os.Stat(cleanProfile)
+		if err != nil || !profileInfo.IsDir() {
+			return ""
+		}
+		skillsRoot := filepath.Join(cleanProfile, "skills")
+		resolvedSkills, err := setupProspectivePath(skillsRoot)
+		if err != nil || filepath.Clean(resolvedSkills) != skillsRoot {
+			return ""
+		}
+		skillsInfo, err := os.Stat(skillsRoot)
+		if err != nil || !skillsInfo.IsDir() {
+			return ""
+		}
+		return "explicit-profile"
 	}
 	marker := filepath.Join(home, ".hermes", "active_profile")
 	if _, err := os.Lstat(marker); !os.IsNotExist(err) {
